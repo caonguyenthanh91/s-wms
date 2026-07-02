@@ -1,54 +1,63 @@
 <div id="import-container" class="max-w-4xl mx-auto">
+    <style>
+        @media (max-width: 900px) {
+            #import-container .pda-compact-scroll {
+                max-height: 35vh;
+                overflow-y: auto;
+            }
+        }
+    </style>
     <!-- Step 1: Input Pallet ID -->
-    <div id="step-1" class="bg-white p-8 rounded-lg shadow-md text-center">
-        <h3 class="text-2xl font-bold mb-4 text-gray-800">Bước 1: Nhập/Quét Mã Pallet</h3>
-        <div class="mb-6 text-6xl">📦</div>
-        <div class="relative w-full max-w-sm mx-auto mb-4">
-            <input type="text" id="pallet-input" placeholder="Nhập mã pallet duy nhất"
+    <div id="step-1" class="bg-white p-2 rounded-lg shadow-md text-center">
+        <h3 class="text-lg font-bold mb-2 text-gray-800">Nhập mã Pallet</h3>
+        <!-- <div class="mb-6 text-6xl">📦</div> -->
+        <div class="relative w-full max-w-sm mx-auto mb-2">
+            <input type="text" id="pallet-input" placeholder="Nhập / Quét QR"
                    class="w-full px-4 py-3 pr-11 border-2 border-gray-300 rounded-lg text-center text-xl uppercase font-mono focus:border-orange-600 outline-none">
             <button type="button" onclick="openQRScannerModal('pallet-input', 'Mã Pallet')" class="absolute right-2 top-1/2 -translate-y-1/2 text-orange-600 hover:text-orange-800">
                 <i class="fas fa-qrcode text-lg"></i>
             </button>
         </div>
-        <button onclick="checkPallet()" class="w-full max-w-sm bg-orange-600 text-white py-3 rounded-lg font-bold hover:bg-orange-700 transition">Xác Nhận Pallet</button>
-        <p id="pallet-error" class="mt-4 text-red-600 hidden"></p>
+        <button onclick="checkPallet()" class="w-full max-w-sm bg-orange-600 text-white py-3 rounded-lg font-bold hover:bg-orange-700 transition">Xác nhận Pallet</button>
+        <p id="pallet-error" class="mt-2 text-red-600 hidden text-sm"></p>
     </div>
 
     <!-- Step 2: Input Items -->
-    <div id="step-2" class="bg-white p-8 rounded-lg shadow-md hidden">
-        <div class="flex justify-between items-center mb-6">
-            <h3 class="text-2xl font-bold text-gray-800">Bước 2: Nhận Hàng Vào Pallet <span id="display-pallet" class="text-orange-600"></span></h3>
-            <button onclick="resetImport()" class="text-gray-500 text-sm underline">Đổi pallet</button>
+    <div id="step-2" class="bg-white p-3 sm:p-4 rounded-lg shadow-md hidden">
+        <div class="flex justify-between items-center mb-3">
+            <h3 class="text-base sm:text-lg font-bold text-gray-800">Pallet: <span id="display-pallet" class="text-orange-600"></span></h3>
+            <button onclick="resetImport()" class="text-gray-500 text-xs sm:text-sm underline">Đổi</button>
         </div>
 
-        <div class="mb-5 flex flex-col gap-3 bg-gray-50 border border-gray-200 rounded-lg p-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-                <p class="text-xs uppercase font-bold tracking-wide text-gray-500">Chế độ quét</p>
-                <p class="text-sm text-gray-700" id="scan-mode-label">Gián đoạn: dừng để xác nhận số lượng</p>
-            </div>
-            <div class="inline-flex rounded-lg border border-gray-300 overflow-hidden self-start sm:self-auto">
-                <button type="button" id="scan-mode-interrupt" onclick="setImportScanMode(false)" class="px-3 py-2 text-sm font-semibold bg-orange-600 text-white">Gián đoạn</button>
-                <button type="button" id="scan-mode-continuous" onclick="setImportScanMode(true)" class="px-3 py-2 text-sm font-semibold bg-white text-gray-700 hover:bg-gray-100">Liên tục</button>
-            </div>
+        <div class="mb-2 inline-flex rounded-lg border border-gray-300 overflow-hidden self-start">
+                <button type="button" id="scan-mode-interrupt" onclick="setImportScanMode(false)" class="px-1 py-1 text-sm font-semibold bg-orange-600 text-white">Gián đoạn</button>
+                <button type="button" id="scan-mode-continuous" onclick="setImportScanMode(true)" class="px-1 py-1 text-sm font-semibold bg-white text-gray-700 hover:bg-gray-100">Liên tục</button>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div class="relative">
-                <input type="text" id="product_id" name="product_id" placeholder="Mã Sản phẩm (Part No)" class="w-full px-4 py-2 pr-11 border rounded uppercase font-mono">
+        <div class="grid grid-cols-12 gap-2 mb-2">
+            <div class="relative col-span-8">
+                <input type="text" id="product_id" name="product_id" placeholder="Product ID" class="w-full px-3 py-2 pr-10 border rounded uppercase font-mono text-sm">
                 <button type="button" onclick="openQRScannerModal('product_id', 'Mã Sản Phẩm')" class="absolute right-2 top-1/2 -translate-y-1/2 text-orange-600 hover:text-orange-800">
                     <i class="fas fa-qrcode"></i>
                 </button>
-                <p id="product-error" class="absolute -bottom-5 left-0 text-[10px] text-red-600 hidden"></p>
+                <p id="product-error" class="absolute -bottom-4 left-0 text-[10px] text-red-600 hidden"></p>
             </div>
-            <input type="number" id="qty-input" placeholder="Số lượng" class="px-4 py-2 border rounded" min="1">
-            <button id="btn-add-item" onclick="addItem()" class="bg-green-600 text-white py-2 rounded font-bold hover:bg-green-700">+ Thêm (Enter)</button>
+            <input type="number" id="qty-input" placeholder="Qty" class="col-span-4 px-3 py-2 border rounded text-sm text-center font-semibold" min="1">
         </div>
 
-        <table class="w-full mb-6">
-            <thead>
+        <div id="import-live-summary" class="mb-2 grid grid-cols-2 gap-2 text-xs sm:text-sm">
+            <div class="rounded border border-blue-200 bg-blue-50 px-2 py-1 font-semibold text-blue-700">Lượt quét: <span id="scan-count">0</span></div>
+            <div class="rounded border border-emerald-200 bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">Tổng SL: <span id="total-qty">0</span></div>
+        </div>
+
+        <button id="btn-add-item" onclick="addItem()" class="w-full mb-3 bg-green-600 text-white py-2 rounded font-bold hover:bg-green-700">+ Thêm (Enter)</button>
+
+        <div class="pda-compact-scroll mb-3 border border-gray-200 rounded-lg">
+        <table class="w-full">
+            <thead class="sticky top-0 bg-gray-100">
                 <tr class="bg-gray-100">
-                    <th class="p-2 text-left">SKU / Part No</th>
-                    <th class="p-2 text-right">Số Lượng</th>
+                    <th class="p-2 text-left text-xs sm:text-sm">Product</th>
+                    <th class="p-2 text-right text-xs sm:text-sm">SL</th>
                     <th class="p-2"></th>
                 </tr>
             </thead>
@@ -56,6 +65,7 @@
                 <!-- Danh sách hàng sẽ hiện ở đây -->
             </tbody>
         </table>
+        </div>
 
         <button onclick="submitImport()" class="w-full bg-orange-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-orange-700 shadow-lg">✓ Hoàn Tất Nhận Hàng</button>
 
@@ -112,6 +122,19 @@ function showProductError(message) {
 function clearProductError() {
     $('#product-error').addClass('hidden');
     $('#product_id').removeClass('border-red-500');
+}
+
+function updateImportCounters() {
+    const pendingProduct = $('#product_id').val().trim();
+    const pendingQty = parseInt($('#qty-input').val(), 10);
+    const pendingCount = pendingProduct && !isNaN(pendingQty) && pendingQty > 0 ? 1 : 0;
+
+    const scanCount = importItems.length + pendingCount;
+    const totalQtySaved = importItems.reduce((sum, item) => sum + (parseInt(item.quantity, 10) || 0), 0);
+    const totalQty = totalQtySaved + (pendingCount ? pendingQty : 0);
+
+    $('#scan-count').text(scanCount);
+    $('#total-qty').text(totalQty);
 }
 
 function parseImportQRPayload(rawValue) {
@@ -224,9 +247,11 @@ function resetImport() {
     lastHandledQRRaw = '';
     setImportScanMode(false);
     renderItemList();
+    updateImportCounters();
 }
 
 $('#product_id').on('input', function() {
+    updateImportCounters();
     const rawValue = normalizeImportQRRaw($(this).val());
     if (!rawValue || rawValue.indexOf('$') === -1) return;
 
@@ -241,6 +266,7 @@ $('#product_id').on('input', function() {
 
 // Kiểm tra mã hàng khi rời khỏi ô nhập
 $('#product_id').on('change', function() {
+    updateImportCounters();
     const rawValue = normalizeImportQRRaw($(this).val());
     if (!rawValue) return;
 
@@ -260,6 +286,10 @@ $('#qty-input').on('keypress', function(e) {
     if (e.which == 13) addItem();
 });
 
+$('#qty-input').on('input', function() {
+    updateImportCounters();
+});
+
 function addItem() {
     const productId = $('#product_id').val().trim().toUpperCase();
     const qty = parseInt($('#qty-input').val());
@@ -273,6 +303,7 @@ function addItem() {
     $('#product_id').val('').removeClass('border-green-500 border-red-500').focus();
     $('#qty-input').val('');
     $('#product-error').addClass('hidden');
+    updateImportCounters();
 }
 
 function renderItemList() {
@@ -289,6 +320,7 @@ function renderItemList() {
             </tr>
         `);
     });
+    updateImportCounters();
 }
 
 function removeItem(index) {
@@ -320,5 +352,6 @@ async function submitImport() {
 
 $(document).ready(function() {
     updateImportScanModeUI();
+    updateImportCounters();
 });
 </script>

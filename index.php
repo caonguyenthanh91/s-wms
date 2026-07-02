@@ -38,6 +38,47 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
     <link rel="stylesheet" href="<?php echo $assetBaseUrl; ?>assets/css/customs.css?v=<?php echo $customCssVersion; ?>">
     <script src="<?php echo $assetBaseUrl; ?>assets/js/jquery.min.js"></script>
     <script src="<?php echo $assetBaseUrl; ?>assets/js/tailwindcss.js"></script>
+    <style>
+        body.pda-compact-header #main-page-header {
+            padding-top: 0.45rem;
+            padding-bottom: 0.45rem;
+        }
+
+        body.pda-compact-header #page-title,
+        body.pda-compact-header #auth-block {
+            display: none;
+        }
+
+        body.pda-compact-header #main-content {
+            padding: 0.55rem;
+        }
+
+        body.pda-compact-header #pda-logout-slot {
+            display: inline-flex;
+            margin-left: auto;
+        }
+
+        body.pda-compact-header #pda-logout-slot .pda-auth-btn {
+            border: 1px solid rgba(148, 163, 184, 0.7);
+            background: rgba(255, 255, 255, 0.14);
+            color: #fff;
+            border-radius: 0.45rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            padding: 0.28rem 0.55rem;
+            line-height: 1.05;
+        }
+
+        body.pda-compact-header #pda-logout-slot .pda-auth-btn:active {
+            transform: translateY(1px);
+        }
+
+        @media (min-width: 901px) {
+            #pda-logout-slot {
+                display: none !important;
+            }
+        }
+    </style>
 
 </head>
 <body class="bg-gray-100 font-sans">
@@ -47,7 +88,8 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
             <button type="button" id="sidebar-brand-toggle" onclick="toggleSidebar()" class="w-full p-6 text-2xl font-bold border-b border-slate-700 whitespace-nowrap flex items-center justify-start text-left hover:bg-slate-700/40 transition" title="Mo/Rut gon menu">
                 <span class="sidebar-title-full">S-WMS</span>
                 <span class="sidebar-title-collapsed hidden"><small>S-WMS</small></span>
-                <span class="ml-auto text-xs opacity-80 sidebar-toggle-hint">Menu</span>
+                <span id="pda-logout-slot" class="hidden"></span>
+                <span class="text-xs opacity-80 sidebar-toggle-hint ml-2"></span>
             </button>
             <nav id="sidebar-nav" class="p-4 space-y-2">
                 <?php if (in_array($role, ['Admin', 'Manager'])): ?>
@@ -108,13 +150,13 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
         </aside>
         <!-- Main Content -->
         <main class="flex-1 flex flex-col min-w-0">
-            <header class="bg-white shadow p-4 flex justify-between items-center">
+            <header id="main-page-header" class="bg-white shadow p-4 flex justify-between items-center">
                 <button onclick="toggleSidebar()" class="p-2 rounded hover:bg-gray-100 hidden md:block">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
                     </svg>
                 </button>
-                <h2 class="text-xl font-semibold text-gray-800 uppercase">
+                <h2 id="page-title" class="text-xl font-semibold text-gray-800 uppercase">
                     <?php 
                         echo $page; 
                     ?>
@@ -124,7 +166,7 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                     </div>
             </header>
 
-            <div class="p-6">
+            <div id="main-content" class="p-6">
                 <?php
                     // Cấu hình quyền truy cập trang (Access Control List)
                     $allowed_pages = ['import', 'inbound', 'outbound', 'inventory', 'print']; // Quyền chung
@@ -176,6 +218,21 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
         let qrScannerInstance = null;
         let qrScannerTargetId = '';
         let qrScannerValue = '';
+        let currentAuthUser = null;
+
+        function pdaOptimizedPages() {
+            return ['import', 'inbound', 'outbound', 'transfer', 'change', 'inventory'];
+        }
+
+        function isPdaCompactMode() {
+            const currentPage = '<?php echo addslashes($page); ?>';
+            const isSmallViewport = window.matchMedia('(max-width: 900px)').matches;
+            return isSmallViewport && pdaOptimizedPages().includes(currentPage);
+        }
+
+        function applyPdaHeaderMode() {
+            document.body.classList.toggle('pda-compact-header', isPdaCompactMode());
+        }
 
         function openQRScannerModal(targetId, label) {
             qrScannerTargetId = targetId;
@@ -337,34 +394,62 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
         }
 
         function applyPdaSidebarDefault() {
-            const currentPage = '<?php echo addslashes($page); ?>';
-            const pdaOptimizedPages = ['import', 'inbound', 'outbound', 'transfer', 'change', 'inventory'];
             const isSmallViewport = window.matchMedia('(max-width: 900px)').matches;
             const appContainer = document.getElementById('app-container');
+            const currentPage = '<?php echo addslashes($page); ?>';
 
             if (appContainer && isMobileSidebarMode()) {
-                appContainer.classList.remove('mobile-sidebar-open');
+                // PDA portrait: hien menu tab de khong bi mat chuc nang.
+                appContainer.classList.add('mobile-sidebar-open');
                 appContainer.classList.remove('sidebar-collapsed');
                 return;
             }
 
-            if (isSmallViewport && pdaOptimizedPages.includes(currentPage)) {
+            if (isSmallViewport && pdaOptimizedPages().includes(currentPage)) {
                 toggleSidebar(true);
+            }
+        }
+
+        function bindLogoutButton(selector) {
+            const btn = $(selector);
+            if (!btn.length) return;
+            btn.off('click').on('click', function(){
+                $.post('api.php?action=logout', {}, function(){ location.reload(); });
+            });
+        }
+
+        function renderAuthBlock(user) {
+            const block = $('#auth-block');
+            const compactSlot = $('#pda-logout-slot');
+            compactSlot.empty();
+
+            if (user && user.username) {
+                if (isPdaCompactMode()) {
+                    block.empty();
+                    compactSlot.html('<button id="btn-logout-compact" class="pda-auth-btn" type="button">Đăng xuất</button>');
+                    bindLogoutButton('#btn-logout-compact');
+                } else {
+                    block.html(`<span class="font-medium">Xin chào, ${user.username}</span> <button id="btn-logout" class="ml-3 text-blue-600 underline text-sm">Đăng xuất</button>`);
+                    bindLogoutButton('#btn-logout');
+                }
+            } else {
+                if (isPdaCompactMode()) {
+                    block.empty();
+                    compactSlot.html('<button id="btn-login-compact" class="pda-auth-btn" type="button">Đăng nhập</button>');
+                    $('#btn-login-compact').off('click').on('click', function(){ showLogin(); });
+                } else {
+                    block.html(`<button id="btn-login" class="text-white bg-blue-600 px-3 py-1 rounded">Đăng nhập</button>`);
+                    $('#btn-login').off('click').on('click', function(){ showLogin(); });
+                }
             }
         }
 
         // Auth: load current user and provide login/logout
         function loadAuth() {
             $.getJSON('api.php?action=get_current_user', function(res){
-                const block = $('#auth-block');
                 const user = res.user;
-                if (user && user.username) {
-                    block.html(`<span class="font-medium">Xin chào, ${user.username}</span> <button id=\"btn-logout\" class=\"ml-3 text-blue-600 underline text-sm\">Đăng xuất</button>`);
-                    $('#btn-logout').on('click', function(){ $.post('api.php?action=logout', {}, function(){ location.reload(); }); });
-                } else {
-                    block.html(`<button id=\"btn-login\" class=\"text-white bg-blue-600 px-3 py-1 rounded\">Đăng nhập</button>`);
-                    $('#btn-login').on('click', function(){ showLogin(); });
-                }
+                currentAuthUser = user || null;
+                renderAuthBlock(currentAuthUser);
             });
         }
 
@@ -382,12 +467,15 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
         }
 
         $(document).ready(function(){
+            applyPdaHeaderMode();
             applyPdaSidebarDefault();
             loadAuth();
         });
 
         window.addEventListener('resize', function() {
+            applyPdaHeaderMode();
             applyPdaSidebarDefault();
+            renderAuthBlock(currentAuthUser);
         });
     </script>
 </body>

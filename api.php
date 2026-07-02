@@ -196,6 +196,37 @@ switch ($action) {
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
         break;
 
+    case 'get_pallet_transfer_summary':
+        require_role(['Admin','Leader','Manager','Staff']);
+        $keyword = strtoupper(trim($_GET['keyword'] ?? ''));
+        $like = '%' . $keyword . '%';
+
+        $sql = "SELECT
+                    COUNT(*) AS total_pallets,
+                    SUM(CASE WHEN x.is_transferred = 1 THEN 1 ELSE 0 END) AS transferred_pallets,
+                    SUM(CASE WHEN x.is_transferred = 0 THEN 1 ELSE 0 END) AS pending_pallets
+                FROM (
+                    SELECT
+                        pallet_id,
+                        CASE WHEN MAX(CASE WHEN status IS NOT NULL AND TRIM(status) <> '' THEN 1 ELSE 0 END) = 1 THEN 1 ELSE 0 END AS is_transferred
+                    FROM import_temp
+                    WHERE (? = '' OR UPPER(pallet_id) LIKE ?)
+                    GROUP BY pallet_id
+                ) x";
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$keyword, $like]);
+        $summary = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        echo json_encode([
+            'success' => true,
+            'total_pallets' => (int)($summary['total_pallets'] ?? 0),
+            'transferred_pallets' => (int)($summary['transferred_pallets'] ?? 0),
+            'pending_pallets' => (int)($summary['pending_pallets'] ?? 0),
+            'keyword' => $keyword,
+        ]);
+        break;
+
     case 'mark_pallet_transferred':
         require_role(['Admin','Leader','Manager','Staff']);
         $pallet_id = strtoupper($_POST['pallet_id'] ?? '');

@@ -1,14 +1,61 @@
 <div id="transfer-container" class="max-w-4xl mx-auto">
+    <style>
+        @media (max-width: 900px) {
+            #transfer-container .pda-hide {
+                display: none !important;
+            }
+
+            #transfer-container .pda-transfer-btn {
+                display: block;
+                width: 100%;
+                margin-top: 0.35rem;
+                text-align: center;
+                padding-top: 0.55rem;
+                padding-bottom: 0.55rem;
+                font-size: 0.85rem;
+            }
+
+            #transfer-container #pallet-list td {
+                padding-top: 0.6rem;
+                padding-bottom: 0.6rem;
+            }
+        }
+    </style>
+
+    <div class="bg-white p-4 rounded-lg shadow-md mb-4 border border-slate-200 pda-hide">
+        <h4 class="text-sm font-bold uppercase tracking-wide text-slate-600 mb-3">Tong quan theo bo loc Pallet</h4>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                <div class="text-[11px] uppercase font-bold text-blue-700">Da nhap</div>
+                <div id="summary-total" class="text-2xl font-black text-blue-800 leading-tight">0</div>
+                <div class="text-[11px] text-blue-700">Tong so pallet id</div>
+            </div>
+            <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                <div class="text-[11px] uppercase font-bold text-emerald-700">Da len ke</div>
+                <div id="summary-transferred" class="text-2xl font-black text-emerald-800 leading-tight">0</div>
+                <div class="text-[11px] text-emerald-700">Status khac rong</div>
+            </div>
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                <div class="text-[11px] uppercase font-bold text-amber-700">Con lai</div>
+                <div id="summary-pending" class="text-2xl font-black text-amber-800 leading-tight">0</div>
+                <div class="text-[11px] text-amber-700">Cho chuyen vao ke</div>
+            </div>
+        </div>
+    </div>
+
     <div class="bg-white p-6 rounded-lg shadow-md">
         <h3 class="text-2xl font-bold mb-6 text-gray-800 flex items-center gap-2">
             <span>📦</span> Chuyển Pallet Vào Kệ
         </h3>
         
         <!-- Ô tìm kiếm nhanh -->
-        <div class="mb-4 relative">
-            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">🔍</span>
-            <input type="text" id="pallet-search" placeholder="Tìm nhanh mã pallet..." 
-                   class="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+        <div class="mb-4 flex gap-2">
+            <div class="relative flex-1">
+                <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">🔍</span>
+                <input type="text" id="pallet-search" placeholder="Nhap ma pallet, nhan Enter de loc" 
+                       class="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm uppercase">
+            </div>
+            <button type="button" id="pallet-search-btn" class="px-3 py-2 rounded bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">Loc</button>
         </div>
 
         <div class="overflow-x-auto">
@@ -16,9 +63,9 @@
                 <thead>
                     <tr class="bg-gray-50 border-b">
                         <th class="p-3 text-left">Mã Pallet</th>
-                        <th class="p-3 text-left">Ngày Nhập Tạm</th>
-                        <th class="p-3 text-left">Người Tạo</th>
-                        <th class="p-3 text-center">Số Loại Hàng</th>
+                        <th class="p-3 text-left pda-hide">Ngày Nhập Tạm</th>
+                        <th class="p-3 text-left pda-hide">Người Tạo</th>
+                        <th class="p-3 text-center pda-hide">Số Loại Hàng</th>
                         <th class="p-3 text-right">Thao Tác</th>
                     </tr>
                 </thead>
@@ -83,11 +130,44 @@
 
 <script>
 let allPallets = []; // Lưu trữ dữ liệu gốc để search
+let filteredPallets = [];
+let currentSearchTerm = '';
+
+function updateTransferSummary(summary) {
+    $('#summary-total').text(summary.total_pallets || 0);
+    $('#summary-transferred').text(summary.transferred_pallets || 0);
+    $('#summary-pending').text(summary.pending_pallets || 0);
+}
+
+function loadTransferSummary(keyword) {
+    $.getJSON('api.php?action=get_pallet_transfer_summary', { keyword: keyword || '' }, function(res) {
+        if (res && res.success) {
+            updateTransferSummary(res);
+            return;
+        }
+        updateTransferSummary({ total_pallets: 0, transferred_pallets: 0, pending_pallets: 0 });
+    }).fail(function() {
+        updateTransferSummary({ total_pallets: 0, transferred_pallets: 0, pending_pallets: 0 });
+    });
+}
+
 function loadPendingPallets() {
     $.getJSON('api.php?action=get_pending_pallets', function(data) {
         allPallets = data;
-        renderPalletTable(data);
+        applyTransferFilter(currentSearchTerm);
     });
+}
+
+function applyTransferFilter(term) {
+    const normalized = (term || '').trim().toUpperCase();
+    currentSearchTerm = normalized;
+
+    filteredPallets = normalized
+        ? allPallets.filter(p => (p.pallet_id || '').toUpperCase().includes(normalized))
+        : allPallets.slice();
+
+    renderPalletTable(filteredPallets);
+    loadTransferSummary(normalized);
 }
 
 function renderPalletTable(data) {
@@ -103,23 +183,20 @@ function renderPalletTable(data) {
                     <td class="p-3 font-mono font-bold text-blue-600">
                         <button type="button" onclick="openPalletDetailModal('${p.pallet_id}')" class="hover:underline">${p.pallet_id}</button>
                     </td>
-                    <td class="p-3 text-gray-500">${p.created_at}</td>
-                    <td class="p-3 text-gray-500">${p.created_by}</td>
-                    <td class="p-3 text-center"><span class="bg-gray-200 px-2 py-0.5 rounded text-xs font-semibold">${p.sku_count} SKUs</span></td>
+                    <td class="p-3 text-gray-500 pda-hide">${p.created_at}</td>
+                    <td class="p-3 text-gray-500 pda-hide">${p.created_by}</td>
+                    <td class="p-3 text-center pda-hide"><span class="bg-gray-200 px-2 py-0.5 rounded text-xs font-semibold">${p.sku_count} SKUs</span></td>
                     <td class="p-3 text-right">
-                        <button onclick="openModal('${p.pallet_id}')" class="bg-blue-600 text-white px-4 py-1.5 rounded text-xs font-bold hover:bg-blue-700 transition uppercase tracking-wider shadow-sm">Transfer</button>
+                        <button onclick="openModal('${p.pallet_id}')" class="pda-transfer-btn bg-blue-600 text-white px-4 py-1.5 rounded text-xs font-bold hover:bg-blue-700 transition uppercase tracking-wider shadow-sm">Transfer</button>
                     </td>
                 </tr>
             `);
         });
 }
 
-// Xử lý tìm kiếm nhanh
-$('#pallet-search').on('input', function() {
-    const term = $(this).val().trim().toUpperCase();
-    const filtered = allPallets.filter(p => p.pallet_id.toUpperCase().includes(term));
-    renderPalletTable(filtered);
-});
+function triggerTransferSearch() {
+    applyTransferFilter($('#pallet-search').val());
+}
 
 function openModal(palletId) {
     $('#modal-pallet-id').val(palletId);
@@ -192,6 +269,18 @@ async function confirmTransfer() {
 
 $(document).ready(function() {
     loadPendingPallets();
+    loadTransferSummary('');
+
+    $('#pallet-search-btn').on('click', function() {
+        triggerTransferSearch();
+    });
+
+    $('#pallet-search').on('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            triggerTransferSearch();
+        }
+    });
 
     $('#pallet-detail-modal').on('click', function(e) {
         if (e.target === this) {
