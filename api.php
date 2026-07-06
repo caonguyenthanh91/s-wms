@@ -605,12 +605,25 @@ switch ($action) {
                                                                             s.shelf_id,
                                                                             i.quantity,
                                                                             'INVENTORY' AS source,
-                                                                            NULL AS pallet_id
+                                                                            itx.pallet_id AS pallet_id
                                                             FROM inventory i 
                                                             JOIN products p ON i.product_id = p.id 
                                                             JOIN shelves s ON i.shelf_id = s.id
+                                                            LEFT JOIN (
+                                                                SELECT
+                                                                    UPPER(TRIM(part_no)) AS part_no_key,
+                                                                    UPPER(TRIM(status)) AS status_key,
+                                                                    NULLIF(TRIM(GROUP_CONCAT(DISTINCT pallet_id ORDER BY pallet_id SEPARATOR ', ')), '') AS pallet_id
+                                                                FROM import_temp
+                                                                WHERE status IS NOT NULL
+                                                                    AND TRIM(status) <> ''
+                                                                GROUP BY UPPER(TRIM(part_no)), UPPER(TRIM(status))
+                                                            ) itx
+                                                                ON itx.part_no_key = UPPER(TRIM(p.product_id))
+                                                                AND itx.status_key = UPPER(TRIM(s.shelf_id))
                                                             WHERE p.product_id = ? AND i.quantity > 0 
-                                                            AND (s.status != 'Deactive' OR s.status IS NULL)");
+                                                            AND (s.status != 'Deactive' OR s.status IS NULL)
+                                                            ORDER BY s.shelf_id ASC");
                 $stmt->execute([$pid]);
                 $invRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -618,7 +631,7 @@ switch ($action) {
                                                                             CONCAT('TEMP-', it.pallet_id) AS shelf_id,
                                                                             SUM(it.qty) AS quantity,
                                                                             'IMPORT_TEMP' AS source,
-                                                                            it.pallet_id AS pallet_id
+                                                                            NULL AS pallet_id
                                                              FROM import_temp it
                                                              LEFT JOIN products p ON p.product_id = it.part_no
                                                              WHERE it.part_no = ?

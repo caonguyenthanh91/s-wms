@@ -57,8 +57,9 @@
                 <tbody id="product-inventory-results"></tbody>
                 <tfoot>
                     <tr class="bg-gray-50 font-bold border-t">
-                        <td class="p-3">TỔNG TỒN</td>
+                        <td class="p-3" colspan="2">TỔNG TỒN</td>
                         <td class="p-3 text-right text-blue-700" id="product-total-qty">0</td>
+                        <td class="p-3"></td>
                     </tr>
                 </tfoot>
             </table>
@@ -163,13 +164,20 @@ function searchByProduct() {
                 const inboundUrl = `?page=inbound&shelf_id=${encodeURIComponent(item.shelf_id)}&product_id=${encodeURIComponent(pid)}`;
                 const outboundUrl = `?page=outbound&shelf_id=${encodeURIComponent(item.shelf_id)}&product_id=${encodeURIComponent(pid)}`;
                 const isTemp = item.source === 'IMPORT_TEMP';
+                const palletLabel = !isTemp && item.pallet_id && item.pallet_id.includes(',') ? 'Pallets' : 'Pallet';
+                const palletHint = !isTemp && item.pallet_id
+                    ? `<div class="text-[10px] font-normal text-gray-400 mt-0.5">${palletLabel}: ${item.pallet_id}</div>`
+                    : '';
                 const sourceBadge = isTemp
                     ? '<span class="inline-block px-2 py-1 rounded bg-amber-100 text-amber-800 text-[10px] font-bold">KHO TAM</span>'
                     : '<span class="inline-block px-2 py-1 rounded bg-blue-100 text-blue-800 text-[10px] font-bold">KHO CHINH</span>';
                 tbody.append(`
                     <tr class="hover:bg-gray-50 border-b">
                         <td class="p-3">${sourceBadge}</td>
-                        <td class="p-3 font-mono font-bold text-gray-700">${item.shelf_id}</td>
+                        <td class="p-3 font-mono font-bold text-gray-700">
+                            <div>${item.shelf_id}</div>
+                            ${palletHint}
+                        </td>
                         <td class="p-3 text-right font-medium">${item.quantity}</td>
                         <td class="p-3 text-center">
                             ${isTemp
