@@ -13,17 +13,17 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         <h3><i class="fas fa-list"></i> In phiếu picking</h3>
         <div class="form-group import-box">
             <label>Import dữ liệu từ Excel:</label>
-            <div class="import-note">Thứ tự cột: CTSX, Mã SP, Mã LK, SL pick, SL/bucket, Ngày phát hành. <br>Hỗ trợ file .xlsx và .csv.</div>
+            <div class="import-note">Tải file Excel mẫu tại đây.</div>
             <div class="import-actions">
                 <input type="file" id="export-file" class="form-control" accept=".xlsx,.csv">
                 <button type="button" class="btn btn-primary import-btn" id="import-export-btn" onclick="importExportTemp()">
                     <i class="fas fa-file-import"></i> Import Excel
                 </button>
             </div>
-            <label class="inline-checkbox">
+            <!-- <label class="inline-checkbox">
                 <input type="checkbox" id="clear-existing-export" checked>
                 Xóa dữ liệu export_temp cũ trước khi import
-            </label>
+            </label> -->
             <div id="import-result" class="import-result"></div>
         </div>
         <div class="form-group">
@@ -31,18 +31,18 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
             <div class="search-mode-group">
                 <label class="search-mode-option active">
                     <input type="radio" name="export-search-type" value="command" checked>
-                    Theo CTSX
+                    Theo Invoice
                 </label>
                 <label class="search-mode-option">
                     <input type="radio" name="export-search-type" value="product_id">
-                    Theo Mã LK
+                    Theo Mã hàng
                 </label>
             </div>
         </div>
         <div class="form-group">
-            <label id="search-input-label">Theo CTSX:</label>
+            <label id="search-input-label">Invoice hoặc Mã hàng:</label>
             <div class="qr-inline-wrap">
-                <input type="text" id="export-search-input" class="form-control" placeholder="Nhập hoặc chọn mã CTSX">
+                <input type="text" id="export-search-input" class="form-control" placeholder="Nhập mã Invoice hoặc mã hàng">
                 <button type="button" class="btn btn-outline-primary" id="search-qr-btn" onclick="openQRScannerModal('export-search-input', 'Mã CTSX')" title="Quét mã">
                     <i class="fas fa-qrcode"></i>
                 </button>
@@ -51,7 +51,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         </div>
 
         <button onclick="loadExportItems()" class="btn btn-primary search-command-btn" id="search-export-btn">
-            <i class="fas fa-search"></i> Tìm CTSX
+            <i class="fas fa-search"></i> Tìm kiếm
         </button>
 
         <div id="warning-container" class="warning">
@@ -63,7 +63,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
     </div>
 
     <div class="panel">
-        <h3><i class="fas fa-print"></i> Xem Trước Phiếu Picking</h3>
+        <h3><i class="fas fa-print"></i> Xem trước phiếu picking</h3>
 
         <div class="pages-container" id="pages-preview">
             <div class="preview-placeholder">
@@ -82,11 +82,11 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
             </label>
             <label style="display:block; margin-bottom:6px;">
                 <input type="checkbox" id="print-split-mode" checked>
-                In tách từng phiếu (máy in nhiệt, có thể hiện nhiều popup)
+                Chế độ cho máy in nhiệt (tự cắt từng phiếu, nhấn xác nhận mỗi phiếu)
             </label>
             <label style="display:block; margin-bottom:6px;">
                 <input type="checkbox" id="print-single-mode">
-                In gộp 1 lần (ít popup hơn, máy in có thể không cắt từng phiếu)
+                Chế độ in gộp 1 phiếu dài (không tự cắt phiếu, không phải nhấn xác nhận)
             </label>
             <div id="print-mode-note" class="text-xs text-gray-500"></div>
         </div>
@@ -188,9 +188,14 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
             }
         });
 
-        const modeNote = currentSearchType === 'product_id'
-            ? 'Đang xem tổng số lượng gộp theo Mã LK. Chế độ này chỉ hiển thị tổng, không cho sửa từng dòng.'
-            : 'Đang xem theo CTSX. Bạn có thể sửa Tổng và Mỗi phiếu trên từng dòng rồi nhấn Lưu.';
+        const hasEditableRows = currentItems.some(function(item) {
+            return !!item.is_editable;
+        });
+        const modeNote = hasEditableRows
+            ? 'Đang xem theo CTSX. Bạn có thể sửa Tổng và Mỗi phiếu trên từng dòng rồi nhấn Lưu.'
+            : (currentSearchType === 'command'
+                ? 'Đang xem tổng số lượng gộp theo Invoice. Chế độ này chỉ hiển thị tổng, không cho sửa từng dòng.'
+                : 'Đang xem tổng số lượng gộp theo Mã LK. Chế độ này chỉ hiển thị tổng, không cho sửa từng dòng.');
 
         if (!shortages.length) {
             showWarning(modeNote);
@@ -462,7 +467,8 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         let pending = currentItems.length;
 
         currentItems.forEach(item => {
-            const qtyContent = currentSearchType === 'command'
+            const isEditableRow = !!item.is_editable;
+            const qtyContent = isEditableRow
                 ? `
                     <div class="item-edit-grid">
                         <label class="item-edit-field">
@@ -489,7 +495,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
                 <div class="item-card" data-item-id="${item.id}">
                     <div class="item-header">
                         <div class="product-id">${escapeHtml(item.product_id)}</div>
-                        <div class="qty-info">${currentSearchType === 'command' ? `${item.num_pages} phiếu` : 'Tổng gộp'}</div>
+                        <div class="qty-info">${isEditableRow ? `${item.num_pages} phiếu` : 'Tổng gộp'}</div>
                     </div>
                     <div class="item-meta">
                         ${escapeHtml(item.product_name || 'N/A')} (${escapeHtml(item.unit || 'pcs')})
@@ -545,30 +551,34 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
     function generatePrintPreview() {
         const preview = $('#pages-preview');
         const printPages = $('#print-pages');
-        const isProductSearch = currentSearchType === 'product_id';
 
         let previewHtml = '';
         let printHtml = '';
 
         currentItems.forEach(item => {
             const shelves = shelvesData[item.product_id] || [];
-            const numPages = isProductSearch ? 1 : Math.max(1, parseInt(item.num_pages, 10) || 1);
+            const groupedMode = !item.is_editable;
+            const numPages = groupedMode ? 1 : Math.max(1, parseInt(item.num_pages, 10) || 1);
             let remainingQty = parseInt(item.total_qty, 10) || 0;
 
             for (let page = 1; page <= numPages; page++) {
                 const bucketQty = parseInt(item.bucket_qty, 10) || 1;
-                const pageQty = isProductSearch ? remainingQty : Math.min(bucketQty, remainingQty);
+                const pageQty = groupedMode ? remainingQty : Math.min(bucketQty, remainingQty);
                 const totalQty = parseInt(item.total_qty, 10) || 0;
                 const forProduct = item.for_product || '-';
                 const qrDataUrl = generateQRCodeDataUrl(item.product_id + '$' + pageQty);
-                const commandLabel = isProductSearch ? 'LỆNH' : 'CTSX';
-                const commandValue = isProductSearch ? (item.command_list || currentSearchKeyword) : (item.command || currentSearchKeyword);
-                const qtySubText = isProductSearch ? 'Tổng gộp theo Mã LK' : `/ Tổng ${totalQty}`;
+                const commandLabel = currentSearchType === 'command' ? 'INVOICE' : 'LỆNH';
+                const commandValue = currentSearchType === 'command'
+                    ? (item.command || currentSearchKeyword)
+                    : (item.command_list || currentSearchKeyword);
+                const qtySubText = groupedMode
+                    ? (currentSearchType === 'command' ? 'Tổng gộp theo Invoice' : 'Tổng gộp theo Mã LK')
+                    : `/ Tổng ${totalQty}`;
 
                 let shelvesHtml = '';
                 if (shelves.length) {
                     shelves.forEach(shelf => {
-                        shelvesHtml += `<div class="shelf-row"><span>${escapeHtml(shelf.shelf_id)}</span><span>${shelf.qty}</span></div>`;
+                        shelvesHtml += `<div class="shelf-row"><span>${escapeHtml(shelf.shelf_id)}</span><span> (${shelf.qty})</span></div>`;
                     });
                 } else {
                     shelvesHtml = '<div class="text-muted no-location">Không có tồn kho</div>';
@@ -610,7 +620,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
                         </div>
 
                         <div class="row5 shelves-section">
-                            <div class="shelves-header">Tồn KHO CHINH:</div>
+                            <div class="shelves-header">Vị trí (SL):</div>
                             ${shelvesHtml}
                         </div>
 

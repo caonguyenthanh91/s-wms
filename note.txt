@@ -1,0 +1,8 @@
+Điều chỉnh trang picking theo yêu cầu:
+* Giao diện phù hợp cho thiết bị cầm tay PDA (màn hinh 5 inch) nên tập trung vào tên hành động và ô nhập liệu, nút xác nhận,...
+* Từng bước phải xác nhận đúng thông tin bằng mã QR mới cho phép thể hiện màn hình truy cập bước tiếp theo. Trên cùng luôn có các index xuyên suốt các bước, bao gồm mã hàng đang pick, mã kệ đang pick, số lượng đang pick/số lượng cần pick. Các bước như sau.
+Bước 1, quét QR mã hàng phiếu Picking dạng [MÃ HÀNG]%[SỐ LƯỢNG]. Kiểm tra toàn bộ kho chính. Nếu không có tồn kho chính thì báo lỗi hoặc chú thích tồn ở kho Phụ + mã pallet tại import_temp.sql (nếu có), rồi dừng ở đây. Nếu có tồn kho chính thì list ra danh sách các vị trí kèm số lượng tồn kho (sắp xếp theo tồn nhỏ đến lớn).
+Bước 2, Nhân viên chọn mã vị trí được xếp trên cùng (số lượng ít nhất). Đi đến vị trí đúng. Quét QR mã vị trí cho đến khi đúng.
+Bước 3, Nhận viên quét mã QR trên thùng hàng dạng [TEXT]$[MÃ HÀNG]$[TEXT]$[SỐ LƯỢNG]$.... (tham khảo bước quét mã hàng của @import.php), Nếu đúng mã hàng thì đưa số lượng qua ô số lượng và chờ nhân viên điều chỉnh nếu có, sau đó nhấn OK để cộng dồn và trừ tồn trong inventory và ghi nhận transaction. Luôn luôn kiểm tra với số lượng cần pick mỗi lần nhấn OK. Không bao giờ cho số lượng lớn hơn số cần pick.
+Bước 4, Nếu tổng pick đã đủ số lượng cần, hoặc tồn tại vị trí này đã bằng 0 thì trở lại bước 2 để nhận viên chọn vị trí tiếp theo và lặp lại đến khi tổng pick đạt tổng cần pick thì active nút "Xác nhận hoàn thành" rồi trở lại bước 1, chờ lệnh tiếp theo.
+* Trong suốt quá trình trừ tồn luôn hiển thị lịch sử [vị trí, mã hàng, số lượng pick, thời điểm] ở bên dưới nút xác nhận hoàn thành,

@@ -264,12 +264,19 @@ switch ($action) {
 
         if ($searchType === 'command') {
             $stmt = $pdo->prepare(
-                "SELECT e.id, e.command, e.product_id, e.for_product, e.total_qty, e.bucket_qty,
-                        p.product_name, p.unit
+                "SELECT MIN(e.id) AS id,
+                        e.command,
+                        e.product_id,
+                        MAX(e.for_product) AS for_product,
+                        SUM(e.total_qty) AS total_qty,
+                        SUM(e.total_qty) AS bucket_qty,
+                        p.product_name,
+                        p.unit
                  FROM export_temp e
                  LEFT JOIN products p ON e.product_id = p.product_id
                  WHERE e.command = ?
-                 ORDER BY e.product_id, e.id"
+                 GROUP BY e.command, e.product_id, p.product_name, p.unit
+                 ORDER BY e.product_id ASC"
             );
             $stmt->execute([$keyword]);
         } else {
@@ -295,7 +302,7 @@ switch ($action) {
                 ? 1
                 : max(1, (int)ceil($item['total_qty'] / max(1, $item['bucket_qty'])));
             $item['search_type'] = $searchType;
-            $item['is_editable'] = $searchType === 'command';
+            $item['is_editable'] = false;
         }
 
         echo json_encode([
@@ -337,6 +344,41 @@ switch ($action) {
             'success'     => true,
             'shelves'     => $shelves,
             'total_stock' => (float)$total_stock,
+        ]);
+        break;
+
+    case 'get_aux_stock_by_product':
+        require_role(['Admin','Leader','Manager','Staff']);
+        $product_id = strtoupper(trim($_GET['product_id'] ?? ''));
+        if ($product_id === '') {
+            echo json_encode(['success' => false, 'message' => 'Chua chon san pham']);
+            break;
+        }
+
+        $stmt = $pdo->prepare(
+            "SELECT it.pallet_id,
+                    SUM(it.qty) AS qty
+             FROM import_temp it
+             WHERE UPPER(TRIM(it.part_no)) = ?
+               AND (it.status IS NULL OR TRIM(it.status) = '')
+             GROUP BY it.pallet_id
+             HAVING SUM(it.qty) > 0
+             ORDER BY SUM(it.qty) DESC, it.pallet_id ASC"
+        );
+        $stmt->execute([$product_id]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $total_aux = 0;
+        foreach ($rows as &$row) {
+            $row['qty'] = (float)$row['qty'];
+            $total_aux += $row['qty'];
+        }
+
+        echo json_encode([
+            'success' => true,
+            'product_id' => $product_id,
+            'total_aux' => (float)$total_aux,
+            'pallets' => $rows,
         ]);
         break;
 
@@ -783,8 +825,16 @@ switch ($action) {
             $stmt = $pdo->prepare("INSERT INTO transactions (product_id, shelf_id, quantity, type, created_by, created_at) VALUES (?, ?, ?, 'OUT', ?, NOW())");
             $stmt->execute([$p_pk, $s_pk, $qty, $created_by]);
 
+            $transactionTime = date('Y-m-d H:i:s');
+
             $pdo->commit();
-            echo json_encode(['success' => true]);
+            echo json_encode([
+                'success' => true,
+                'transaction_time' => $transactionTime,
+                'shelf_id' => $shelf_id,
+                'product_id' => $product_id,
+                'quantity' => $qty,
+            ]);
         } catch (Exception $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             echo json_encode(['success' => false, 'message' => $e->getMessage()]);

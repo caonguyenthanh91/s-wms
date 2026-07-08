@@ -9,316 +9,617 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
 ?>
 
 <style>
-    .wizard-step-hidden {
+    .pda-picking-wrap {
+        max-width: 460px;
+        margin: 0 auto;
+    }
+
+    .pda-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    }
+
+    .pda-title {
+        font-size: 1.15rem;
+        font-weight: 900;
+        letter-spacing: 0.01em;
+        color: #0f172a;
+    }
+
+    .pda-subtitle {
+        font-size: 0.8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #64748b;
+    }
+
+    .pda-input {
+        width: 100%;
+        border: 2px solid #cbd5e1;
+        border-radius: 12px;
+        padding: 12px 44px 12px 14px;
+        font-size: 1.05rem;
+        font-weight: 700;
+        text-align: center;
+        text-transform: uppercase;
+        outline: none;
+        background: #fff;
+    }
+
+    .pda-input:focus {
+        border-color: #0ea5e9;
+    }
+
+    .pda-input[disabled] {
+        background: #f8fafc;
+        color: #94a3b8;
+    }
+
+    .pda-btn {
+        width: 100%;
+        border: 0;
+        border-radius: 12px;
+        padding: 12px;
+        font-size: 1rem;
+        font-weight: 800;
+        transition: all 0.18s ease;
+    }
+
+    .pda-btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+    }
+
+    .pda-btn-primary {
+        background: #0284c7;
+        color: #fff;
+    }
+
+    .pda-btn-primary:hover:not(:disabled) {
+        background: #0369a1;
+    }
+
+    .pda-btn-success {
+        background: #16a34a;
+        color: #fff;
+    }
+
+    .pda-btn-success:hover:not(:disabled) {
+        background: #15803d;
+    }
+
+    .pda-btn-amber {
+        background: #d97706;
+        color: #fff;
+    }
+
+    .pda-btn-amber:hover:not(:disabled) {
+        background: #b45309;
+    }
+
+    .pda-btn-muted {
+        background: #e2e8f0;
+        color: #0f172a;
+    }
+
+    .pda-step {
         display: none;
     }
-    @media (min-width: 1024px) {
-        .wizard-step-hidden {
-            display: block;
+
+    .pda-step.active {
+        display: block;
+    }
+
+    .pda-step-index {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 6px;
+    }
+
+    .pda-step-pill {
+        border-radius: 999px;
+        border: 1px solid #cbd5e1;
+        background: #f8fafc;
+        color: #64748b;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-align: center;
+        padding: 6px 4px;
+    }
+
+    .pda-step-pill.done {
+        border-color: #16a34a;
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .pda-step-pill.current {
+        border-color: #0284c7;
+        background: #e0f2fe;
+        color: #0c4a6e;
+    }
+
+    .pda-top-index {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .pda-kpi {
+        border-radius: 10px;
+        border: 1px solid #cbd5e1;
+        background: #f8fafc;
+        padding: 8px;
+        text-align: center;
+    }
+
+    .pda-kpi-label {
+        font-size: 0.66rem;
+        font-weight: 700;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+    }
+
+    .pda-kpi-value {
+        margin-top: 4px;
+        font-size: 0.96rem;
+        font-weight: 900;
+        color: #0f172a;
+        word-break: break-all;
+    }
+
+    .pda-shelf-list {
+        max-height: 190px;
+        overflow-y: auto;
+    }
+
+    .pda-shelf-item {
+        width: 100%;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        padding: 10px;
+        text-align: left;
+        margin-bottom: 8px;
+        background: #ffffff;
+    }
+
+    .pda-shelf-item.selected {
+        border-color: #0284c7;
+        background: #e0f2fe;
+    }
+
+    .pda-shelf-item.locked {
+        opacity: 0.6;
+    }
+
+    .pda-msg-error {
+        color: #b91c1c;
+        font-size: 0.86rem;
+        font-weight: 700;
+    }
+
+    .pda-msg-info {
+        color: #0369a1;
+        font-size: 0.84rem;
+        font-weight: 700;
+    }
+
+    .pda-history-wrap {
+        max-height: 250px;
+        overflow-y: auto;
+    }
+
+    .pda-history-table th,
+    .pda-history-table td {
+        padding: 6px 8px;
+        font-size: 0.78rem;
+        border-bottom: 1px solid #e2e8f0;
+        white-space: nowrap;
+    }
+
+    @media (min-width: 768px) {
+        .pda-picking-wrap {
+            max-width: 680px;
         }
     }
 </style>
 
-<div class="max-w-6xl mx-auto">
-    <div class="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white rounded-2xl shadow-xl p-5 sm:p-6 mb-4 sm:mb-6 border border-slate-700">
-        <div class="flex flex-col gap-4">
-            <div class="flex items-start justify-between gap-4">
-                <div>
-                    <div class="text-xs sm:text-sm uppercase tracking-[0.3em] text-slate-400">Picking</div>
-                    <h3 class="text-2xl sm:text-3xl font-black mt-2">Quét QR - Chọn kệ - Xác nhận - Trừ tồn</h3>
-                    <p class="hidden lg:block text-slate-300 mt-2 max-w-3xl">Luôn hoàn thành đúng bước trước khi sang bước sau. QR sản phẩm phải có dạng [mã_hàng]$[số_lượng]. QR kệ phải trùng đúng vị trí đã chọn. Khi tồn một kệ không đủ, hệ thống sẽ tự chuyển sang kệ tiếp theo theo thứ tự tồn ít đến nhiều.</p>
-                </div>
-                <div class="text-right">
-                    <div class="text-[10px] uppercase tracking-[0.25em] text-slate-400">Trạng thái</div>
-                    <div id="workflow-status" class="font-bold text-emerald-300 mt-1 text-sm sm:text-base">Chờ quét QR</div>
-                </div>
-            </div>
+<div class="pda-picking-wrap pb-4">
+    <div class="pda-card p-3 mb-3">
+        <div class="flex items-center justify-between gap-2">
+            <div class="pda-title">Picking PDA 4 bước</div>
+            <div id="workflow-status" class="text-xs font-bold text-sky-700">Chờ lệnh pick</div>
+        </div>
 
-            <div class="grid grid-cols-3 gap-3 sm:gap-4 text-center text-xs sm:text-sm">
-                <div class="rounded-xl bg-white/10 border border-white/10 p-3">
-                    <div class="text-slate-400 text-[10px] uppercase">Mã hàng</div>
-                    <div id="summary-product" class="font-mono font-bold mt-1 truncate">-</div>
-                </div>
-                <div class="rounded-xl bg-white/10 border border-white/10 p-3">
-                    <div class="text-slate-400 text-[10px] uppercase">Cần pick</div>
-                    <div id="summary-needed" class="font-bold mt-1">0</div>
-                </div>
-                <div class="rounded-xl bg-white/10 border border-white/10 p-3">
-                    <div class="text-slate-400 text-[10px] uppercase">Còn lại</div>
-                    <div id="summary-remaining" class="font-bold mt-1">0</div>
-                </div>
+        <div class="pda-step-index mt-3">
+            <div id="step-pill-1" class="pda-step-pill current">1. QR lệnh</div>
+            <div id="step-pill-2" class="pda-step-pill">2. Vị trí</div>
+            <div id="step-pill-3" class="pda-step-pill">3. Quét thùng</div>
+            <div id="step-pill-4" class="pda-step-pill">4. Hoàn tất</div>
+        </div>
+
+        <div class="pda-top-index mt-3">
+            <div class="pda-kpi">
+                <div class="pda-kpi-label">Mã hàng</div>
+                <div id="summary-product" class="pda-kpi-value">-</div>
+            </div>
+            <div class="pda-kpi">
+                <div class="pda-kpi-label">Mã kệ</div>
+                <div id="summary-shelf" class="pda-kpi-value">-</div>
+            </div>
+            <div class="pda-kpi">
+                <div class="pda-kpi-label">Đã pick / cần</div>
+                <div id="summary-progress" class="pda-kpi-value">0 / 0</div>
             </div>
         </div>
     </div>
 
-    <div class="lg:hidden mb-4">
-        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-sm text-slate-600 flex items-center justify-between">
-            <span class="font-bold text-slate-800">Bước hiện tại</span>
-            <span id="mobile-step-label">1/3</span>
+    <div id="step-1" class="pda-step active pda-card p-3 mb-3">
+        <div class="pda-subtitle">Bước 1</div>
+        <div class="pda-title mt-1">Quét QR lệnh picking</div>
+        <div class="text-xs text-slate-500 mt-1">Định dạng bắt buộc: [MÃ HÀNG]$[SỐ LƯỢNG]</div>
+
+        <div class="relative mt-3">
+            <input type="text" id="pick-order-input" class="pda-input" placeholder="VD: ABC123$24">
+            <button type="button" onclick="openQRScannerModal('pick-order-input', 'QR Lệnh Picking')" class="absolute right-3 top-1/2 -translate-y-1/2 text-sky-600">
+                <i class="fas fa-qrcode text-lg"></i>
+            </button>
         </div>
+
+        <div class="mt-3">
+            <button type="button" class="pda-btn pda-btn-primary" onclick="handleStep1OrderScan()">Xác nhận QR lệnh</button>
+        </div>
+
+        <div id="step1-error" class="pda-msg-error mt-2 hidden"></div>
+        <div id="step1-info" class="pda-msg-info mt-2 hidden"></div>
     </div>
 
-    <div class="grid grid-cols-1 xl:grid-cols-5 gap-4 sm:gap-6">
-        <div class="xl:col-span-2 space-y-4 sm:space-y-6">
-            <div id="step-1" class="bg-white rounded-2xl shadow-md border border-slate-200 p-5 sm:p-6">
-                <div class="flex items-start justify-between gap-4">
-                    <div>
-                        <div class="text-xs uppercase tracking-[0.25em] text-slate-400">Bước 1</div>
-                        <h4 class="text-xl sm:text-2xl font-black text-slate-800 mt-1">Quét QR sản phẩm</h4>
-                        <p class="hidden sm:block text-sm text-slate-500 mt-2">Nhập hoặc quét QR có dạng [mã_hàng]$[số_lượng].</p>
-                    </div>
-                    <div class="text-4xl sm:text-5xl">📦</div>
-                </div>
+    <div id="step-2" class="pda-step pda-card p-3 mb-3">
+        <div class="pda-subtitle">Bước 2</div>
+        <div class="pda-title mt-1">Chọn đúng vị trí và quét QR kệ</div>
+        <div class="text-xs text-slate-500 mt-1">Chỉ cho phép chọn vị trí đầu tiên trong danh sách (tồn thấp nhất).</div>
 
-                <div class="mt-4 sm:mt-5 space-y-3">
-                    <div class="relative">
-                        <input type="text" id="product-scan-input" placeholder="VD: ABC123$24"
-                            class="w-full px-4 py-3 pr-11 border-2 border-slate-300 rounded-xl text-center text-base sm:text-lg uppercase font-mono focus:border-sky-600 outline-none">
-                        <button type="button" onclick="openQRScannerModal('product-scan-input', 'QR Sản Phẩm')" class="absolute right-3 top-1/2 -translate-y-1/2 text-sky-600 hover:text-sky-800">
-                            <i class="fas fa-qrcode text-lg"></i>
-                        </button>
-                    </div>
-                    <button onclick="parseProductQr()" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold py-3 rounded-xl transition">Xác nhận QR sản phẩm</button>
-                    <p id="product-error" class="text-sm text-red-600 hidden"></p>
-                </div>
-            </div>
+        <div class="mt-3 pda-shelf-list" id="shelf-list"></div>
 
-            <div id="step-2" class="bg-white rounded-2xl shadow-md border border-slate-200 p-5 sm:p-6 wizard-step-hidden">
-                <div class="flex items-start justify-between gap-4">
-                    <div>
-                        <div class="text-xs uppercase tracking-[0.25em] text-slate-400">Bước 2</div>
-                        <h4 class="text-xl sm:text-2xl font-black text-slate-800 mt-1">Chọn vị trí kệ</h4>
-                        <p class="hidden sm:block text-sm text-slate-500 mt-2">Danh sách kệ được sắp xếp theo tồn ít đến nhiều.</p>
-                    </div>
-                    <div class="text-4xl sm:text-5xl">🏷️</div>
-                </div>
-
-                <div id="shelf-selection-wrap" class="mt-4 sm:mt-5 hidden">
-                    <div class="rounded-xl bg-slate-50 border border-slate-200 p-3 sm:p-4 mb-4">
-                        <div class="flex flex-wrap gap-3 text-sm">
-                            <div><span class="text-slate-400">Sản phẩm:</span> <span id="selected-product-label" class="font-mono font-bold text-slate-800">-</span></div>
-                            <div><span class="text-slate-400">Cần lấy:</span> <span id="selected-needed-label" class="font-bold text-slate-800">0</span></div>
-                        </div>
-                    </div>
-
-                    <div id="shelf-list" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
-                </div>
-
-                <div id="shelf-empty-state" class="mt-5 text-sm text-slate-500 italic">Hoàn thành bước 1 để tải vị trí kệ.</div>
-            </div>
+        <div class="relative mt-2">
+            <input type="text" id="shelf-qr-input" class="pda-input" placeholder="Quét QR mã vị trí" disabled>
+            <button type="button" onclick="openQRScannerModal('shelf-qr-input', 'QR Mã Vị Trí')" class="absolute right-3 top-1/2 -translate-y-1/2 text-amber-600">
+                <i class="fas fa-qrcode text-lg"></i>
+            </button>
         </div>
 
-        <div class="xl:col-span-3 space-y-4 sm:space-y-6">
-            <div id="step-3" class="bg-white rounded-2xl shadow-md border border-slate-200 p-5 sm:p-6 wizard-step-hidden">
-                <div class="flex items-start justify-between gap-4">
-                    <div>
-                        <div class="text-xs uppercase tracking-[0.25em] text-slate-400">Bước 3</div>
-                        <h4 class="text-xl sm:text-2xl font-black text-slate-800 mt-1">Xác nhận đúng kệ và nhập số lượng</h4>
-                        <p class="hidden sm:block text-sm text-slate-500 mt-2">Chỉ cho phép tiếp tục khi QR kệ khớp với kệ đã chọn và chuỗi quét sản phẩm có chứa mã hàng.</p>
-                    </div>
-                    <div class="text-4xl sm:text-5xl">✅</div>
-                </div>
+        <div class="mt-3">
+            <button type="button" class="pda-btn pda-btn-amber" id="btn-confirm-shelf" onclick="confirmShelfQr()" disabled>Xác nhận đúng vị trí</button>
+        </div>
 
-                <div class="mt-4 sm:mt-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div>
-                        <label class="text-xs font-bold uppercase tracking-[0.2em] text-slate-400 mb-2 block">Kệ đã chọn</label>
-                        <div id="selected-shelf-card" class="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-slate-500">Chưa chọn kệ</div>
-                    </div>
-                    <div>
-                        <label class="text-xs font-bold uppercase tracking-[0.2em] text-slate-400 mb-2 block">QR kệ cần quét</label>
-                        <div class="relative">
-                            <input type="text" id="shelf-scan-input" placeholder="Quét mã kệ tại vị trí này"
-                                class="w-full px-4 py-3 pr-11 border-2 border-slate-300 rounded-xl text-center text-base sm:text-lg uppercase font-mono focus:border-amber-500 outline-none" disabled>
-                            <button type="button" onclick="openQRScannerModal('shelf-scan-input', 'QR Mã Kệ')" class="absolute right-3 top-1/2 -translate-y-1/2 text-amber-600 hover:text-amber-800">
-                                <i class="fas fa-qrcode text-lg"></i>
-                            </button>
-                        </div>
-                        <p id="shelf-error" class="mt-2 text-sm text-red-600 hidden"></p>
-                    </div>
-                </div>
+        <div id="step2-error" class="pda-msg-error mt-2 hidden"></div>
+    </div>
 
-                <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="md:col-span-2">
-                        <label class="text-xs font-bold uppercase tracking-[0.2em] text-slate-400 mb-2 block">Chuỗi quét sản phẩm</label>
-                        <div class="relative">
-                            <input type="text" id="product-confirm-input" placeholder="Quét QR hoặc nhập chuỗi chứa mã hàng"
-                                class="w-full px-4 py-3 pr-11 border-2 border-slate-300 rounded-xl text-center text-base sm:text-lg uppercase font-mono focus:border-emerald-500 outline-none" disabled>
-                            <button type="button" onclick="openQRScannerModal('product-confirm-input', 'Xác Nhận Sản Phẩm')" class="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-600 hover:text-emerald-800">
-                                <i class="fas fa-qrcode text-lg"></i>
-                            </button>
-                        </div>
-                        <p id="confirm-error" class="mt-2 text-sm text-red-600 hidden"></p>
-                    </div>
-                    <div>
-                        <label class="text-xs font-bold uppercase tracking-[0.2em] text-slate-400 mb-2 block">Số lượng cần lấy</label>
-                        <input type="number" id="pick-qty-input" min="1" placeholder="0"
-                            class="w-full px-4 py-3 border-2 border-slate-300 rounded-xl text-center text-base sm:text-lg font-bold focus:border-emerald-500 outline-none bg-slate-50" disabled>
-                    </div>
-                </div>
+    <div id="step-3" class="pda-step pda-card p-3 mb-3">
+        <div class="pda-subtitle">Bước 3</div>
+        <div class="pda-title mt-1">Quét thùng hàng và xác nhận số lượng</div>
+        <div class="text-xs text-slate-500 mt-1">Định dạng quét thùng: [TEXT]$[MÃ HÀNG]$[TEXT]$[SỐ LƯỢNG]$...</div>
 
-                <div class="mt-4 flex flex-col sm:flex-row gap-3">
-                    <button id="btn-submit-pick" onclick="submitPickQty()" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>Xác nhận trừ tồn</button>
-                    <button onclick="resetPicking(true)" class="sm:w-40 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-3 rounded-xl transition">Làm lại</button>
-                </div>
-            </div>
+        <div class="relative mt-3">
+            <input type="text" id="box-qr-input" class="pda-input" placeholder="Quét QR trên thùng" disabled>
+            <button type="button" onclick="openQRScannerModal('box-qr-input', 'QR Thùng Hàng')" class="absolute right-3 top-1/2 -translate-y-1/2 text-green-600">
+                <i class="fas fa-qrcode text-lg"></i>
+            </button>
+        </div>
 
-            <div class="bg-white rounded-2xl shadow-md border border-slate-200 p-5 sm:p-6">
-                <div class="flex items-center justify-between gap-4 mb-4">
-                    <div>
-                        <div class="text-xs uppercase tracking-[0.25em] text-slate-400">Theo dõi</div>
-                        <h4 class="text-lg sm:text-xl font-black text-slate-800 mt-1">Lịch sử pick đang thực hiện</h4>
-                    </div>
-                    <div class="text-sm text-slate-500"><span class="font-bold text-slate-800" id="picked-count">0</span> dòng</div>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead>
-                            <tr class="bg-slate-100 text-slate-600 uppercase text-xs">
-                                <th class="p-2 text-left">Kệ</th>
-                                <th class="p-2 text-left">Sản phẩm</th>
-                                <th class="p-2 text-right">Số lượng</th>
-                                <th class="p-2 text-right">Trạng thái</th>
-                            </tr>
-                        </thead>
-                        <tbody id="pick-history"></tbody>
-                    </table>
-                </div>
-            </div>
+        <div class="mt-2">
+            <button type="button" class="pda-btn pda-btn-primary" id="btn-parse-box" onclick="parseBoxQrAndSuggestQty()" disabled>Đọc QR thùng</button>
+        </div>
+
+        <div class="mt-3">
+            <input type="number" id="pick-qty-input" class="pda-input" min="1" placeholder="Số lượng pick" disabled>
+        </div>
+
+        <div class="mt-2 text-xs text-slate-600">
+            Tối đa mỗi lần: <span id="step3-max-qty" class="font-bold text-slate-900">0</span>
+        </div>
+
+        <div class="mt-3">
+            <button type="button" class="pda-btn pda-btn-success" id="btn-submit-pick" onclick="submitPickFromCurrentShelf()" disabled>OK - Cộng dồn và trừ tồn</button>
+        </div>
+
+        <div id="step3-error" class="pda-msg-error mt-2 hidden"></div>
+    </div>
+
+    <div id="step-4" class="pda-step active pda-card p-3">
+        <div class="pda-subtitle">Bước 4</div>
+        <div class="pda-title mt-1">Hoàn tất lệnh và theo dõi lịch sử</div>
+
+        <div class="mt-3">
+            <button type="button" class="pda-btn pda-btn-success" id="btn-finish-order" disabled onclick="finishCurrentPickingOrder()">Xác nhận hoàn thành</button>
+        </div>
+
+        <div class="mt-3 pda-history-wrap">
+            <table class="w-full pda-history-table">
+                <thead>
+                    <tr class="bg-slate-100 text-slate-700 text-left">
+                        <th>Vị trí</th>
+                        <th>Mã hàng</th>
+                        <th>SL pick</th>
+                        <th>Thời điểm</th>
+                    </tr>
+                </thead>
+                <tbody id="pick-history-body"></tbody>
+            </table>
         </div>
     </div>
 </div>
 
 <script>
-let pickState = {
+let pickingState = {
     productId: '',
-    requiredQty: 0,
-    remainingQty: 0,
     productName: '',
-    unit: '',
-    shelfInventory: [],
+    requiredQty: 0,
+    pickedQty: 0,
+    shelves: [],
     selectedShelf: null,
     shelfConfirmed: false,
     productConfirmed: false,
-    pickHistory: [],
-    loading: false,
-    ready: false,
+    busy: false,
+    history: []
 };
 
-function setWorkflowStatus(text, tone) {
-    $('#workflow-status').text(text);
-    $('#workflow-status').removeClass('text-emerald-300 text-red-300 text-amber-300 text-sky-300');
-    $('#workflow-status').addClass(tone || 'text-emerald-300');
+function normalizeQrText(text) {
+    return (text || '')
+        .replace(/\uFF04/g, '$')
+        .replace(/\\\$/g, '$')
+        .replace(/&#36;/g, '$')
+        .trim()
+        .toUpperCase();
 }
 
-function showFieldError(selector, message) {
-    $(selector).text(message).removeClass('hidden');
+function showError(selector, message) {
+    $(selector).removeClass('hidden').text(message || 'Có lỗi xảy ra.');
 }
 
-function hideFieldError(selector) {
+function hideError(selector) {
     $(selector).addClass('hidden').text('');
 }
 
-function normalizeQrText(text) {
-    return (text || '').trim().toUpperCase();
+function showInfoStep1(message) {
+    if (!message) {
+        $('#step1-info').addClass('hidden').text('');
+        return;
+    }
+    $('#step1-info').removeClass('hidden').text(message);
 }
 
-function setVisibleStep(stepNumber) {
-    const isDesktop = window.innerWidth >= 1024;
-    $('#mobile-step-label').text(stepNumber + '/3');
+function setWorkflowStatus(text, toneClass) {
+    const el = $('#workflow-status');
+    el.text(text || '');
+    el.removeClass('text-sky-700 text-red-700 text-green-700 text-amber-700');
+    el.addClass(toneClass || 'text-sky-700');
+}
 
-    if (isDesktop) {
-        $('#step-2, #step-3').removeClass('wizard-step-hidden').show();
+function updateTopSummary() {
+    $('#summary-product').text(pickingState.productId || '-');
+    $('#summary-shelf').text(pickingState.selectedShelf ? pickingState.selectedShelf.shelf_id : '-');
+    $('#summary-progress').text(`${pickingState.pickedQty} / ${pickingState.requiredQty}`);
+}
+
+function setStepState(currentStep) {
+    for (let i = 1; i <= 4; i++) {
+        const pill = $(`#step-pill-${i}`);
+        pill.removeClass('current done');
+        if (i < currentStep) {
+            pill.addClass('done');
+        } else if (i === currentStep) {
+            pill.addClass('current');
+        }
+    }
+
+    $('#step-1').toggleClass('active', currentStep === 1);
+    $('#step-2').toggleClass('active', currentStep === 2);
+    $('#step-3').toggleClass('active', currentStep === 3);
+
+    if (currentStep >= 4) {
+        $('#step-pill-4').addClass('current');
+    }
+}
+
+function sortShelvesByQtyAndCode(rows) {
+    return (rows || [])
+        .map(function(row) {
+            return {
+                shelf_id: normalizeQrText(row.shelf_id),
+                shelf_name: row.shelf_name || '',
+                qty: parseFloat(row.qty || 0)
+            };
+        })
+        .filter(function(row) {
+            return row.shelf_id && row.qty > 0;
+        })
+        .sort(function(a, b) {
+            if (a.qty === b.qty) {
+                return a.shelf_id.localeCompare(b.shelf_id, undefined, { numeric: true });
+            }
+            return a.qty - b.qty;
+        });
+}
+
+function renderShelfList() {
+    const list = $('#shelf-list');
+    list.empty();
+
+    if (!pickingState.shelves.length) {
+        list.html('<div class="text-sm text-red-700 font-bold">Không còn vị trí tồn kho chính để pick.</div>');
         return;
     }
 
-    $('#step-2').toggleClass('wizard-step-hidden', stepNumber !== 2);
-    $('#step-3').toggleClass('wizard-step-hidden', stepNumber !== 3);
+    const topShelfId = pickingState.shelves[0].shelf_id;
+
+    pickingState.shelves.forEach(function(shelf) {
+        const isTop = shelf.shelf_id === topShelfId;
+        const isSelected = pickingState.selectedShelf && pickingState.selectedShelf.shelf_id === shelf.shelf_id;
+        const cls = [
+            'pda-shelf-item',
+            isSelected ? 'selected' : '',
+            !isTop ? 'locked' : ''
+        ].join(' ').trim();
+
+        const btnLabel = isTop ? 'Chọn vị trí này' : 'Chỉ chọn khi lên đầu danh sách';
+        const shelfName = shelf.shelf_name && shelf.shelf_name !== shelf.shelf_id ? ` - ${shelf.shelf_name}` : '';
+
+        list.append(`
+            <button type="button" class="${cls}" onclick="selectShelf('${shelf.shelf_id}')">
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <div class="text-xs text-slate-500">Mã vị trí${shelfName}</div>
+                        <div class="font-black text-slate-900">${shelf.shelf_id}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs text-slate-500">Tồn</div>
+                        <div class="text-xl font-black text-slate-900">${shelf.qty}</div>
+                    </div>
+                </div>
+                <div class="text-xs mt-1 ${isTop ? 'text-sky-700' : 'text-slate-500'}">${btnLabel}</div>
+            </button>
+        `);
+    });
 }
 
-function revealStep2() {
-    $('#shelf-selection-wrap').removeClass('hidden');
-    $('#shelf-empty-state').addClass('hidden');
-    setVisibleStep(2);
+function resetStep2And3Inputs() {
+    pickingState.shelfConfirmed = false;
+    pickingState.productConfirmed = false;
+
+    $('#shelf-qr-input').val('');
+    $('#box-qr-input').val('');
+    $('#pick-qty-input').val('');
+
+    $('#box-qr-input').prop('disabled', true);
+    $('#pick-qty-input').prop('disabled', true);
+    $('#btn-parse-box').prop('disabled', true);
+    $('#btn-submit-pick').prop('disabled', true);
+    $('#step3-max-qty').text('0');
+
+    hideError('#step2-error');
+    hideError('#step3-error');
+    updateTopSummary();
 }
 
-function revealStep3() {
-    setVisibleStep(3);
+function selectShelf(shelfId) {
+    if (!pickingState.shelves.length) return;
+
+    const target = normalizeQrText(shelfId);
+    const topShelf = pickingState.shelves[0];
+
+    if (!topShelf || target !== topShelf.shelf_id) {
+        showError('#step2-error', 'Chỉ được chọn vị trí đầu tiên (tồn thấp nhất).');
+        return;
+    }
+
+    pickingState.selectedShelf = { ...topShelf };
+    $('#shelf-qr-input').prop('disabled', false).focus();
+    $('#btn-confirm-shelf').prop('disabled', false);
+    hideError('#step2-error');
+    setWorkflowStatus('Đã chọn vị trí đầu danh sách, quét QR kệ để xác nhận.', 'text-amber-700');
+
+    resetStep2And3Inputs();
+    renderShelfList();
+    updateTopSummary();
 }
 
-function resetPicking(clearProduct) {
-    pickState = {
+function parsePickOrderQr(raw) {
+    const text = normalizeQrText(raw);
+    if (!text || text.indexOf('$') === -1) return null;
+
+    const parts = text.split('$').map(function(part) {
+        return part.trim();
+    });
+    if (parts.length !== 2) return null;
+
+    const productId = parts[0];
+    const requiredQty = parseInt(parts[1], 10);
+    if (!productId || isNaN(requiredQty) || requiredQty <= 0) return null;
+
+    return { productId, requiredQty };
+}
+
+function buildAuxStockMessage(auxRes) {
+    if (!auxRes || !auxRes.success) {
+        return 'Kho chính không có tồn. Không đọc được dữ liệu kho phụ.';
+    }
+
+    const pallets = Array.isArray(auxRes.pallets) ? auxRes.pallets : [];
+    if (!pallets.length) {
+        return 'Kho chính không có tồn. Kho phụ cũng không có tồn khả dụng trong import_temp.';
+    }
+
+    const firstPallets = pallets.slice(0, 6).map(function(row) {
+        return `${row.pallet_id}: ${row.qty}`;
+    }).join(' | ');
+
+    return `Kho chính không có tồn. Kho phụ đang có ${auxRes.total_aux} tại pallet: ${firstPallets}`;
+}
+
+function resetPickingJob(clearInput) {
+    pickingState = {
         productId: '',
-        requiredQty: 0,
-        remainingQty: 0,
         productName: '',
-        unit: '',
-        shelfInventory: [],
+        requiredQty: 0,
+        pickedQty: 0,
+        shelves: [],
         selectedShelf: null,
         shelfConfirmed: false,
         productConfirmed: false,
-        pickHistory: [],
-        loading: false,
-        ready: false,
+        busy: false,
+        history: []
     };
 
-    $('#shelf-selection-wrap').addClass('hidden');
-    $('#shelf-empty-state').removeClass('hidden').text('Hoàn thành bước 1 để tải vị trí kệ.');
     $('#shelf-list').empty();
-    $('#selected-product-label').text('-');
-    $('#selected-needed-label').text('0');
-    $('#selected-shelf-card').html('Chưa chọn kệ');
-    $('#shelf-scan-input').val('').prop('disabled', true);
-    $('#product-confirm-input').val('').prop('disabled', true);
+    $('#shelf-qr-input').val('').prop('disabled', true);
+    $('#btn-confirm-shelf').prop('disabled', true);
+    $('#box-qr-input').val('').prop('disabled', true);
     $('#pick-qty-input').val('').prop('disabled', true);
+    $('#btn-parse-box').prop('disabled', true);
     $('#btn-submit-pick').prop('disabled', true);
-    $('#pick-history').empty();
-    $('#picked-count').text('0');
-    $('#summary-product').text('-');
-    $('#summary-needed').text('0');
-    $('#summary-remaining').text('0');
-    setWorkflowStatus('Chờ quét QR', 'text-emerald-300');
-    hideFieldError('#product-error');
-    hideFieldError('#shelf-error');
-    hideFieldError('#confirm-error');
-    setVisibleStep(1);
+    $('#btn-finish-order').prop('disabled', true);
+    $('#step3-max-qty').text('0');
+    $('#pick-history-body').empty();
 
-    if (clearProduct) {
-        $('#product-scan-input').val('').focus();
+    hideError('#step1-error');
+    hideError('#step2-error');
+    hideError('#step3-error');
+    showInfoStep1('');
+
+    setWorkflowStatus('Chờ lệnh pick', 'text-sky-700');
+    setStepState(1);
+    updateTopSummary();
+
+    if (clearInput) {
+        $('#pick-order-input').val('').focus();
     }
 }
 
-function parseProductQr() {
-    if (pickState.loading) return;
+function handleStep1OrderScan() {
+    if (pickingState.busy) return;
 
-    const raw = normalizeQrText($('#product-scan-input').val());
-    if (!raw) {
-        showFieldError('#product-error', 'Hãy quét QR sản phẩm trước.');
+    hideError('#step1-error');
+    showInfoStep1('');
+
+    const parsedOrder = parsePickOrderQr($('#pick-order-input').val());
+    if (!parsedOrder) {
+        showError('#step1-error', 'QR lệnh không hợp lệ. Cần đúng định dạng [MÃ HÀNG]$[SỐ LƯỢNG].');
         return;
     }
 
-    const parts = raw.split('$');
-    if (parts.length !== 2) {
-        showFieldError('#product-error', 'QR sản phẩm phải có dạng [mã_hàng]$[số_lượng].');
-        return;
-    }
+    pickingState.busy = true;
+    setWorkflowStatus('Đang kiểm tra mã hàng và tồn kho chính...', 'text-sky-700');
 
-    const productId = parts[0].trim();
-    const requiredQty = parseInt(parts[1], 10);
-
-    if (!productId || isNaN(requiredQty) || requiredQty <= 0) {
-        showFieldError('#product-error', 'QR sản phẩm không hợp lệ hoặc số lượng không đúng.');
-        return;
-    }
-
-    pickState.loading = true;
-    setWorkflowStatus('Đang kiểm tra sản phẩm...', 'text-sky-300');
-    hideFieldError('#product-error');
-
-    $.getJSON('api.php?action=check_product', { product_id: productId }, function(productRes) {
+    $.getJSON('api.php?action=check_product', { product_id: parsedOrder.productId }, function(productRes) {
         if (!productRes.success || !productRes.data) {
-            showFieldError('#product-error', `Mã hàng ${productId} chưa được đăng ký.`);
-            setWorkflowStatus('Lỗi kiểm tra sản phẩm', 'text-red-300');
-            pickState.loading = false;
+            showError('#step1-error', `Mã hàng ${parsedOrder.productId} chưa được đăng ký trong hệ thống.`);
+            setWorkflowStatus('Sai mã hàng', 'text-red-700');
+            pickingState.busy = false;
             return;
         }
 
@@ -326,309 +627,275 @@ function parseProductQr() {
             type: 'POST',
             url: 'api.php?action=get_shelf_inventory',
             dataType: 'json',
-            data: { product_id: productId },
+            data: { product_id: parsedOrder.productId },
             success: function(stockRes) {
-                pickState.loading = false;
+                const shelves = sortShelvesByQtyAndCode(stockRes.shelves || []);
+                const totalMain = parseFloat(stockRes.total_stock || 0);
 
-                if (!stockRes.success) {
-                    showFieldError('#product-error', stockRes.message || 'Không thể tải tồn kho theo kệ.');
-                    setWorkflowStatus('Lỗi tải tồn kho', 'text-red-300');
-                    return;
-                }
-
-                const shelves = Array.isArray(stockRes.shelves) ? stockRes.shelves : [];
-                const totalStock = parseFloat(stockRes.total_stock || 0);
-
-                if (totalStock < requiredQty) {
-                    showFieldError('#product-error', `Tồn kho hiện có ${totalStock} nhỏ hơn số cần pick ${requiredQty}.`);
-                    setWorkflowStatus('Tồn kho không đủ', 'text-red-300');
-                    return;
-                }
-
-                pickState.productId = productId;
-                pickState.requiredQty = requiredQty;
-                pickState.remainingQty = requiredQty;
-                pickState.productName = productRes.data.product_name || '';
-                pickState.unit = productRes.data.unit || '';
-                pickState.shelfInventory = shelves
-                    .map(function(item) {
-                        return {
-                            shelf_id: normalizeQrText(item.shelf_id),
-                            shelf_name: item.shelf_name || '',
-                            qty: parseFloat(item.qty || 0),
-                        };
-                    })
-                    .filter(function(item) { return item.qty > 0; })
-                    .sort(function(a, b) {
-                        if (a.qty === b.qty) {
-                            return a.shelf_id.localeCompare(b.shelf_id, undefined, { numeric: true });
-                        }
-                        return a.qty - b.qty;
+                if (!shelves.length || totalMain <= 0) {
+                    $.getJSON('api.php?action=get_aux_stock_by_product', { product_id: parsedOrder.productId }, function(auxRes) {
+                        showError('#step1-error', 'Không có tồn kho chính để pick.');
+                        showInfoStep1(buildAuxStockMessage(auxRes));
+                        setWorkflowStatus('Dừng tại bước 1: không có tồn chính', 'text-red-700');
+                        pickingState.busy = false;
+                    }).fail(function() {
+                        showError('#step1-error', 'Không có tồn kho chính để pick.');
+                        showInfoStep1('Không đọc được thông tin kho phụ.');
+                        setWorkflowStatus('Dừng tại bước 1: không có tồn chính', 'text-red-700');
+                        pickingState.busy = false;
                     });
-                pickState.shelfConfirmed = false;
-                pickState.productConfirmed = false;
-                pickState.selectedShelf = null;
-                pickState.ready = true;
+                    return;
+                }
 
-                $('#summary-product').text(productId);
-                $('#summary-needed').text(requiredQty);
-                $('#summary-remaining').text(requiredQty);
-                $('#selected-product-label').text(`${productId}${pickState.productName ? ' - ' + pickState.productName : ''}`);
-                $('#selected-needed-label').text(requiredQty);
+                pickingState.productId = parsedOrder.productId;
+                pickingState.productName = productRes.data.product_name || '';
+                pickingState.requiredQty = parsedOrder.requiredQty;
+                pickingState.pickedQty = 0;
+                pickingState.shelves = shelves;
+                pickingState.selectedShelf = null;
+                pickingState.history = [];
+                resetStep2And3Inputs();
+
+                $('#pick-history-body').empty();
+                $('#btn-finish-order').prop('disabled', true);
                 renderShelfList();
-                revealStep2();
-                setWorkflowStatus('Đã sẵn sàng chọn kệ', 'text-emerald-300');
+                setStepState(2);
+                updateTopSummary();
+                setWorkflowStatus('Chọn vị trí đầu danh sách và quét QR kệ.', 'text-amber-700');
+                pickingState.busy = false;
             },
             error: function() {
-                pickState.loading = false;
-                showFieldError('#product-error', 'Lỗi kết nối khi tải tồn kho theo kệ.');
-                setWorkflowStatus('Lỗi kết nối', 'text-red-300');
+                showError('#step1-error', 'Không thể tải tồn kho chính.');
+                setWorkflowStatus('Lỗi kết nối', 'text-red-700');
+                pickingState.busy = false;
             }
         });
     }).fail(function() {
-        pickState.loading = false;
-        showFieldError('#product-error', 'Lỗi kết nối khi kiểm tra sản phẩm.');
-        setWorkflowStatus('Lỗi kết nối', 'text-red-300');
+        showError('#step1-error', 'Không thể kiểm tra thông tin sản phẩm.');
+        setWorkflowStatus('Lỗi kết nối', 'text-red-700');
+        pickingState.busy = false;
     });
 }
 
-function renderShelfList() {
-    const list = $('#shelf-list');
-    list.empty();
-
-    if (!pickState.shelfInventory.length) {
-        list.html('<div class="md:col-span-2 rounded-xl border border-dashed border-slate-300 p-4 text-slate-500 italic">Không có vị trí tồn kho hợp lệ.</div>');
+function confirmShelfQr() {
+    if (!pickingState.selectedShelf) {
+        showError('#step2-error', 'Hãy chọn vị trí đầu tiên trong danh sách trước.');
         return;
     }
 
-    pickState.shelfInventory.forEach(function(item, index) {
-        const isSelected = pickState.selectedShelf && pickState.selectedShelf.shelf_id === item.shelf_id;
-        const cls = isSelected
-            ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200'
-            : 'border-slate-200 bg-slate-50 hover:bg-slate-100';
-        const shelfLabel = item.shelf_name && item.shelf_name !== item.shelf_id ? item.shelf_name : '';
+    const scanned = normalizeQrText($('#shelf-qr-input').val());
+    const expected = normalizeQrText(pickingState.selectedShelf.shelf_id);
 
-        list.append(`
-            <button type="button" data-shelf-id="${item.shelf_id}" onclick="selectShelfById('${item.shelf_id}')" class="text-left rounded-xl border p-4 transition ${cls}">
-                <div class="flex items-start justify-between gap-3">
-                    <div>
-                        <div class="text-xs uppercase tracking-[0.2em] text-slate-400">Mã kệ</div>
-                        <div class="font-mono font-black text-slate-800">${item.shelf_id}</div>
-                        ${shelfLabel ? `<div class="hidden sm:block text-xs text-slate-500 mt-1">${shelfLabel}</div>` : ''}
-                    </div>
-                    <div class="text-right">
-                        <div class="text-xs uppercase tracking-[0.2em] text-slate-400">Tồn</div>
-                        <div class="text-xl font-black text-slate-800">${item.qty}</div>
-                    </div>
-                </div>
-            </button>
-        `);
-    });
-}
-
-function selectShelfById(shelfId) {
-    if (!pickState.ready) return;
-
-    const targetShelfId = normalizeQrText(shelfId);
-    const item = pickState.shelfInventory.find(function(entry) {
-        return entry.shelf_id === targetShelfId;
-    });
-
-    if (!item || item.qty <= 0) {
-        showFieldError('#shelf-error', 'Vị trí kệ không còn tồn hợp lệ.');
+    if (!scanned) {
+        showError('#step2-error', 'Hãy quét QR mã vị trí.');
         return;
     }
 
-    pickState.selectedShelf = item;
-    pickState.shelfConfirmed = false;
-    pickState.productConfirmed = false;
+    if (scanned !== expected) {
+        showError('#step2-error', `Sai vị trí. Cần ${expected} nhưng quét ${scanned}.`);
+        setWorkflowStatus('Sai QR vị trí', 'text-red-700');
+        return;
+    }
 
-    $('#selected-shelf-card').html(`
-        <div class="flex items-center justify-between gap-3">
-            <div>
-                <div class="text-xs uppercase tracking-[0.2em] text-slate-400">Mã kệ đã chọn</div>
-                <div class="font-mono text-xl font-black text-slate-800 mt-1">${item.shelf_id}</div>
-                ${item.shelf_name && item.shelf_name !== item.shelf_id ? `<div class="hidden sm:block text-sm text-slate-500">${item.shelf_name}</div>` : ''}
-                <div class="hidden sm:block text-sm text-slate-500">Tồn hiện tại: ${item.qty}</div>
-            </div>
-            <div class="text-3xl">📍</div>
-        </div>
-    `);
+    pickingState.shelfConfirmed = true;
+    hideError('#step2-error');
 
-    $('#shelf-scan-input').prop('disabled', false).val('').focus();
-    $('#product-confirm-input').prop('disabled', true).val('');
+    $('#box-qr-input').prop('disabled', false).val('').focus();
+    $('#btn-parse-box').prop('disabled', false);
     $('#pick-qty-input').prop('disabled', true).val('');
     $('#btn-submit-pick').prop('disabled', true);
-    hideFieldError('#shelf-error');
-    hideFieldError('#confirm-error');
-    revealStep3();
-    setWorkflowStatus(`Đã chọn kệ ${item.shelf_id}`, 'text-amber-300');
+
+    setStepState(3);
+    setWorkflowStatus(`Đã xác nhận đúng vị trí ${expected}.`, 'text-green-700');
 }
 
-function confirmShelfScan() {
-    if (!pickState.selectedShelf) {
-        showFieldError('#shelf-error', 'Hãy chọn kệ trước.');
-        return;
+function parseBoxQr(rawValue) {
+    const raw = normalizeQrText(rawValue);
+    if (!raw || raw.indexOf('$') === -1) return null;
+
+    const parts = raw.split('$').map(function(part) {
+        return part.trim();
+    });
+
+    if (parts.length < 4) return null;
+
+    const productId = (parts[1] || '').toUpperCase();
+    if (!productId) return null;
+
+    let qtyToken = '';
+    for (let i = parts.length - 1; i >= 3; i--) {
+        if (/^\d+$/.test(parts[i])) {
+            qtyToken = parts[i];
+            break;
+        }
     }
 
-    const scannedShelf = normalizeQrText($('#shelf-scan-input').val());
-    const targetShelf = normalizeQrText(pickState.selectedShelf.shelf_id);
+    const qty = parseInt(qtyToken, 10);
+    if (isNaN(qty) || qty <= 0) return null;
 
-    if (!scannedShelf) {
-        showFieldError('#shelf-error', 'Hãy quét mã kệ tại đúng vị trí đã chọn.');
-        return;
-    }
-
-    if (scannedShelf !== targetShelf) {
-        showFieldError('#shelf-error', `Sai mã kệ. Cần ${targetShelf} nhưng đã quét ${scannedShelf}.`);
-        setWorkflowStatus('Sai kệ đã quét', 'text-red-300');
-        return;
-    }
-
-    pickState.shelfConfirmed = true;
-    hideFieldError('#shelf-error');
-    $('#product-confirm-input').prop('disabled', false).val('').focus();
-    $('#pick-qty-input').prop('disabled', true).val('');
-    $('#btn-submit-pick').prop('disabled', true);
-    setWorkflowStatus(`Đã xác nhận đúng kệ ${targetShelf}`, 'text-emerald-300');
+    return { productId, qty };
 }
 
-function confirmProductScan() {
-    if (!pickState.shelfConfirmed || !pickState.selectedShelf) {
-        showFieldError('#confirm-error', 'Hãy xác nhận mã kệ trước.');
+function getMaxPickAllowedNow() {
+    if (!pickingState.selectedShelf) return 0;
+    const remainingNeed = Math.max(0, pickingState.requiredQty - pickingState.pickedQty);
+    const shelfQty = Math.max(0, parseFloat(pickingState.selectedShelf.qty || 0));
+    return Math.floor(Math.min(remainingNeed, shelfQty));
+}
+
+function parseBoxQrAndSuggestQty() {
+    if (!pickingState.shelfConfirmed || !pickingState.selectedShelf) {
+        showError('#step3-error', 'Cần xác nhận đúng vị trí ở bước 2 trước.');
         return;
     }
 
-    const raw = normalizeQrText($('#product-confirm-input').val());
-    if (!raw) {
-        showFieldError('#confirm-error', 'Hãy quét chuỗi sản phẩm.');
+    const parsed = parseBoxQr($('#box-qr-input').val());
+    if (!parsed) {
+        showError('#step3-error', 'QR thùng không đúng định dạng yêu cầu.');
         return;
     }
 
-    if (raw.indexOf(pickState.productId) === -1) {
-        showFieldError('#confirm-error', `Chuỗi quét không chứa mã hàng ${pickState.productId}.`);
-        setWorkflowStatus('Sai mã hàng đã quét', 'text-red-300');
+    if (parsed.productId !== pickingState.productId) {
+        showError('#step3-error', `Sai mã hàng. Cần ${pickingState.productId} nhưng quét ${parsed.productId}.`);
+        setWorkflowStatus('Sai QR mã hàng thùng', 'text-red-700');
         return;
     }
 
-    pickState.productConfirmed = true;
-    hideFieldError('#confirm-error');
-    $('#pick-qty-input').prop('disabled', false).val('').focus();
+    const maxAllowed = getMaxPickAllowedNow();
+    if (maxAllowed <= 0) {
+        showError('#step3-error', 'Không còn số lượng hợp lệ để pick tại vị trí hiện tại.');
+        return;
+    }
+
+    const suggestedQty = Math.min(parsed.qty, maxAllowed);
+
+    pickingState.productConfirmed = true;
+    hideError('#step3-error');
+    $('#step3-max-qty').text(maxAllowed);
+    $('#pick-qty-input').prop('disabled', false).val(suggestedQty).focus().select();
     $('#btn-submit-pick').prop('disabled', false);
-    setWorkflowStatus('Có thể nhập số lượng pick', 'text-emerald-300');
+
+    setWorkflowStatus('Đã xác nhận mã hàng trên thùng, nhập/điều chỉnh số lượng rồi nhấn OK.', 'text-green-700');
 }
 
-function addPickHistory(row) {
-    pickState.pickHistory.unshift(row);
-    $('#picked-count').text(pickState.pickHistory.length);
+function renderHistory() {
+    const body = $('#pick-history-body');
+    body.empty();
 
-    const tbody = $('#pick-history');
-    tbody.empty();
+    if (!pickingState.history.length) {
+        body.append('<tr><td colspan="4" class="text-center text-slate-500">Chưa có giao dịch pick.</td></tr>');
+        return;
+    }
 
-    pickState.pickHistory.forEach(function(item) {
-        const badgeClass = item.status === 'DONE'
-            ? 'bg-emerald-100 text-emerald-700'
-            : 'bg-amber-100 text-amber-700';
-
-        tbody.append(`
-            <tr class="border-b last:border-b-0">
-                <td class="p-2 font-mono">${item.shelf_id}</td>
-                <td class="p-2 font-mono">${item.product_id}</td>
-                <td class="p-2 text-right font-bold">${item.qty}</td>
-                <td class="p-2 text-right"><span class="inline-flex px-2 py-1 rounded-full text-xs font-bold ${badgeClass}">${item.status}</span></td>
+    pickingState.history.forEach(function(item) {
+        body.append(`
+            <tr>
+                <td>${item.shelf_id}</td>
+                <td>${item.product_id}</td>
+                <td>${item.qty}</td>
+                <td>${item.time}</td>
             </tr>
         `);
     });
 }
 
-function goToNextShelfIfNeeded() {
-    if (pickState.remainingQty <= 0) {
-        setWorkflowStatus('Hoàn tất picking', 'text-emerald-300');
-        $('#selected-shelf-card').html('<div class="text-emerald-700 font-bold">Đã hoàn thành toàn bộ số lượng cần pick.</div>');
-        $('#shelf-scan-input').prop('disabled', true).val('');
-        $('#product-confirm-input').prop('disabled', true).val('');
-        $('#pick-qty-input').prop('disabled', true).val('');
+function moveToNextShelfIfNeeded() {
+    if (pickingState.pickedQty >= pickingState.requiredQty) {
+        $('#btn-finish-order').prop('disabled', false);
+        setStepState(4);
+        setWorkflowStatus('Đã đủ số lượng cần pick. Nhấn "Xác nhận hoàn thành".', 'text-green-700');
+        $('#box-qr-input').prop('disabled', true);
+        $('#pick-qty-input').prop('disabled', true);
+        $('#btn-parse-box').prop('disabled', true);
         $('#btn-submit-pick').prop('disabled', true);
-        $('#shelf-list').empty();
-        $('#shelf-empty-state').removeClass('hidden').text('Đã hoàn thành picking.');
-        setVisibleStep(3);
         return;
     }
 
-    if (!pickState.shelfInventory.length) {
-        setWorkflowStatus('Không còn kệ để pick', 'text-red-300');
-        $('#selected-shelf-card').html('<div class="text-red-600 font-bold">Không còn kệ nào có tồn để tiếp tục.</div>');
-        return;
-    }
+    if (pickingState.selectedShelf && parseFloat(pickingState.selectedShelf.qty || 0) <= 0) {
+        pickingState.selectedShelf = null;
+        pickingState.shelfConfirmed = false;
+        pickingState.productConfirmed = false;
 
-    renderShelfList();
-    selectShelfById(pickState.shelfInventory[0].shelf_id);
-    $('#product-confirm-input').val('');
-    $('#pick-qty-input').val('');
-    $('#btn-submit-pick').prop('disabled', true);
-    setWorkflowStatus(`Còn lại ${pickState.remainingQty}, chuyển sang kệ tiếp theo`, 'text-amber-300');
+        if (!pickingState.shelves.length) {
+            setWorkflowStatus('Không còn tồn kho chính ở các vị trí. Chưa đủ số lượng cần pick.', 'text-red-700');
+            return;
+        }
+
+        setStepState(2);
+        renderShelfList();
+        $('#shelf-qr-input').prop('disabled', true).val('');
+        $('#btn-confirm-shelf').prop('disabled', true);
+        $('#box-qr-input').prop('disabled', true).val('');
+        $('#pick-qty-input').prop('disabled', true).val('');
+        $('#btn-parse-box').prop('disabled', true);
+        $('#btn-submit-pick').prop('disabled', true);
+        setWorkflowStatus('Vị trí đã hết tồn. Quay lại bước 2 để chọn vị trí đầu danh sách tiếp theo.', 'text-amber-700');
+    } else {
+        const maxAllowed = getMaxPickAllowedNow();
+        $('#step3-max-qty').text(maxAllowed);
+        $('#box-qr-input').val('').focus();
+        $('#pick-qty-input').val('');
+        $('#btn-submit-pick').prop('disabled', true);
+        pickingState.productConfirmed = false;
+        setWorkflowStatus('Tiếp tục quét thùng tại vị trí hiện tại.', 'text-sky-700');
+    }
 }
 
-function submitPickQty() {
-    if (!pickState.selectedShelf || !pickState.shelfConfirmed || !pickState.productConfirmed) {
-        showFieldError('#confirm-error', 'Hãy hoàn thành các bước quét trước khi nhập số lượng.');
+function submitPickFromCurrentShelf() {
+    if (pickingState.busy) return;
+
+    if (!pickingState.selectedShelf || !pickingState.shelfConfirmed || !pickingState.productConfirmed) {
+        showError('#step3-error', 'Cần hoàn thành quét vị trí và quét thùng trước khi nhấn OK.');
         return;
     }
 
     const qty = parseInt($('#pick-qty-input').val(), 10);
+    const maxAllowed = getMaxPickAllowedNow();
+
     if (isNaN(qty) || qty <= 0) {
-        showFieldError('#confirm-error', 'Số lượng pick không hợp lệ.');
+        showError('#step3-error', 'Số lượng pick không hợp lệ.');
         return;
     }
 
-    if (qty > pickState.remainingQty) {
-        showFieldError('#confirm-error', `Số lượng nhập ${qty} vượt quá số cần pick còn lại ${pickState.remainingQty}.`);
+    if (qty > maxAllowed) {
+        showError('#step3-error', `Số lượng nhập vượt giới hạn. Tối đa hiện tại là ${maxAllowed}.`);
         return;
     }
 
-    if (qty > pickState.selectedShelf.qty) {
-        showFieldError('#confirm-error', `Kệ ${pickState.selectedShelf.shelf_id} chỉ còn ${pickState.selectedShelf.qty}, không đủ để lấy ${qty}.`);
-        return;
-    }
-
+    pickingState.busy = true;
     $('#btn-submit-pick').prop('disabled', true);
-    setWorkflowStatus('Đang trừ tồn...', 'text-sky-300');
+    hideError('#step3-error');
+    setWorkflowStatus('Đang trừ tồn và ghi giao dịch...', 'text-sky-700');
 
     $.post('api.php?action=outbound_submit', {
-        shelf_id: pickState.selectedShelf.shelf_id,
-        product_id: pickState.productId,
+        shelf_id: pickingState.selectedShelf.shelf_id,
+        product_id: pickingState.productId,
         quantity: qty
     }, function(res) {
         if (!res.success) {
-            showFieldError('#confirm-error', res.message || 'Không thể trừ tồn.');
-            setWorkflowStatus('Trừ tồn thất bại', 'text-red-300');
+            showError('#step3-error', res.message || 'Không thể trừ tồn.');
+            setWorkflowStatus('Trừ tồn thất bại', 'text-red-700');
             $('#btn-submit-pick').prop('disabled', false);
+            pickingState.busy = false;
             return;
         }
 
-        hideFieldError('#confirm-error');
-        hideFieldError('#shelf-error');
-        pickState.remainingQty -= qty;
+        const selectedShelfId = pickingState.selectedShelf.shelf_id;
+        pickingState.pickedQty += qty;
 
-        addPickHistory({
-            shelf_id: pickState.selectedShelf.shelf_id,
-            product_id: pickState.productId,
-            qty: qty,
-            status: pickState.remainingQty > 0 ? 'CONTINUE' : 'DONE'
-        });
-
-        $('#summary-remaining').text(pickState.remainingQty);
-        $('#selected-needed-label').text(pickState.remainingQty);
-
-        const currentShelf = pickState.selectedShelf.shelf_id;
-        pickState.shelfInventory = pickState.shelfInventory
-            .map(function(item) {
-                if (item.shelf_id === currentShelf) {
-                    return Object.assign({}, item, { qty: Math.max(0, item.qty - qty) });
+        pickingState.shelves = pickingState.shelves
+            .map(function(shelf) {
+                if (shelf.shelf_id === selectedShelfId) {
+                    return {
+                        ...shelf,
+                        qty: Math.max(0, parseFloat(shelf.qty || 0) - qty)
+                    };
                 }
-                return item;
+                return shelf;
             })
-            .filter(function(item) { return item.qty > 0; })
+            .filter(function(shelf) {
+                return parseFloat(shelf.qty || 0) > 0;
+            })
             .sort(function(a, b) {
                 if (a.qty === b.qty) {
                     return a.shelf_id.localeCompare(b.shelf_id, undefined, { numeric: true });
@@ -636,84 +903,71 @@ function submitPickQty() {
                 return a.qty - b.qty;
             });
 
-        if (pickState.remainingQty <= 0) {
-            setWorkflowStatus('Pick thành công', 'text-emerald-300');
-            $('#selected-shelf-card').html('<div class="text-emerald-700 font-bold">Đã trừ xong số lượng cần pick.</div>');
-            $('#shelf-scan-input').prop('disabled', true).val('');
-            $('#product-confirm-input').prop('disabled', true).val('');
-            $('#pick-qty-input').prop('disabled', true).val('');
-            $('#btn-submit-pick').prop('disabled', true);
-            renderShelfList();
-            return;
-        }
+        const selected = pickingState.shelves.find(function(shelf) {
+            return shelf.shelf_id === selectedShelfId;
+        });
+        pickingState.selectedShelf = selected ? { ...selected } : null;
 
-        goToNextShelfIfNeeded();
+        const now = res.transaction_time || new Date().toISOString().slice(0, 19).replace('T', ' ');
+        pickingState.history.unshift({
+            shelf_id: selectedShelfId,
+            product_id: pickingState.productId,
+            qty: qty,
+            time: now
+        });
+
+        renderShelfList();
+        renderHistory();
+        updateTopSummary();
+        moveToNextShelfIfNeeded();
+        pickingState.busy = false;
     }, 'json').fail(function() {
-        showFieldError('#confirm-error', 'Lỗi kết nối khi trừ tồn.');
-        setWorkflowStatus('Lỗi kết nối', 'text-red-300');
+        showError('#step3-error', 'Lỗi kết nối khi gửi lệnh trừ tồn.');
+        setWorkflowStatus('Lỗi kết nối', 'text-red-700');
         $('#btn-submit-pick').prop('disabled', false);
+        pickingState.busy = false;
     });
 }
 
-$('#product-scan-input').on('keydown', function(e) {
+function finishCurrentPickingOrder() {
+    if (pickingState.pickedQty !== pickingState.requiredQty || !pickingState.requiredQty) {
+        return;
+    }
+
+    setWorkflowStatus(`Đã hoàn tất lệnh ${pickingState.productId} (${pickingState.pickedQty}/${pickingState.requiredQty}).`, 'text-green-700');
+    resetPickingJob(true);
+}
+
+$('#pick-order-input').on('keydown', function(e) {
     if (e.which === 13) {
         e.preventDefault();
-        parseProductQr();
+        handleStep1OrderScan();
     }
 });
 
-$('#shelf-scan-input').on('keydown', function(e) {
+$('#shelf-qr-input').on('keydown', function(e) {
     if (e.which === 13) {
         e.preventDefault();
-        confirmShelfScan();
+        confirmShelfQr();
     }
 });
 
-$('#product-confirm-input').on('keydown', function(e) {
+$('#box-qr-input').on('keydown', function(e) {
     if (e.which === 13) {
         e.preventDefault();
-        confirmProductScan();
+        parseBoxQrAndSuggestQty();
     }
 });
 
 $('#pick-qty-input').on('keydown', function(e) {
     if (e.which === 13) {
         e.preventDefault();
-        submitPickQty();
-    }
-});
-
-$('#product-scan-input').on('change', function() {
-    if (pickState.ready) {
-        parseProductQr();
-    }
-});
-
-$('#shelf-scan-input').on('change', function() {
-    if (pickState.selectedShelf) {
-        confirmShelfScan();
-    }
-});
-
-$('#product-confirm-input').on('change', function() {
-    if (pickState.selectedShelf && pickState.shelfConfirmed) {
-        confirmProductScan();
+        submitPickFromCurrentShelf();
     }
 });
 
 $(document).ready(function() {
-    resetPicking(false);
-
-    const urlParams = new URLSearchParams(window.location.search);
-    const productFromUrl = urlParams.get('product_id');
-    if (productFromUrl) {
-        $('#product-scan-input').val(productFromUrl);
-    }
-});
-
-$(window).on('resize', function() {
-    if (window.innerWidth >= 1024) {
-        $('#step-2, #step-3').removeClass('wizard-step-hidden').show();
-    }
+    resetPickingJob(false);
+    renderHistory();
 });
 </script>
