@@ -3,31 +3,55 @@ $user = $_SESSION['user'] ?? null;
 $role = $user['role'] ?? '';
 
 if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
-    echo '<div class="alert alert-danger text-center p-4">Ban khong co quyen truy cap trang nay. Can role: Staff tro len.</div>';
+    echo '<div class="alert alert-danger text-center p-4">Bạn không có quyền truy cập trang này. Cần role: Staff trở lên.</div>';
     exit;
 }
-
-$stmt = $pdo->query("SELECT command, DATE(MAX(created_at)) AS command_date FROM export_temp GROUP BY command ORDER BY MAX(created_at) DESC");
-$commands = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <div class="container-main">
     <div class="panel">
-        <h3><i class="fas fa-list"></i> Chon Chi Thi Picking</h3>
-
+        <h3><i class="fas fa-list"></i> In phiếu picking</h3>
+        <div class="form-group import-box">
+            <label>Import dữ liệu từ Excel:</label>
+            <div class="import-note">Thứ tự cột: CTSX, Mã SP, Mã LK, SL pick, SL/bucket, Ngày phát hành. <br>Hỗ trợ file .xlsx và .csv.</div>
+            <div class="import-actions">
+                <input type="file" id="export-file" class="form-control" accept=".xlsx,.csv">
+                <button type="button" class="btn btn-primary import-btn" id="import-export-btn" onclick="importExportTemp()">
+                    <i class="fas fa-file-import"></i> Import Excel
+                </button>
+            </div>
+            <label class="inline-checkbox">
+                <input type="checkbox" id="clear-existing-export" checked>
+                Xóa dữ liệu export_temp cũ trước khi import
+            </label>
+            <div id="import-result" class="import-result"></div>
+        </div>
         <div class="form-group">
-            <label>Ma Chi Thi:</label>
+            <label>Kiểu tìm kiếm:</label>
+            <div class="search-mode-group">
+                <label class="search-mode-option active">
+                    <input type="radio" name="export-search-type" value="command" checked>
+                    Theo CTSX
+                </label>
+                <label class="search-mode-option">
+                    <input type="radio" name="export-search-type" value="product_id">
+                    Theo Mã LK
+                </label>
+            </div>
+        </div>
+        <div class="form-group">
+            <label id="search-input-label">Theo CTSX:</label>
             <div class="qr-inline-wrap">
-                <input type="text" id="command-input" class="form-control" placeholder="Nhap hoac chon ma chi thi">
-                <button type="button" class="btn btn-outline-primary" onclick="openQRScannerModal('command-input', 'Ma Chi Thi')" title="Quet ma chi thi">
+                <input type="text" id="export-search-input" class="form-control" placeholder="Nhập hoặc chọn mã CTSX">
+                <button type="button" class="btn btn-outline-primary" id="search-qr-btn" onclick="openQRScannerModal('export-search-input', 'Mã CTSX')" title="Quét mã">
                     <i class="fas fa-qrcode"></i>
                 </button>
             </div>
-            <div id="command-suggestions" class="command-suggestions"></div>
+            <div id="export-search-suggestions" class="command-suggestions"></div>
         </div>
 
-        <button onclick="loadExportItems()" class="btn btn-primary search-command-btn">
-            <i class="fas fa-search"></i> Tim Chi Thi
+        <button onclick="loadExportItems()" class="btn btn-primary search-command-btn" id="search-export-btn">
+            <i class="fas fa-search"></i> Tìm CTSX
         </button>
 
         <div id="warning-container" class="warning">
@@ -39,30 +63,30 @@ $commands = $stmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 
     <div class="panel">
-        <h3><i class="fas fa-print"></i> Xem Truoc Phieu Picking</h3>
+        <h3><i class="fas fa-print"></i> Xem Trước Phiếu Picking</h3>
 
         <div class="pages-container" id="pages-preview">
             <div class="preview-placeholder">
-                Chon mot chi thi de xem truoc phieu in
+                Chọn một chỉ thị để xem trước phiếu in
             </div>
         </div>
 
         <button onclick="printTickets()" class="btn btn-print" id="print-btn">
-            <i class="fas fa-print"></i> In Phieu Picking (80mm)
+            <i class="fas fa-print"></i> In Phiếu Picking (80mm)
         </button>
 
         <div class="mt-3 text-sm text-gray-600" id="print-options-wrap">
             <label style="display:block; margin-bottom:6px;">
                 <input type="checkbox" id="print-test-mode">
-                Che do test (khong in that)
+                Chế độ test (không in thật)
             </label>
             <label style="display:block; margin-bottom:6px;">
                 <input type="checkbox" id="print-split-mode" checked>
-                In tach tung phieu (may in nhiet, co the hien nhieu popup)
+                In tách từng phiếu (máy in nhiệt, có thể hiện nhiều popup)
             </label>
             <label style="display:block; margin-bottom:6px;">
                 <input type="checkbox" id="print-single-mode">
-                In gop 1 lan (it popup hon, may in co the khong cat tung phieu)
+                In gộp 1 lần (ít popup hơn, máy in có thể không cắt từng phiếu)
             </label>
             <div id="print-mode-note" class="text-xs text-gray-500"></div>
         </div>
@@ -72,10 +96,224 @@ $commands = $stmt->fetchAll(PDO::FETCH_ASSOC);
 <div id="print-pages"></div>
 
 <script>
-    let currentCommand = '';
+    let currentSearchType = 'command';
+    let currentSearchKeyword = '';
     let currentItems = [];
     let shelvesData = {};
+    let suggestionRequest = null;
     const printApiBase = 'api.php';
+
+    function escapeHtml(value) {
+        return String(value || '').replace(/[&<>"']/g, function(character) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            };
+            return map[character] || character;
+        });
+    }
+
+    function getSearchMeta() {
+        return currentSearchType === 'product_id'
+            ? {
+                label: 'Theo Mã LK:',
+                placeholder: 'Nhập hoặc chọn mã linh kiện',
+                buttonText: 'Tìm Mã LK',
+                qrLabel: 'Mã linh kiện'
+            }
+            : {
+                label: 'Theo CTSX:',
+                placeholder: 'Nhập hoặc chọn mã CTSX',
+                buttonText: 'Tìm CTSX',
+                qrLabel: 'Mã CTSX'
+            };
+    }
+
+    function setSearchMode(mode) {
+        currentSearchType = mode === 'product_id' ? 'product_id' : 'command';
+        const meta = getSearchMeta();
+
+        $('#search-input-label').text(meta.label);
+        $('#export-search-input').attr('placeholder', meta.placeholder);
+        $('#search-export-btn').html(`<i class="fas fa-search"></i> ${meta.buttonText}`);
+        $('#search-qr-btn').attr('title', `Quét ${meta.qrLabel}`);
+
+        $('.search-mode-option').removeClass('active');
+        $(`input[name="export-search-type"][value="${currentSearchType}"]`).closest('.search-mode-option').addClass('active');
+
+        $('#export-search-input').val('');
+        $('#export-search-suggestions').empty();
+        resetExportResult('Chọn một chỉ thị để xem trước phiếu in');
+        refreshWarningState();
+    }
+
+    function showWarning(message) {
+        if (!message) {
+            $('#warning-container').removeClass('show');
+            $('#warning-text').text('');
+            return;
+        }
+
+        $('#warning-text').text(message);
+        $('#warning-container').addClass('show');
+    }
+
+    function resetExportResult(placeholderText) {
+        currentItems = [];
+        shelvesData = {};
+        $('#items-container').html('<div class="text-muted">Không có dữ liệu.</div>');
+        $('#pages-preview').html(`<div class="preview-placeholder">${placeholderText || 'Không có dữ liệu'}</div>`);
+        $('#print-pages').empty();
+        $('#print-btn').hide();
+    }
+
+    function refreshWarningState() {
+        if (!currentItems.length) {
+            showWarning('');
+            return;
+        }
+
+        const shortages = [];
+        currentItems.forEach(item => {
+            const shelves = shelvesData[item.product_id] || [];
+            const totalStock = shelves.reduce(function(sum, shelf) {
+                return sum + Number(shelf.qty || 0);
+            }, 0);
+
+            if (totalStock < Number(item.total_qty || 0)) {
+                shortages.push(`${item.product_id}: ${totalStock}/${item.total_qty}`);
+            }
+        });
+
+        const modeNote = currentSearchType === 'product_id'
+            ? 'Đang xem tổng số lượng gộp theo Mã LK. Chế độ này chỉ hiển thị tổng, không cho sửa từng dòng.'
+            : 'Đang xem theo CTSX. Bạn có thể sửa Tổng và Mỗi phiếu trên từng dòng rồi nhấn Lưu.';
+
+        if (!shortages.length) {
+            showWarning(modeNote);
+            return;
+        }
+
+        showWarning(`${modeNote} Tồn không đủ cho: ${shortages.join(' | ')}`);
+    }
+
+    function renderSuggestionItem(item) {
+        const encodedValue = encodeURIComponent(item.value || '');
+        let detail = '';
+
+        if (currentSearchType === 'product_id') {
+            detail = `Tổng: ${item.total_qty || 0}`;
+            if (item.command_list) {
+                detail += ` | Lệnh: ${item.command_list}`;
+            }
+        } else {
+            detail = item.command_date || '';
+            if (item.row_count) {
+                detail += `${detail ? ' | ' : ''}${item.row_count} dòng`;
+            }
+        }
+
+        return `
+            <button type="button" class="suggestion-item suggestion-button" data-value="${encodedValue}">
+                <span>${escapeHtml(item.value || '')}</span>
+                <small>${escapeHtml(detail)}</small>
+            </button>
+        `;
+    }
+
+    function loadSearchSuggestions(keyword) {
+        const suggestions = $('#export-search-suggestions');
+        if (!keyword) {
+            suggestions.empty();
+            return;
+        }
+
+        if (suggestionRequest && typeof suggestionRequest.abort === 'function') {
+            suggestionRequest.abort();
+        }
+
+        suggestionRequest = $.ajax({
+            type: 'GET',
+            url: `${printApiBase}?action=get_export_search_suggestions`,
+            data: {
+                search_type: currentSearchType,
+                keyword: keyword
+            },
+            dataType: 'json',
+            success: function(res) {
+                if (!res.success || !Array.isArray(res.items) || !res.items.length) {
+                    suggestions.empty();
+                    return;
+                }
+
+                const html = ['<div class="suggestion-label">Gợi ý:</div>'];
+                res.items.forEach(function(item) {
+                    html.push(renderSuggestionItem(item));
+                });
+                suggestions.html(html.join(''));
+            },
+            error: function(xhr, status) {
+                if (status !== 'abort') {
+                    suggestions.empty();
+                }
+            }
+        });
+    }
+
+    function selectSearchKeyword(value) {
+        $('#export-search-input').val(value);
+        $('#export-search-suggestions').empty();
+    }
+
+    async function importExportTemp() {
+        const input = document.getElementById('export-file');
+        const file = input?.files?.[0];
+        if (!file) {
+            alert('Vui lòng chọn file Excel để import');
+            return;
+        }
+
+        const button = $('#import-export-btn');
+        const result = $('#import-result');
+        const formData = new FormData();
+        formData.append('excel_file', file);
+        formData.append('clear_existing', $('#clear-existing-export').is(':checked') ? '1' : '0');
+
+        button.prop('disabled', true).text('Đang import...');
+        result.removeClass('error success').text('Đang tải và xử lý file...');
+
+        try {
+            const res = await $.ajax({
+                type: 'POST',
+                url: `${printApiBase}?action=import_export_temp`,
+                data: formData,
+                dataType: 'json',
+                processData: false,
+                contentType: false
+            });
+
+            if (!res.success) {
+                const errors = Array.isArray(res.errors) && res.errors.length
+                    ? ` ${res.errors.slice(0, 3).join(' | ')}`
+                    : '';
+                throw new Error((res.message || 'Import thất bại') + errors);
+            }
+
+            const warningText = res.warning_count
+                ? ` Có ${res.warning_count} dòng bỏ qua.`
+                : '';
+            result.removeClass('error').addClass('success').text(`Import thành công ${res.imported_count} dòng.${warningText}`);
+            input.value = '';
+            resetExportResult('Dữ liệu đã thay đổi. Hãy tìm lại để xem phiếu in.');
+        } catch (error) {
+            result.removeClass('success').addClass('error').text(error.message || 'Import thất bại');
+        } finally {
+            button.prop('disabled', false).html('<i class="fas fa-file-import"></i> Import Excel');
+        }
+    }
 
     function syncPrintModeToggles(changedId) {
         const split = document.getElementById('print-split-mode');
@@ -96,8 +334,8 @@ $commands = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }
 
         const modeText = split.checked
-            ? 'Dang chon: In tach tung phieu.'
-            : 'Dang chon: In gop 1 lan.';
+            ? 'Đang chọn: In tách từng phiếu.'
+            : 'Đang chọn: In gộp 1 lần.';
         note.textContent = modeText;
 
         localStorage.setItem('print_test_mode', document.getElementById('print-test-mode')?.checked ? '1' : '0');
@@ -136,63 +374,75 @@ $commands = $stmt->fetchAll(PDO::FETCH_ASSOC);
         syncPrintModeToggles('init');
     }
 
-    $('#command-input').on('input', function() {
-        const input = $(this).val().toUpperCase();
-        const suggestions = $('#command-suggestions');
-        const commands = <?php echo json_encode($commands); ?>;
-
-        if (!input.length) {
-            suggestions.empty();
-            return;
-        }
-
-        const filtered = commands.filter(c => c.command.toUpperCase().includes(input));
-        suggestions.empty();
-
-        if (!filtered.length) return;
-
-        suggestions.append('<div class="suggestion-label">Goi y:</div>');
-        filtered.slice(0, 5).forEach(c => {
-            suggestions.append(
-                '<div class="suggestion-item" onclick="selectCommand(\'' + c.command + '\')">' +
-                c.command + ' (' + c.command_date + ')' +
-                '</div>'
-            );
-        });
-    });
-
-    function selectCommand(cmd) {
-        $('#command-input').val(cmd);
-        $('#command-suggestions').empty();
-    }
-
     function loadExportItems() {
-        const command = $('#command-input').val().trim().toUpperCase();
-        if (!command) {
-            alert('Vui long nhap ma chi thi');
+        const keyword = $('#export-search-input').val().trim().toUpperCase();
+        if (!keyword) {
+            alert(currentSearchType === 'command' ? 'Vui lòng nhập mã chỉ thị' : 'Vui lòng nhập mã linh kiện');
             return;
         }
 
-        currentCommand = command;
+        currentSearchKeyword = keyword;
 
-        $.ajax({
+        return $.ajax({
             type: 'POST',
             url: `${printApiBase}?action=get_export_items`,
-            data: { command: command },
+            data: {
+                search_type: currentSearchType,
+                keyword: keyword
+            },
             dataType: 'json',
             success: function(res) {
                 if (!res.success) {
-                    alert(res.message || 'Khong tim thay du lieu');
+                    alert(res.message || 'Không tìm thấy dữ liệu');
                     return;
                 }
 
+                currentSearchType = res.search_type || currentSearchType;
+                currentSearchKeyword = res.keyword || keyword;
                 currentItems = res.items || [];
                 displayItems();
             },
             error: function() {
-                alert('Loi ket noi khi tai danh sach chi thi');
+                alert('Lỗi kết nối khi tải danh sách dữ liệu picking');
             }
         });
+    }
+
+    async function updateExportItem(id) {
+        const row = $(`.item-card[data-item-id="${id}"]`);
+        const totalQty = parseInt(row.find('.edit-total-qty').val(), 10);
+        const bucketQty = parseInt(row.find('.edit-bucket-qty').val(), 10);
+
+        if (!Number.isInteger(totalQty) || !Number.isInteger(bucketQty) || totalQty <= 0 || bucketQty <= 0) {
+            alert('Tổng số lượng và Mỗi phiếu phải lớn hơn 0');
+            return;
+        }
+
+        const button = row.find('.save-item-btn');
+        button.prop('disabled', true).text('Đang lưu...');
+
+        try {
+            const res = await $.ajax({
+                type: 'POST',
+                url: `${printApiBase}?action=update_export_item`,
+                data: {
+                    id: id,
+                    total_qty: totalQty,
+                    bucket_qty: bucketQty
+                },
+                dataType: 'json'
+            });
+
+            if (!res.success) {
+                throw new Error(res.message || 'Không cập nhật được dữ liệu');
+            }
+
+            await loadExportItems();
+        } catch (error) {
+            alert(error.message || 'Cập nhật thất bại');
+        } finally {
+            button.prop('disabled', false).text('Lưu');
+        }
     }
 
     function displayItems() {
@@ -201,28 +451,53 @@ $commands = $stmt->fetchAll(PDO::FETCH_ASSOC);
         shelvesData = {};
 
         if (!currentItems.length) {
-            container.html('<div class="text-muted">Khong co du lieu.</div>');
-            $('#pages-preview').html('<div class="preview-placeholder">Khong co du lieu</div>');
+            container.html('<div class="text-muted">Không có dữ liệu.</div>');
+            $('#pages-preview').html('<div class="preview-placeholder">Không có dữ liệu</div>');
+            $('#print-pages').empty();
             $('#print-btn').hide();
+            refreshWarningState();
             return;
         }
 
         let pending = currentItems.length;
 
         currentItems.forEach(item => {
+            const qtyContent = currentSearchType === 'command'
+                ? `
+                    <div class="item-edit-grid">
+                        <label class="item-edit-field">
+                            <span>Tổng</span>
+                            <input type="number" min="1" class="form-control edit-total-qty" value="${item.total_qty}">
+                        </label>
+                        <label class="item-edit-field">
+                            <span>Mỗi phiếu</span>
+                            <input type="number" min="1" class="form-control edit-bucket-qty" value="${item.bucket_qty}">
+                        </label>
+                        <button type="button" class="btn btn-save-inline save-item-btn" onclick="updateExportItem(${item.id})">Lưu</button>
+                    </div>
+                `
+                : `
+                    <div class="item-qty-summary">
+                        <strong>Tổng gộp:</strong> ${item.total_qty} ${escapeHtml(item.unit || 'pcs')}
+                    </div>
+                    <div class="item-meta-inline">
+                        Lệnh liên quan: ${escapeHtml(item.command_list || '-')}
+                    </div>
+                `;
+
             container.append(`
-                <div class="item-card">
+                <div class="item-card" data-item-id="${item.id}">
                     <div class="item-header">
-                        <div class="product-id">${item.product_id}</div>
-                        <div class="qty-info">${item.num_pages} phieu</div>
+                        <div class="product-id">${escapeHtml(item.product_id)}</div>
+                        <div class="qty-info">${currentSearchType === 'command' ? `${item.num_pages} phiếu` : 'Tổng gộp'}</div>
                     </div>
                     <div class="item-meta">
-                        ${item.product_name || 'N/A'} (${item.unit || 'pcs'})
+                        ${escapeHtml(item.product_name || 'N/A')} (${escapeHtml(item.unit || 'pcs')})
                     </div>
-                    <div class="item-qty-summary">
-                        <strong>Tong:</strong> ${item.total_qty} |
-                        <strong>Moi phieu:</strong> ${item.bucket_qty}
+                    <div class="item-meta-inline">
+                        FOR: ${escapeHtml(item.for_product || '-')}
                     </div>
+                    ${qtyContent}
                     <div id="shelf-${item.id}" class="item-shelf-wrap"></div>
                 </div>
             `);
@@ -246,22 +521,22 @@ $commands = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     let html = '';
 
                     if (!res.shelves.length) {
-                        html = '<div class="insufficient-stock">Khong co hang tren ke</div>';
+                        html = '<div class="insufficient-stock">Không có tồn ở KHO CHINH</div>';
                     } else {
                         res.shelves.forEach(shelf => {
-                            html += `<div class="shelf-item"><span>${shelf.shelf_id}</span><span>${shelf.qty} ${unit}</span></div>`;
+                            html += `<div class="shelf-item"><span>${escapeHtml(shelf.shelf_id)}</span><span>${shelf.qty} ${escapeHtml(unit)}</span></div>`;
                         });
                         if (res.total_stock < item.total_qty) {
-                            html += `<div class="insufficient-stock stock-summary">Ton khong du: ${res.total_stock}/${item.total_qty}</div>`;
+                            html += `<div class="insufficient-stock stock-summary">Tồn không đủ: ${res.total_stock}/${item.total_qty}</div>`;
                         } else {
-                            html += `<div class="sufficient-stock stock-summary">Ton du: ${res.total_stock}/${item.total_qty}</div>`;
+                            html += `<div class="sufficient-stock stock-summary">Tồn đủ: ${res.total_stock}/${item.total_qty}</div>`;
                         }
                     }
 
                     $(`#shelf-${item.id}`).html(html);
                 },
                 error: function() {
-                    $(`#shelf-${item.id}`).html('<div class="insufficient-stock">Loi ket noi khi tai ton ke</div>');
+                    $(`#shelf-${item.id}`).html('<div class="insufficient-stock">Lỗi kết nối khi tải tồn kho KHO CHINH</div>');
                 }
             });
         });
@@ -270,73 +545,77 @@ $commands = $stmt->fetchAll(PDO::FETCH_ASSOC);
     function generatePrintPreview() {
         const preview = $('#pages-preview');
         const printPages = $('#print-pages');
+        const isProductSearch = currentSearchType === 'product_id';
 
         let previewHtml = '';
         let printHtml = '';
 
         currentItems.forEach(item => {
             const shelves = shelvesData[item.product_id] || [];
-            const numPages = Math.max(1, parseInt(item.num_pages, 10) || 1);
+            const numPages = isProductSearch ? 1 : Math.max(1, parseInt(item.num_pages, 10) || 1);
             let remainingQty = parseInt(item.total_qty, 10) || 0;
 
             for (let page = 1; page <= numPages; page++) {
                 const bucketQty = parseInt(item.bucket_qty, 10) || 1;
-                const pageQty = Math.min(bucketQty, remainingQty);
+                const pageQty = isProductSearch ? remainingQty : Math.min(bucketQty, remainingQty);
                 const totalQty = parseInt(item.total_qty, 10) || 0;
                 const forProduct = item.for_product || '-';
-                const qrDataUrl = generateQRCodeDataUrl(item.product_id);
+                const qrDataUrl = generateQRCodeDataUrl(item.product_id + '$' + pageQty);
+                const commandLabel = isProductSearch ? 'LỆNH' : 'CTSX';
+                const commandValue = isProductSearch ? (item.command_list || currentSearchKeyword) : (item.command || currentSearchKeyword);
+                const qtySubText = isProductSearch ? 'Tổng gộp theo Mã LK' : `/ Tổng ${totalQty}`;
 
                 let shelvesHtml = '';
                 if (shelves.length) {
                     shelves.forEach(shelf => {
-                        shelvesHtml += `<div class="shelf-row"><span>${shelf.shelf_id}</span><span>${shelf.qty}</span></div>`;
+                        shelvesHtml += `<div class="shelf-row"><span>${escapeHtml(shelf.shelf_id)}</span><span>${shelf.qty}</span></div>`;
                     });
                 } else {
-                    shelvesHtml = '<div class="text-muted no-location">Khong co vi tri</div>';
+                    shelvesHtml = '<div class="text-muted no-location">Không có tồn kho</div>';
                 }
 
                 const ticketHtml = `
                     <div class="picking-ticket">
                         <div class="row1 picking-header">
                             <span>${new Date().toLocaleDateString('vi-VN')}</span>
-                            <span class="ticket-title">PHIEU PICKING</span>
-                            <span class="picking-page-num">Phieu: ${page}/${numPages}</span>
+                            <span class="ticket-title">PHIẾU PICKING</span>
+                            <span class="picking-page-num">Phiếu: ${page}/${numPages}</span>
                         </div>
 
                         <div class="row2 picking-command">
                             <div class="command-box">
-                                <span class="ticket-key">CTSX</span>
-                                <span class="command-code">${currentCommand}</span>
+                                <span class="ticket-key">${commandLabel}</span>
+                                <span class="command-code">${escapeHtml(commandValue)}</span>
                             </div>
                             <div class="for-product-box">
                                 <span class="ticket-key">FOR</span>
-                                <span class="for-product-val">${forProduct}</span>
+                                <span class="for-product-val">${escapeHtml(forProduct)}</span>
                             </div>
                         </div>
 
                         <div class="row3 picking-product">
                             <div class="left qr-section">
-                                ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR ${item.product_id}" class="qr-image">` : '<div class="text-muted no-location">QR loi</div>'}
+                                ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR ${item.product_id}" class="qr-image">` : '<div class="text-muted no-location">QR lỗi</div>'}
                             </div>
                             <div class="qty-needed">
                                 <div class="qty-label">SL PICK</div>
-                                <div class="qty-main">${pageQty} ${item.unit || 'pcs'}</div>
-                                <div class="qty-sub">/ Tong ${totalQty}</div>
+                                <div class="qty-main">${pageQty} ${escapeHtml(item.unit || 'pcs')}</div>
+                                <div class="qty-sub">${qtySubText}</div>
                             </div>
                         </div>
 
                         <div class="row4 product-info">
-                            <div class="product-code">${item.product_id}</div>
-                            <div class="product-name">${item.product_name || 'N/A'}</div>
+                            <div class="product-code">${escapeHtml(item.product_id)}</div>
+                            <div class="product-name">${escapeHtml(item.product_name || 'N/A')}</div>
                         </div>
 
                         <div class="row5 shelves-section">
-                            <div class="shelves-header">Vi Tri Ke:</div>
+                            <div class="shelves-header">Tồn KHO CHINH:</div>
                             ${shelvesHtml}
                         </div>
 
                         <div class="row6 picking-footer">
-                            <div class="sign-line">Ngay hoan thanh: _____________ Ky ten: _____________</div>
+                            <div class="sign-line">Ngày hoàn thành: _____________ Ký tên: _____________</div>
                         </div>
                     </div>
                 `;
@@ -347,8 +626,9 @@ $commands = $stmt->fetchAll(PDO::FETCH_ASSOC);
             }
         });
 
-        preview.html(previewHtml || '<div class="preview-placeholder">Khong co du lieu</div>');
+        preview.html(previewHtml || '<div class="preview-placeholder">Không có dữ liệu</div>');
         printPages.html(printHtml);
+        refreshWarningState();
 
         if (printHtml) {
             $('#print-btn').show();
@@ -395,7 +675,7 @@ $commands = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }
 
         if (isTestMode) {
-            alert(`Che do test: Da bo qua lenh in that. So phieu: ${tickets.length}`);
+            alert(`Chế độ test: Đã bỏ qua lệnh in thật. Số phiếu: ${tickets.length}`);
             return;
         }
 
@@ -473,5 +753,24 @@ $commands = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $(document).ready(function() {
         initPrintOptions();
+        setSearchMode('command');
+
+        $('input[name="export-search-type"]').on('change', function() {
+            setSearchMode($(this).val());
+        });
+
+        $('#export-search-input').on('input', function() {
+            loadSearchSuggestions($(this).val().trim().toUpperCase());
+        });
+
+        $('#export-search-input').on('keypress', function(event) {
+            if (event.which === 13) {
+                loadExportItems();
+            }
+        });
+
+        $(document).on('click', '.suggestion-button', function() {
+            selectSearchKeyword(decodeURIComponent($(this).data('value') || ''));
+        });
     });
 </script>

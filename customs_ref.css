@@ -14,10 +14,6 @@
     display: block;
 }
 
-#app-container.sidebar-collapsed .sidebar-toggle-hint {
-    display: none;
-}
-
 #app-container.sidebar-collapsed .sidebar-nav-link {
     justify-content: center;
     padding-left: 0.75rem;
@@ -27,57 +23,6 @@
 #app-container.sidebar-collapsed .sidebar-nav-icon {
     margin-left: 0 !important;
     margin-right: 0 !important;
-}
-
-#app-container.sidebar-collapsed #sidebar-brand-toggle {
-    justify-content: center;
-    padding-left: 0.75rem;
-    padding-right: 0.75rem;
-}
-
-@media (max-width: 900px) {
-    #sidebar-brand-toggle {
-        padding-top: 0.9rem;
-        padding-bottom: 0.9rem;
-        font-size: 1.15rem;
-    }
-}
-
-@media (max-width: 900px) and (orientation: portrait) {
-    #app-container {
-        display: block;
-    }
-
-    #sidebar {
-        width: 100% !important;
-        overflow: visible;
-    }
-
-    #sidebar-brand-toggle {
-        border-bottom: none;
-        padding: 0.75rem 1rem;
-        font-size: 1.1rem;
-        line-height: 1.2;
-    }
-
-    #sidebar-brand-toggle .sidebar-toggle-hint {
-        display: none;
-    }
-
-    #sidebar-nav {
-        display: none;
-        padding-top: 0;
-    }
-
-    #app-container.mobile-sidebar-open #sidebar-nav {
-        display: block;
-        border-top: 1px solid rgba(148, 163, 184, 0.35);
-    }
-
-    #app-container.mobile-sidebar-open .sidebar-nav-link {
-        padding-top: 0.7rem;
-        padding-bottom: 0.7rem;
-    }
 }
 
 /* Print page styles */

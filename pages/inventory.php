@@ -113,6 +113,47 @@
         <div id="shelf-no-results" class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded hidden text-sm">
             Kệ này hiện đang trống hoặc không tồn tại.
         </div>
+
+        <div class="bg-white p-6 rounded-lg shadow-md mt-3 sm:mt-6 pda-search-card">
+            <h3 class="text-sm sm:text-lg font-bold mb-2 sm:mb-4 text-gray-800 flex items-center">
+                <span class="mr-2">📦</span> Tìm theo Pallet ID
+            </h3>
+            <div class="grid grid-cols-12 gap-2">
+                <div class="relative col-span-9">
+                    <input type="text" id="search-pallet-id" placeholder="Pallet ID"
+                           class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none uppercase font-mono text-sm">
+                    <button type="button" onclick="openQRScannerModal('search-pallet-id', 'Mã Pallet')" class="absolute right-2 top-1/2 -translate-y-1/2 text-amber-600 hover:text-amber-800">
+                        <i class="fas fa-qrcode"></i>
+                    </button>
+                </div>
+                <button onclick="searchByPallet()" class="col-span-3 bg-amber-600 text-white px-2 py-2 rounded-lg font-bold hover:bg-amber-700 transition text-xs sm:text-sm">
+                    Tìm
+                </button>
+            </div>
+        </div>
+
+        <div id="pallet-results-container" class="bg-white rounded-lg shadow-md overflow-hidden hidden mt-3 sm:mt-6">
+            <div class="p-4 border-b bg-amber-50">
+                <h4 class="text-sm sm:text-base font-bold text-amber-800">Pallet: <span id="res-pallet" class="font-mono"></span></h4>
+                <p class="hidden sm:block text-xs text-gray-600 mt-1">Cột Status hiển thị mã kệ nếu đã lên kệ, hoặc NULL nếu chưa lên kệ.</p>
+            </div>
+            <div class="pda-results-scroll">
+            <table class="w-full text-left border-collapse text-sm pda-table-compact">
+                <thead>
+                    <tr class="bg-gray-100 text-gray-600 uppercase text-[10px] font-bold">
+                        <th class="p-3 border-b">Mã Sản Phẩm</th>
+                        <th class="p-3 border-b">Tên Sản Phẩm</th>
+                        <th class="p-3 border-b text-right">Số lượng</th>
+                        <th class="p-3 border-b text-center">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="pallet-inventory-results"></tbody>
+            </table>
+            </div>
+        </div>
+        <div id="pallet-no-results" class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded hidden text-sm mt-3 sm:mt-6">
+            Không tìm thấy dữ liệu import_temp theo mã pallet này.
+        </div>
     </section>
 </div>
 
@@ -238,12 +279,55 @@ function searchByShelf() {
     });
 }
 
+function searchByPallet() {
+    const palletId = $('#search-pallet-id').val().trim().toUpperCase();
+    if (!palletId) return;
+
+    $('#search-pallet-id').val(palletId);
+    $('#pallet-results-container, #pallet-no-results').addClass('hidden');
+
+    $.getJSON('api.php?action=get_import_temp_status_by_pallet', { pallet_id: palletId }, function(data) {
+        if (data && data.length > 0) {
+            $('#res-pallet').text(palletId);
+            const tbody = $('#pallet-inventory-results');
+            tbody.empty();
+
+            data.forEach(item => {
+                const statusValue = (item.status || '').trim();
+                const statusLabel = statusValue ? statusValue.toUpperCase() : 'NULL';
+                const statusBadge = statusValue
+                    ? `<span class="inline-block px-2 py-1 rounded bg-green-100 text-green-800 text-[10px] font-bold">${statusLabel}</span>`
+                    : '<span class="inline-block px-2 py-1 rounded bg-gray-100 text-gray-700 text-[10px] font-bold">NULL</span>';
+
+                tbody.append(`
+                    <tr class="hover:bg-gray-50 border-b">
+                        <td class="p-3 font-mono font-bold text-gray-700">${item.product_id}</td>
+                        <td class="p-3 text-gray-600">${item.product_name || '-'}</td>
+                        <td class="p-3 text-right font-medium">${item.quantity}</td>
+                        <td class="p-3 text-center">${statusBadge}</td>
+                    </tr>
+                `);
+            });
+
+            $('#pallet-results-container').removeClass('hidden');
+        } else {
+            $('#pallet-no-results').removeClass('hidden');
+        }
+    });
+}
+
 $('#search-product-id').on('keypress', function(e) { if(e.which == 13) searchByProduct(); });
 $('#search-shelf-id').on('keypress', function(e) { if(e.which == 13) searchByShelf(); });
+$('#search-pallet-id').on('keypress', function(e) { if(e.which == 13) searchByPallet(); });
 
 $('#search-product-id').on('change', function() {
     const pid = resolveInventorySearchProductId($(this).val());
     if (pid) $(this).val(pid);
+});
+
+$('#search-pallet-id').on('change', function() {
+    const palletId = $(this).val().trim().toUpperCase();
+    if (palletId) $(this).val(palletId);
 });
 
 $(document).ready(function() {
@@ -253,6 +337,12 @@ $(document).ready(function() {
     if (shelfId) {
         $('#search-shelf-id').val(shelfId);
         searchByShelf();
+    }
+
+    const palletId = urlParams.get('pallet_id');
+    if (palletId) {
+        $('#search-pallet-id').val(palletId);
+        searchByPallet();
     }
 });
 </script>

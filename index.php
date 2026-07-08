@@ -85,50 +85,19 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
     <div id="app-container" class="min-h-screen flex flex-col md:flex-row sidebar-expanded">
         <!-- Sidebar -->
         <aside id="sidebar" class="w-full md:w-64 bg-slate-800 text-white flex-shrink-0 transition-all duration-300 overflow-hidden">
-            <button type="button" id="sidebar-brand-toggle" onclick="toggleSidebar()" class="w-full p-6 text-2xl font-bold border-b border-slate-700 whitespace-nowrap flex items-center justify-start text-left hover:bg-slate-700/40 transition" title="Mo/Rut gon menu">
+            <div class="md:hidden px-3 py-2 border-b border-slate-700 flex items-center justify-between">
+                <button id="mobile-menu-toggle" type="button" class="font-bold text-base tracking-wide flex items-center gap-2">
+                    <span>S-WMS</span>
+                    <i id="mobile-menu-icon" class="fas fa-chevron-down text-xs"></i>
+                </button>
+                <div id="auth-block-mobile" class="text-xs text-gray-300">Đang tải...</div>
+            </div>
+            <div class="hidden md:flex p-6 text-2xl font-bold border-b border-slate-700 whitespace-nowrap items-center">
                 <span class="sidebar-title-full">S-WMS</span>
                 <span class="sidebar-title-collapsed hidden"><small>S-WMS</small></span>
-                <span id="pda-logout-slot" class="hidden"></span>
-                <span class="text-xs opacity-80 sidebar-toggle-hint ml-2"></span>
-            </button>
-            <nav id="sidebar-nav" class="p-4 space-y-2">
-                <?php if (in_array($role, ['Admin', 'Manager'])): ?>
-                <a href="?page=dashboard" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'dashboard' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">📊</span>
-                    <span class="ml-3 sidebar-nav-text">Dashboard</span>
-                </a>
-                <a href="?page=layout" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'layout' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">📅</span>
-                    <span class="ml-3 sidebar-nav-text">Layout</span>
-                </a>
-                <a href="?page=products" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'products' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">🏷️</span>
-                    <span class="ml-3 sidebar-nav-text">Sản Phẩm</span>
-                </a>
-                <a href="?page=shelves" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'shelves' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">🛒</span>
-                    <span class="ml-3 sidebar-nav-text">Kệ hàng</span>
-                </a>
-                <a href="?page=admin" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'admin' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">🔧</span>
-                    <span class="ml-3 sidebar-nav-text">Quản trị</span>
-                </a>
-                <?php endif; ?>
-                <?php if (in_array($role, ['Admin', 'Leader', 'Manager'])): ?>
-                <a href="?page=transfer" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'transfer' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">🔄</span>
-                    <span class="ml-3 sidebar-nav-text">Pallet >>> Kệ</span>
-                </a>
-                <a href="?page=change" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'change' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">↔️</span>
-                    <span class="ml-3 sidebar-nav-text">Đổi kệ</span>
-                </a>
-                <a href="?page=print" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'print' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">🖨️</span>
-                    <span class="ml-3 sidebar-nav-text">In Phiếu [Mới]</span>
-                </a>
-                
-                <?php endif; ?>
+            </div>
+            <nav id="sidebar-nav" class="hidden md:block p-4 space-y-2">
+                <?php if (in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])): ?>
                 <a href="?page=import" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'import' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
                     <span class="sidebar-nav-icon">🚚</span>
                     <span class="ml-3 sidebar-nav-text">Nhận hàng (Pallet)</span>
@@ -141,16 +110,61 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                     <span class="sidebar-nav-icon">📤</span>
                     <span class="ml-3 sidebar-nav-text">Xuất Kho</span>
                 </a>
-                
                 <a href="?page=inventory" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'inventory' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
                     <span class="sidebar-nav-icon">📦</span>
                     <span class="ml-3 sidebar-nav-text">Tồn Kho</span>
                 </a>
+                <a href="?page=picking" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'picking' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">🧭</span>
+                    <span class="ml-3 sidebar-nav-text">Picking</span>
+                </a>
+                <?php endif; ?>
+
+                <?php if (in_array($role, ['Leader', 'Manager', 'Admin'])): ?>
+                <a href="?page=transfer" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'transfer' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">🔄</span>
+                    <span class="ml-3 sidebar-nav-text">Pallet >>> Kệ</span>
+                </a>
+                <a href="?page=change" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'change' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">↔️</span>
+                    <span class="ml-3 sidebar-nav-text">Đổi kệ</span>
+                </a>
+                <a href="?page=print" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'print' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">🖨️</span>
+                    <span class="ml-3 sidebar-nav-text">In Phiếu [Mới]</span>
+                </a>
+                <?php endif; ?>
+
+                <?php if (in_array($role, ['Manager', 'Admin'])): ?>
+                <a href="?page=layout" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'layout' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">📅</span>
+                    <span class="ml-3 sidebar-nav-text">Layout</span>
+                </a>
+                <a href="?page=dashboard" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'dashboard' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">📊</span>
+                    <span class="ml-3 sidebar-nav-text">Dashboard</span>
+                </a>
+                <a href="?page=shelves" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'shelves' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">🛒</span>
+                    <span class="ml-3 sidebar-nav-text">Kệ hàng</span>
+                </a>
+                <a href="?page=products" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'products' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">🏷️</span>
+                    <span class="ml-3 sidebar-nav-text">Sản Phẩm</span>
+                </a>
+                <?php endif; ?>
+
+                <?php if ($role === 'Admin'): ?>
+                <a href="?page=admin" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'admin' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">🔧</span>
+                    <span class="ml-3 sidebar-nav-text">Quản trị</span>
+                </a>
+                <?php endif; ?>
             </nav>
         </aside>
         <!-- Main Content -->
         <main class="flex-1 flex flex-col min-w-0">
-            <header id="main-page-header" class="bg-white shadow p-4 flex justify-between items-center">
+            <header id="main-page-header" class="hidden md:flex bg-white shadow p-4 justify-between items-center">
                 <button onclick="toggleSidebar()" class="p-2 rounded hover:bg-gray-100 hidden md:block">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
@@ -162,32 +176,36 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                     ?>
                 </h2>
                 <div class="flex items-center gap-4">
-                        <div id="auth-block" class="text-sm text-gray-500">Đang tải...</div>
+                        <div id="auth-block" class="hidden md:block text-sm text-gray-500">Đang tải...</div>
+                    <span id="pda-logout-slot" class="hidden"></span>
                     </div>
             </header>
 
             <div id="main-content" class="p-6">
                 <?php
                     // Cấu hình quyền truy cập trang (Access Control List)
-                    $allowed_pages = ['import', 'inbound', 'outbound', 'inventory', 'print']; // Quyền chung
-                    if (in_array($role, ['Admin', 'Leader', 'Manager'])) {
-                        $allowed_pages[] = 'transfer';
-                        $allowed_pages[] = 'change'; // Add the new page here                                             
-                        
+                    $allowed_pages = [];
+
+                    if (in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
+                        $allowed_pages = array_merge($allowed_pages, ['import', 'inbound', 'outbound', 'inventory', 'picking']);
                     }
 
-                    if (in_array($role, ['Admin', 'Manager'])) {
+                    if (in_array($role, ['Leader', 'Manager', 'Admin'])) {
+                        $allowed_pages = array_merge($allowed_pages, ['transfer', 'change', 'print']);
+                    }
+
+                    if (in_array($role, ['Manager', 'Admin'])) {
+                        $allowed_pages = array_merge($allowed_pages, ['layout', 'dashboard', 'shelves', 'products']);
+                    }
+
+                    if ($role === 'Admin') {
                         $allowed_pages[] = 'admin';
-                        $allowed_pages[] = 'dashboard';
-                        $allowed_pages[] = 'layout';
-                        $allowed_pages[] = 'products';
-                        $allowed_pages[] = 'shelves';
                     }
 
                     if (in_array($page, $allowed_pages)) {
                         include "pages/$page.php";
                     } else {
-                        include "pages/import.php";
+                        include "pages/inbound.php";
                     }
                 ?>
             </div>
@@ -421,7 +439,16 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
         function renderAuthBlock(user) {
             const block = $('#auth-block');
             const compactSlot = $('#pda-logout-slot');
+            const mobileBlock = $('#auth-block-mobile');
             compactSlot.empty();
+
+            if (user && user.username) {
+                mobileBlock.html(`<span class="font-medium mr-2">${user.username}</span><button id="btn-logout-mobile" class="text-blue-200 underline">Đăng xuất</button>`);
+                bindLogoutButton('#btn-logout-mobile');
+            } else {
+                mobileBlock.html('<button id="btn-login-mobile" class="text-blue-200 underline" type="button">Đăng nhập</button>');
+                $('#btn-login-mobile').off('click').on('click', function(){ showLogin(); });
+            }
 
             if (user && user.username) {
                 if (isPdaCompactMode()) {
@@ -466,16 +493,65 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
             });
         }
 
+        function toggleMobileSidebarMenu() {
+            const nav = document.getElementById('sidebar-nav');
+            const icon = document.getElementById('mobile-menu-icon');
+            const appContainer = document.getElementById('app-container');
+            if (!nav) return;
+
+            let willOpen = nav.classList.contains('hidden');
+            if (isMobileSidebarMode() && appContainer) {
+                appContainer.classList.toggle('mobile-sidebar-open');
+                willOpen = appContainer.classList.contains('mobile-sidebar-open');
+            } else {
+                nav.classList.toggle('hidden');
+                willOpen = !nav.classList.contains('hidden');
+            }
+
+            if (icon) {
+                icon.classList.toggle('fa-chevron-down', !willOpen);
+                icon.classList.toggle('fa-chevron-up', willOpen);
+            }
+        }
+
+        function closeMobileSidebarMenu() {
+            if (window.innerWidth >= 768) return;
+            const nav = document.getElementById('sidebar-nav');
+            const icon = document.getElementById('mobile-menu-icon');
+            const appContainer = document.getElementById('app-container');
+            if (!nav) return;
+
+            if (isMobileSidebarMode() && appContainer) {
+                appContainer.classList.remove('mobile-sidebar-open');
+            }
+            nav.classList.add('hidden');
+            if (icon) { icon.classList.add('fa-chevron-down'); icon.classList.remove('fa-chevron-up'); }
+        }
+
         $(document).ready(function(){
             applyPdaHeaderMode();
             applyPdaSidebarDefault();
             loadAuth();
+
+            $('#mobile-menu-toggle').on('click', function() {
+                toggleMobileSidebarMenu();
+            });
+
+            $('#sidebar-nav').on('click', 'a', function() {
+                closeMobileSidebarMenu();
+            });
         });
 
         window.addEventListener('resize', function() {
             applyPdaHeaderMode();
             applyPdaSidebarDefault();
             renderAuthBlock(currentAuthUser);
+            if (window.innerWidth >= 768) {
+                const nav = document.getElementById('sidebar-nav');
+                if (nav) nav.classList.remove('hidden');
+            } else {
+                closeMobileSidebarMenu();
+            }
         });
     </script>
 </body>
