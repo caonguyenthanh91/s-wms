@@ -268,7 +268,10 @@ switch ($action) {
 
     case 'get_shelves':
         $q = $_GET['q'] ?? '';
-        $all = isset($_GET['all']);
+
+        // The query is already calculating sku_count per shelf, which is correct for level 1 and 2 views.
+        // No changes needed here as it already provides the necessary data.
+        // The client-side JS will handle the grouping and summation for the top-level view.
         $sql = "SELECT s.*, (SELECT COUNT(id) FROM inventory i WHERE i.shelf_id = s.id AND i.quantity > 0) as sku_count FROM shelves s";
         $params = [];
         if ($q) {
@@ -1448,6 +1451,49 @@ switch ($action) {
         $stmt->execute([$totalQty, $bucketQty, $id]);
         if ($stmt->rowCount() === 0) { echo json_encode(['success' => false, 'message' => 'Không tìm thấy dòng dữ liệu cần cập nhật']); break; }
         echo json_encode(['success' => true, 'message' => 'Đã cập nhật số lượng', 'num_pages' => max(1, (int)ceil($totalQty / max(1, $bucketQty)))]);
+        break;
+
+    case 'get_export_cases_for_print':
+        require_role(['Staff', 'Leader', 'Manager', 'Admin']);
+        ensure_export_temp_schema($pdo);
+
+        $command = strtoupper(trim($_POST['command'] ?? ''));
+        if ($command === '') {
+            echo json_encode(['success' => false, 'message' => 'Thiếu mã chỉ thị (command)']);
+            break;
+        }
+
+        $stmt = $pdo->prepare(
+            "SELECT
+                e.command,
+                e.case_no,
+                CONCAT('[', e.command, '][', e.case_no, ']') AS command_case_id,
+                COUNT(*) AS total_items_in_case,
+                GROUP_CONCAT(DISTINCT e.for_product ORDER BY e.for_product SEPARATOR ', ') AS for_product,
+                'Case Picking Ticket' AS product_name,
+                'items' AS unit
+            FROM export_temp e
+                        WHERE e.command = ?
+                            AND COALESCE(TRIM(e.case_no), '') <> ''
+            GROUP BY e.command, e.case_no
+            ORDER BY e.case_no ASC"
+        );
+        $stmt->execute([$command]);
+        $cases = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($cases as &$case) {
+            $case['total_items_in_case'] = (int)$case['total_items_in_case'];
+            $case['is_editable'] = false; // Not editable for case tickets
+            $case['num_pages'] = 1; // Each case is one ticket
+            $case['bucket_qty'] = $case['total_items_in_case']; // For consistency
+            $case['product_id'] = $case['command_case_id']; // For QR and product code text
+        }
+
+        echo json_encode([
+            'success' => true,
+            'command' => $command,
+            'cases' => $cases,
+        ]);
         break;
 
     case 'get_command_flight_board':
