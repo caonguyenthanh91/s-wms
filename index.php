@@ -9,6 +9,30 @@ $user = $_SESSION['user'] ?? null;
 $role = $user['role'] ?? '';
 $page = $_GET['page'] ?? 'inbound';
 
+$pageShortLabels = [
+    'import' => 'Nhập Pallet',
+    'inbound' => 'Nhập kho',
+    'outbound' => 'Xuất kho',
+    'packing' => 'Packing',
+    'pickup' => 'Pickup',
+    'inventory' => 'Tra tồn',
+    'picking' => 'Picking',
+    'transfer' => 'Pallet >>> Kệ',
+    'change' => 'Đổi kệ',
+    'print' => 'In phiếu',
+    'layout' => 'Layout',
+    'dashboard' => 'Dashboard',
+    'shelves' => 'ĐK Kệ',
+    'products' => 'ĐK SP',
+    'data_export' => 'Xuất file',
+    'admin' => 'Quản trị',
+];
+
+$mobileHeaderLabel = 'S-WMS';
+if (isset($pageShortLabels[$page])) {
+    $mobileHeaderLabel .= '/' . $pageShortLabels[$page];
+}
+
 $bootstrapCssPath = __DIR__ . '/assets/css/bootstrap.min.css';
 $fontAwesomeCssPath = __DIR__ . '/assets/css/all.min.css';
 $customCssPath = __DIR__ . '/assets/css/customs.css';
@@ -85,9 +109,9 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
     <div id="app-container" class="min-h-screen flex flex-col md:flex-row sidebar-expanded">
         <!-- Sidebar -->
         <aside id="sidebar" class="w-full md:w-64 bg-slate-800 text-white flex-shrink-0 transition-all duration-300 overflow-hidden">
-            <div class="md:hidden px-3 py-2 border-b border-slate-700 flex items-center justify-between">
+            <div id="mobile-header-bar" class="md:hidden px-3 py-2 border-b border-slate-700 flex items-center justify-between cursor-pointer">
                 <button id="mobile-menu-toggle" type="button" class="font-bold text-base tracking-wide flex items-center gap-2">
-                    <span>S-WMS</span>
+                    <span id="mobile-menu-label"><?php echo htmlspecialchars($mobileHeaderLabel, ENT_QUOTES, 'UTF-8'); ?></span>
                     <i id="mobile-menu-icon" class="fas fa-chevron-down text-xs"></i>
                 </button>
                 <div id="auth-block-mobile" class="text-xs text-gray-300">Đang tải...</div>
@@ -114,6 +138,14 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                     <span class="sidebar-nav-icon">📦</span>
                     <span class="ml-3 sidebar-nav-text">Tồn Kho</span>
                 </a>
+                <a href="?page=packing" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'packing' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">📫</span>
+                    <span class="ml-3 sidebar-nav-text">Packing</span>
+                </a>
+                <a href="?page=pickup" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'pickup' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">🚛</span>
+                    <span class="ml-3 sidebar-nav-text">Pickup</span>
+                </a>
                 <a href="?page=picking" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'picking' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
                     <span class="sidebar-nav-icon">🧭</span>
                     <span class="ml-3 sidebar-nav-text">Picking</span>
@@ -133,16 +165,16 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                     <span class="sidebar-nav-icon">🖨️</span>
                     <span class="ml-3 sidebar-nav-text">In Phiếu [Mới]</span>
                 </a>
+                <a href="?page=dashboard" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'dashboard' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">🛫</span>
+                    <span class="ml-3 sidebar-nav-text">Dashboard</span>
+                </a>
                 <?php endif; ?>
 
                 <?php if (in_array($role, ['Manager', 'Admin'])): ?>
                 <a href="?page=layout" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'layout' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
                     <span class="sidebar-nav-icon">📅</span>
                     <span class="ml-3 sidebar-nav-text">Layout</span>
-                </a>
-                <a href="?page=dashboard" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'dashboard' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">📊</span>
-                    <span class="ml-3 sidebar-nav-text">Dashboard</span>
                 </a>
                 <a href="?page=shelves" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'shelves' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
                     <span class="sidebar-nav-icon">🛒</span>
@@ -151,6 +183,10 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                 <a href="?page=products" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'products' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
                     <span class="sidebar-nav-icon">🏷️</span>
                     <span class="ml-3 sidebar-nav-text">Sản Phẩm</span>
+                </a>
+                <a href="?page=data_export" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'data_export' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">📄</span>
+                    <span class="ml-3 sidebar-nav-text">Data Export</span>
                 </a>
                 <?php endif; ?>
 
@@ -187,15 +223,15 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                     $allowed_pages = [];
 
                     if (in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
-                        $allowed_pages = array_merge($allowed_pages, ['import', 'inbound', 'outbound', 'inventory', 'picking']);
+                        $allowed_pages = array_merge($allowed_pages, ['import', 'inbound', 'outbound', 'inventory', 'packing', 'pickup', 'picking']);
                     }
 
                     if (in_array($role, ['Leader', 'Manager', 'Admin'])) {
-                        $allowed_pages = array_merge($allowed_pages, ['transfer', 'change', 'print']);
+                        $allowed_pages = array_merge($allowed_pages, ['transfer', 'change', 'print', 'dashboard']);
                     }
 
                     if (in_array($role, ['Manager', 'Admin'])) {
-                        $allowed_pages = array_merge($allowed_pages, ['layout', 'dashboard', 'shelves', 'products']);
+                        $allowed_pages = array_merge($allowed_pages, ['layout', 'shelves', 'products', 'data_export']);
                     }
 
                     if ($role === 'Admin') {
@@ -239,7 +275,7 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
         let currentAuthUser = null;
 
         function pdaOptimizedPages() {
-            return ['import', 'inbound', 'outbound', 'transfer', 'change', 'inventory'];
+            return ['import', 'inbound', 'outbound', 'transfer', 'change', 'inventory', 'packing', 'pickup'];
         }
 
         function isPdaCompactMode() {
@@ -272,6 +308,16 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
             modal.classList.add('flex');
 
             startQRScanner();
+        }
+
+        function resetQRScannerModalState() {
+            qrScannerValue = '';
+
+            const result = document.getElementById('qr-scan-result');
+            if (result) {
+                result.classList.add('hidden');
+                result.textContent = '';
+            }
         }
 
         function closeQRScannerModal() {
@@ -323,6 +369,13 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                 result.textContent = qrScannerValue;
             }
             playQRScanBeep();
+
+            if (typeof window.handleQRScannerScan === 'function') {
+                const handled = window.handleQRScannerScan(qrScannerTargetId, qrScannerValue);
+                if (handled) {
+                    return;
+                }
+            }
         }
 
         function applyQRCodeToTarget() {
@@ -417,8 +470,8 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
             const currentPage = '<?php echo addslashes($page); ?>';
 
             if (appContainer && isMobileSidebarMode()) {
-                // PDA portrait: hien menu tab de khong bi mat chuc nang.
-                appContainer.classList.add('mobile-sidebar-open');
+                // PDA portrait: mac dinh thu gon menu, mo bang cach cham header S-WMS.
+                appContainer.classList.remove('mobile-sidebar-open');
                 appContainer.classList.remove('sidebar-collapsed');
                 return;
             }
@@ -514,6 +567,40 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
             }
         }
 
+        function updateMobileMenuLabel(text) {
+            const label = document.getElementById('mobile-menu-label');
+            if (!label) return;
+            label.textContent = text || 'S-WMS';
+        }
+
+        function getCurrentMobileLabelFromPage() {
+            const pageKey = '<?php echo addslashes($page); ?>';
+            const labels = {
+                import: 'Nhập Pallet',
+                inbound: 'Nhập kho',
+                outbound: 'Xuất kho',
+                packing: 'Packing',
+                pickup: 'Pickup',
+                inventory: 'Tra tồn',
+                picking: 'Picking',
+                transfer: 'Pallet >>> Kệ',
+                change: 'Đổi kệ',
+                print: 'In phiếu',
+                layout: 'Layout',
+                dashboard: 'Dashboard',
+                shelves: 'ĐK Kệ',
+                products: 'ĐK SP',
+                data_export: 'Xuất file',
+                admin: 'Quản trị'
+            };
+
+            if (!labels[pageKey]) {
+                return 'S-WMS';
+            }
+
+            return 'S-WMS/' + labels[pageKey];
+        }
+
         function closeMobileSidebarMenu() {
             if (window.innerWidth >= 768) return;
             const nav = document.getElementById('sidebar-nav');
@@ -526,18 +613,31 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
             }
             nav.classList.add('hidden');
             if (icon) { icon.classList.add('fa-chevron-down'); icon.classList.remove('fa-chevron-up'); }
+            updateMobileMenuLabel(getCurrentMobileLabelFromPage());
         }
 
         $(document).ready(function(){
             applyPdaHeaderMode();
             applyPdaSidebarDefault();
             loadAuth();
+            updateMobileMenuLabel(getCurrentMobileLabelFromPage());
 
-            $('#mobile-menu-toggle').on('click', function() {
+            $('#mobile-header-bar').on('click', function(e) {
+                const interactive = e.target.closest('a, input, textarea, select, label');
+                if (interactive) return;
+                toggleMobileSidebarMenu();
+            });
+
+            $('#mobile-menu-toggle').on('click', function(e) {
+                e.stopPropagation();
                 toggleMobileSidebarMenu();
             });
 
             $('#sidebar-nav').on('click', 'a', function() {
+                const shortText = $(this).find('.sidebar-nav-text').text().trim();
+                if (shortText) {
+                    updateMobileMenuLabel('S-WMS/' + shortText);
+                }
                 closeMobileSidebarMenu();
             });
         });

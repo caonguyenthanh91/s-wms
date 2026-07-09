@@ -13,7 +13,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         <h3><i class="fas fa-list"></i> In phiếu picking</h3>
         <div class="form-group import-box">
             <label>Import dữ liệu từ Excel:</label>
-            <div class="import-note">Tải file Excel mẫu tại đây.</div>
+            <div class="import-note"><a href="../s-wms/assets/packing_list.xlsx">Tải file Excel mẫu tại đây.</a></div>
             <div class="import-actions">
                 <input type="file" id="export-file" class="form-control" accept=".xlsx,.csv">
                 <button type="button" class="btn btn-primary import-btn" id="import-export-btn" onclick="importExportTemp()">

@@ -9,6 +9,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS `transactions`;
 DROP TABLE IF EXISTS `inventory`;
 DROP TABLE IF EXISTS `export_temp`;
+DROP TABLE IF EXISTS `export_log`;
 DROP TABLE IF EXISTS `import_temp`;
 DROP TABLE IF EXISTS `shelves`;
 DROP TABLE IF EXISTS `products`;
@@ -117,6 +118,7 @@ CREATE TABLE `import_temp` (
 CREATE TABLE `export_temp` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `command` varchar(50) DEFAULT NULL,
+  `case_no` varchar(50) DEFAULT '1',
   `for_product` varchar(50) DEFAULT NULL,
   `product_id` varchar(50) NOT NULL,
   `total_qty` int(11) NOT NULL,
@@ -128,6 +130,25 @@ CREATE TABLE `export_temp` (
   KEY `idx_export_temp_command` (`command`),
   KEY `idx_export_temp_product_id` (`product_id`),
   KEY `idx_export_temp_command_product_id` (`command`,`product_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `export_log` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `command` varchar(50) NOT NULL,
+  `case_no` varchar(50) NOT NULL,
+  `product_id` varchar(50) NOT NULL,
+  `quantity` int(11) NOT NULL,
+  `created_by` varchar(50) NOT NULL,
+  `status` enum('picking','packing','pickup') NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_export_log_command_case` (`command`,`case_no`),
+  KEY `idx_export_log_product` (`product_id`),
+  KEY `idx_export_log_status` (`status`),
+  KEY `idx_export_log_created_by` (`created_by`),
+  KEY `idx_export_log_created_at` (`created_at`),
+  KEY `idx_export_log_command_case_status` (`command`,`case_no`,`status`),
+  KEY `idx_export_log_command_case_product_status` (`command`,`case_no`,`product_id`,`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `log_users` (`username`, `password`, `full_name`, `role`, `status`) VALUES

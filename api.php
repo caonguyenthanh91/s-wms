@@ -40,6 +40,63 @@ function ensure_export_temp_schema(PDO $pdo) {
     } catch (Throwable $e) {}
 }
 
+function ensure_export_log_schema(PDO $pdo) {
+    static $checked = false;
+    if ($checked) return;
+    $checked = true;
+
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS export_log (
+            id INT(11) NOT NULL AUTO_INCREMENT,
+            command VARCHAR(50) NOT NULL,
+            case_no VARCHAR(50) NOT NULL,
+            product_id VARCHAR(50) NOT NULL,
+            quantity INT(11) NOT NULL,
+            created_by VARCHAR(50) NOT NULL,
+            status ENUM('picking','packing','pickup') NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_export_log_command_case (command, case_no),
+            KEY idx_export_log_product (product_id),
+            KEY idx_export_log_status (status),
+            KEY idx_export_log_created_by (created_by),
+            KEY idx_export_log_created_at (created_at),
+            KEY idx_export_log_command_case_status (command, case_no, status),
+            KEY idx_export_log_command_case_product_status (command, case_no, product_id, status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    } catch (Throwable $e) {}
+}
+
+function export_command_case_pickup_status(PDO $pdo, string $command): array {
+    $stmt = $pdo->prepare(
+        "SELECT e.case_no,
+                COUNT(*) AS export_rows,
+                COALESCE(p.pickup_logs, 0) AS pickup_logs,
+                CASE WHEN COALESCE(p.pickup_logs, 0) > 0 THEN 1 ELSE 0 END AS is_ok
+         FROM export_temp e
+         LEFT JOIN (
+             SELECT case_no, COUNT(*) AS pickup_logs
+             FROM export_log
+             WHERE command = ? AND status = 'pickup'
+             GROUP BY case_no
+         ) p ON p.case_no = e.case_no
+         WHERE e.command = ?
+         GROUP BY e.case_no, p.pickup_logs
+         ORDER BY e.case_no ASC"
+    );
+    $stmt->execute([$command, $command]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($rows as &$row) {
+        $row['case_no'] = strtoupper(trim((string)$row['case_no']));
+        $row['export_rows'] = (int)$row['export_rows'];
+        $row['pickup_logs'] = (int)$row['pickup_logs'];
+        $row['is_ok'] = (int)$row['is_ok'] === 1;
+    }
+
+    return $rows;
+}
+
 function export_temp_column_index(string $letters) {
     $index = 0;
     $letters = strtoupper($letters);
@@ -1056,6 +1113,304 @@ switch ($action) {
         echo json_encode(['success' => true, 'items' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
         break;
 
+    case 'get_export_invoice_detail':
+        require_role(['Admin','Leader','Manager','Staff']);
+        ensure_export_temp_schema($pdo);
+        ensure_export_log_schema($pdo);
+
+        $command = strtoupper(trim($_GET['command'] ?? ''));
+        $caseNo = strtoupper(trim($_GET['case_no'] ?? ''));
+
+        if ($command === '' || $caseNo === '') {
+            echo json_encode(['success' => false, 'message' => 'Thiếu command hoặc case_no']);
+            break;
+        }
+
+        $stmt = $pdo->prepare(
+            "SELECT e.product_id,
+                    MAX(e.for_product) AS for_product,
+                    SUM(e.total_qty) AS total_qty
+             FROM export_temp e
+             WHERE e.command = ? AND e.case_no = ?
+             GROUP BY e.product_id
+             ORDER BY e.product_id ASC"
+        );
+        $stmt->execute([$command, $caseNo]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (!$rows) {
+            echo json_encode(['success' => false, 'message' => 'Không tìm thấy invoice trong export_temp']);
+            break;
+        }
+
+        $requiredMap = [];
+        $items = [];
+        $requiredTotal = 0;
+
+        foreach ($rows as $row) {
+            $pid = strtoupper(trim((string)$row['product_id']));
+            $qty = (int)$row['total_qty'];
+            $requiredMap[$pid] = $qty;
+            $requiredTotal += $qty;
+            $items[$pid] = [
+                'product_id' => $pid,
+                'for_product' => $row['for_product'] ?? '',
+                'required_qty' => $qty,
+                'picked_qty' => 0,
+                'packed_qty' => 0,
+                'pickup_qty' => 0,
+            ];
+        }
+
+        $stmt = $pdo->prepare(
+            "SELECT product_id, status, SUM(quantity) AS qty
+             FROM export_log
+             WHERE command = ? AND case_no = ?
+             GROUP BY product_id, status"
+        );
+        $stmt->execute([$command, $caseNo]);
+        $logRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $statusTotals = ['picking' => 0, 'packing' => 0, 'pickup' => 0];
+
+        foreach ($logRows as $log) {
+            $pid = strtoupper(trim((string)$log['product_id']));
+            $status = strtolower(trim((string)$log['status']));
+            $qty = (int)$log['qty'];
+
+            if (!isset($statusTotals[$status])) {
+                continue;
+            }
+
+            $statusTotals[$status] += $qty;
+
+            if (!isset($items[$pid])) {
+                continue;
+            }
+
+            if ($status === 'picking') $items[$pid]['picked_qty'] = $qty;
+            if ($status === 'packing') $items[$pid]['packed_qty'] = $qty;
+            if ($status === 'pickup') $items[$pid]['pickup_qty'] = $qty;
+        }
+
+        $itemList = array_values($items);
+        foreach ($itemList as &$item) {
+            $item['remain_qty'] = max(0, (int)$item['required_qty'] - (int)$item['packed_qty']);
+        }
+
+        echo json_encode([
+            'success' => true,
+            'command' => $command,
+            'case_no' => $caseNo,
+            'required_total' => $requiredTotal,
+            'status_totals' => $statusTotals,
+            'is_picked_done' => $requiredTotal > 0 && $statusTotals['picking'] >= $requiredTotal,
+            'is_packed_done' => $requiredTotal > 0 && $statusTotals['packing'] >= $requiredTotal,
+            'is_pickup_done' => $requiredTotal > 0 && $statusTotals['pickup'] >= $requiredTotal,
+            'items' => $itemList,
+        ]);
+        break;
+
+    case 'get_pickup_cases_by_command':
+        require_role(['Admin','Leader','Manager','Staff']);
+        ensure_export_temp_schema($pdo);
+        ensure_export_log_schema($pdo);
+
+        $command = strtoupper(trim($_GET['command'] ?? ''));
+        if ($command === '') {
+            echo json_encode(['success' => false, 'message' => 'Thieu command']);
+            break;
+        }
+
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM export_temp WHERE command = ?");
+        $stmt->execute([$command]);
+        $exists = (int)$stmt->fetchColumn() > 0;
+        if (!$exists) {
+            echo json_encode(['success' => false, 'message' => 'Command khong ton tai trong export_temp']);
+            break;
+        }
+
+        $cases = export_command_case_pickup_status($pdo, $command);
+        $okCount = 0;
+        foreach ($cases as $caseRow) {
+            if (!empty($caseRow['is_ok'])) $okCount++;
+        }
+
+        echo json_encode([
+            'success' => true,
+            'command' => $command,
+            'cases' => $cases,
+            'total_cases' => count($cases),
+            'ok_cases' => $okCount,
+            'wait_cases' => max(0, count($cases) - $okCount),
+        ]);
+        break;
+
+    case 'pickup_scan_case':
+        require_role(['Admin','Leader','Manager','Staff']);
+        ensure_export_temp_schema($pdo);
+        ensure_export_log_schema($pdo);
+
+        $command = strtoupper(trim($_POST['command'] ?? ''));
+        $caseNo = strtoupper(trim($_POST['case_no'] ?? ''));
+
+        if ($command === '' || $caseNo === '') {
+            echo json_encode(['success' => false, 'message' => 'Thieu command hoac case_no']);
+            break;
+        }
+
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM export_temp WHERE command = ? AND case_no = ?");
+        $stmt->execute([$command, $caseNo]);
+        $matchedRows = (int)$stmt->fetchColumn();
+        if ($matchedRows <= 0) {
+            echo json_encode(['success' => false, 'message' => 'Case_no khong thuoc command da quet']);
+            break;
+        }
+
+        try {
+            $pdo->beginTransaction();
+
+            $user = current_user();
+            $createdBy = $user['username'] ?? 'system';
+
+            $stmt = $pdo->prepare(
+                "INSERT INTO export_log (command, case_no, product_id, quantity, created_by, status, created_at)
+                 SELECT e.command, e.case_no, e.product_id, 1, ?, 'pickup', NOW()
+                 FROM export_temp e
+                 WHERE e.command = ? AND e.case_no = ?"
+            );
+            $stmt->execute([$createdBy, $command, $caseNo]);
+            $insertedRows = (int)$stmt->rowCount();
+
+            $cases = export_command_case_pickup_status($pdo, $command);
+            $okCount = 0;
+            $scannedCase = null;
+            foreach ($cases as $caseRow) {
+                if (!empty($caseRow['is_ok'])) $okCount++;
+                if ($caseRow['case_no'] === $caseNo) $scannedCase = $caseRow;
+            }
+
+            $pdo->commit();
+
+            echo json_encode([
+                'success' => true,
+                'command' => $command,
+                'case_no' => $caseNo,
+                'inserted_rows' => $insertedRows,
+                'scanned_case' => $scannedCase,
+                'cases' => $cases,
+                'total_cases' => count($cases),
+                'ok_cases' => $okCount,
+                'wait_cases' => max(0, count($cases) - $okCount),
+            ]);
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        break;
+
+    case 'export_log_scan':
+        require_role(['Admin','Leader','Manager','Staff']);
+        ensure_export_temp_schema($pdo);
+        ensure_export_log_schema($pdo);
+
+        $command = strtoupper(trim($_POST['command'] ?? ''));
+        $caseNo = strtoupper(trim($_POST['case_no'] ?? ''));
+        $productId = strtoupper(trim($_POST['product_id'] ?? ''));
+        $qty = (int)($_POST['quantity'] ?? 0);
+        $status = strtolower(trim($_POST['status'] ?? 'packing'));
+
+        if ($command === '' || $caseNo === '' || $productId === '' || $qty <= 0) {
+            echo json_encode(['success' => false, 'message' => 'Dữ liệu quét không hợp lệ']);
+            break;
+        }
+
+        if (!in_array($status, ['picking', 'packing', 'pickup'], true)) {
+            echo json_encode(['success' => false, 'message' => 'Status không hợp lệ']);
+            break;
+        }
+
+        $stmt = $pdo->prepare(
+            "SELECT SUM(total_qty) AS required_qty
+             FROM export_temp
+             WHERE command = ? AND case_no = ? AND product_id = ?"
+        );
+        $stmt->execute([$command, $caseNo, $productId]);
+        $requiredQty = (int)($stmt->fetchColumn() ?: 0);
+
+        if ($requiredQty <= 0) {
+            echo json_encode(['success' => false, 'message' => 'Mã hàng không thuộc invoice đã quét']);
+            break;
+        }
+
+        try {
+            $pdo->beginTransaction();
+
+            $user = current_user();
+            $createdBy = $user['username'] ?? 'system';
+
+            $stmt = $pdo->prepare(
+                "INSERT INTO export_log (command, case_no, product_id, quantity, created_by, status, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, NOW())"
+            );
+            $stmt->execute([$command, $caseNo, $productId, $qty, $createdBy, $status]);
+
+            $stmt = $pdo->prepare(
+                "SELECT COALESCE(SUM(quantity), 0)
+                 FROM export_log
+                 WHERE command = ? AND case_no = ? AND product_id = ? AND status = ?"
+            );
+            $stmt->execute([$command, $caseNo, $productId, $status]);
+            $loggedQtyByStatus = (int)$stmt->fetchColumn();
+
+            $stmt = $pdo->prepare(
+                "SELECT COALESCE(SUM(total_qty), 0)
+                 FROM export_temp
+                 WHERE command = ? AND case_no = ?"
+            );
+            $stmt->execute([$command, $caseNo]);
+            $requiredTotal = (int)$stmt->fetchColumn();
+
+            $stmt = $pdo->prepare(
+                "SELECT status, COALESCE(SUM(quantity), 0) AS qty
+                 FROM export_log
+                 WHERE command = ? AND case_no = ?
+                 GROUP BY status"
+            );
+            $stmt->execute([$command, $caseNo]);
+            $statusRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $statusTotals = ['picking' => 0, 'packing' => 0, 'pickup' => 0];
+            foreach ($statusRows as $row) {
+                $s = strtolower(trim((string)$row['status']));
+                if (isset($statusTotals[$s])) {
+                    $statusTotals[$s] = (int)$row['qty'];
+                }
+            }
+
+            $pdo->commit();
+
+            echo json_encode([
+                'success' => true,
+                'command' => $command,
+                'case_no' => $caseNo,
+                'product_id' => $productId,
+                'status' => $status,
+                'scan_qty' => $qty,
+                'required_qty' => $requiredQty,
+                'logged_qty_by_status' => $loggedQtyByStatus,
+                'required_total' => $requiredTotal,
+                'status_totals' => $statusTotals,
+                'is_picked_done' => $requiredTotal > 0 && $statusTotals['picking'] >= $requiredTotal,
+                'is_packed_done' => $requiredTotal > 0 && $statusTotals['packing'] >= $requiredTotal,
+                'is_pickup_done' => $requiredTotal > 0 && $statusTotals['pickup'] >= $requiredTotal,
+            ]);
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        break;
+
     case 'import_export_temp':
         require_role(['Admin','Leader','Manager','Staff']);
         ensure_export_temp_schema($pdo);
@@ -1093,6 +1448,100 @@ switch ($action) {
         $stmt->execute([$totalQty, $bucketQty, $id]);
         if ($stmt->rowCount() === 0) { echo json_encode(['success' => false, 'message' => 'Không tìm thấy dòng dữ liệu cần cập nhật']); break; }
         echo json_encode(['success' => true, 'message' => 'Đã cập nhật số lượng', 'num_pages' => max(1, (int)ceil($totalQty / max(1, $bucketQty)))]);
+        break;
+
+    case 'get_command_flight_board':
+        require_role(['Leader','Manager','Admin']);
+        ensure_export_temp_schema($pdo);
+        ensure_export_log_schema($pdo);
+
+        $dateRaw = trim($_GET['date'] ?? '');
+        $dateObj = DateTime::createFromFormat('Y-m-d', $dateRaw ?: date('Y-m-d'));
+        $date = $dateObj ? $dateObj->format('Y-m-d') : date('Y-m-d');
+
+        $stmt = $pdo->prepare(
+            "SELECT cmd.command,
+                    cmd.total_products,
+                    cmd.picking_done_products,
+                    cmd.packing_done_products,
+                    cs.total_cases,
+                    COALESCE(cp.picked_cases, 0) AS picked_cases,
+                    cp.last_pickup_at,
+                    cmd.first_created_at
+             FROM (
+                 SELECT r.command,
+                        COUNT(*) AS total_products,
+                        SUM(CASE WHEN COALESCE(l.picking_qty, 0) >= r.required_qty THEN 1 ELSE 0 END) AS picking_done_products,
+                        SUM(CASE WHEN COALESCE(l.packing_qty, 0) >= r.required_qty THEN 1 ELSE 0 END) AS packing_done_products,
+                        MIN(r.first_created_at) AS first_created_at
+                 FROM (
+                     SELECT command,
+                            product_id,
+                            SUM(total_qty) AS required_qty,
+                            MIN(created_at) AS first_created_at
+                     FROM export_temp
+                     WHERE DATE(created_at) = ?
+                     GROUP BY command, product_id
+                 ) r
+                 LEFT JOIN (
+                     SELECT command,
+                            product_id,
+                            SUM(CASE WHEN status = 'picking' THEN quantity ELSE 0 END) AS picking_qty,
+                            SUM(CASE WHEN status = 'packing' THEN quantity ELSE 0 END) AS packing_qty
+                     FROM export_log
+                     GROUP BY command, product_id
+                 ) l ON l.command = r.command AND l.product_id = r.product_id
+                 GROUP BY r.command
+             ) cmd
+             INNER JOIN (
+                 SELECT command,
+                        COUNT(DISTINCT case_no) AS total_cases
+                 FROM export_temp
+                 WHERE DATE(created_at) = ?
+                 GROUP BY command
+             ) cs ON cs.command = cmd.command
+             LEFT JOIN (
+                 SELECT ec.command,
+                        SUM(CASE WHEN pl.has_pickup = 1 THEN 1 ELSE 0 END) AS picked_cases,
+                        MAX(pl.last_pickup_at) AS last_pickup_at
+                 FROM (
+                     SELECT DISTINCT command, case_no
+                     FROM export_temp
+                     WHERE DATE(created_at) = ?
+                 ) ec
+                 LEFT JOIN (
+                     SELECT command,
+                            case_no,
+                            1 AS has_pickup,
+                            MAX(created_at) AS last_pickup_at
+                     FROM export_log
+                     WHERE status = 'pickup'
+                     GROUP BY command, case_no
+                 ) pl ON pl.command = ec.command AND pl.case_no = ec.case_no
+                 GROUP BY ec.command
+             ) cp ON cp.command = cmd.command
+             ORDER BY cmd.first_created_at DESC, cmd.command DESC"
+        );
+        $stmt->execute([$date, $date, $date]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($rows as &$row) {
+            $row['command'] = strtoupper(trim((string)($row['command'] ?? '')));
+            $row['total_products'] = (int)($row['total_products'] ?? 0);
+            $row['picking_done_products'] = (int)($row['picking_done_products'] ?? 0);
+            $row['packing_done_products'] = (int)($row['packing_done_products'] ?? 0);
+            $row['total_cases'] = (int)($row['total_cases'] ?? 0);
+            $row['picked_cases'] = (int)($row['picked_cases'] ?? 0);
+            $row['pickup_done'] = $row['total_cases'] > 0 && $row['picked_cases'] >= $row['total_cases'];
+            $row['pickup_wait_cases'] = max(0, $row['total_cases'] - $row['picked_cases']);
+        }
+
+        echo json_encode([
+            'success' => true,
+            'date' => $date,
+            'count' => count($rows),
+            'rows' => $rows,
+        ]);
         break;
 
     default:

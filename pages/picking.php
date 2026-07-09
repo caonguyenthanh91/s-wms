@@ -684,17 +684,37 @@ function confirmShelfQr() {
     }
 
     const scanned = normalizeQrText($('#shelf-qr-input').val());
+    return processShelfQrScan(scanned, false);
+}
+
+function processShelfQrScan(scanned, fromScanner) {
+    if (!pickingState.selectedShelf) {
+        showError('#step2-error', 'Hãy chọn vị trí đầu tiên trong danh sách trước.');
+        if (fromScanner && typeof window.resetQRScannerModalState === 'function') {
+            window.resetQRScannerModalState();
+        }
+        return false;
+    }
+
     const expected = normalizeQrText(pickingState.selectedShelf.shelf_id);
 
     if (!scanned) {
         showError('#step2-error', 'Hãy quét QR mã vị trí.');
-        return;
+        if (fromScanner && typeof window.resetQRScannerModalState === 'function') {
+            window.resetQRScannerModalState();
+        }
+        return false;
     }
 
     if (scanned !== expected) {
+        alert(`Sai vị trí. Cần ${expected} nhưng quét ${scanned}.`);
         showError('#step2-error', `Sai vị trí. Cần ${expected} nhưng quét ${scanned}.`);
+        $('#shelf-qr-input').val('').focus();
         setWorkflowStatus('Sai QR vị trí', 'text-red-700');
-        return;
+        if (fromScanner && typeof window.resetQRScannerModalState === 'function') {
+            window.resetQRScannerModalState();
+        }
+        return false;
     }
 
     pickingState.shelfConfirmed = true;
@@ -704,9 +724,16 @@ function confirmShelfQr() {
     $('#btn-parse-box').prop('disabled', false);
     $('#pick-qty-input').prop('disabled', true).val('');
     $('#btn-submit-pick').prop('disabled', true);
+    $('#shelf-qr-input').val('');
 
     setStepState(3);
     setWorkflowStatus(`Đã xác nhận đúng vị trí ${expected}.`, 'text-green-700');
+
+    if (fromScanner && typeof window.closeQRScannerModal === 'function') {
+        window.closeQRScannerModal();
+    }
+
+    return true;
 }
 
 function parseBoxQr(rawValue) {
@@ -750,21 +777,44 @@ function parseBoxQrAndSuggestQty() {
     }
 
     const parsed = parseBoxQr($('#box-qr-input').val());
+    return processBoxQrScan(parsed, false);
+}
+
+function processBoxQrScan(parsed, fromScanner) {
+    if (!pickingState.shelfConfirmed || !pickingState.selectedShelf) {
+        showError('#step3-error', 'Cần xác nhận đúng vị trí ở bước 2 trước.');
+        if (fromScanner && typeof window.resetQRScannerModalState === 'function') {
+            window.resetQRScannerModalState();
+        }
+        return false;
+    }
+
     if (!parsed) {
         showError('#step3-error', 'QR thùng không đúng định dạng yêu cầu.');
-        return;
+        if (fromScanner && typeof window.resetQRScannerModalState === 'function') {
+            window.resetQRScannerModalState();
+        }
+        return false;
     }
 
     if (parsed.productId !== pickingState.productId) {
+        alert(`Sai mã hàng. Cần ${pickingState.productId} nhưng quét ${parsed.productId}.`);
         showError('#step3-error', `Sai mã hàng. Cần ${pickingState.productId} nhưng quét ${parsed.productId}.`);
+        $('#box-qr-input').val('').focus();
         setWorkflowStatus('Sai QR mã hàng thùng', 'text-red-700');
-        return;
+        if (fromScanner && typeof window.resetQRScannerModalState === 'function') {
+            window.resetQRScannerModalState();
+        }
+        return false;
     }
 
     const maxAllowed = getMaxPickAllowedNow();
     if (maxAllowed <= 0) {
         showError('#step3-error', 'Không còn số lượng hợp lệ để pick tại vị trí hiện tại.');
-        return;
+        if (fromScanner && typeof window.resetQRScannerModalState === 'function') {
+            window.resetQRScannerModalState();
+        }
+        return false;
     }
 
     const suggestedQty = Math.min(parsed.qty, maxAllowed);
@@ -774,8 +824,15 @@ function parseBoxQrAndSuggestQty() {
     $('#step3-max-qty').text(maxAllowed);
     $('#pick-qty-input').prop('disabled', false).val(suggestedQty).focus().select();
     $('#btn-submit-pick').prop('disabled', false);
+    $('#box-qr-input').val('');
 
     setWorkflowStatus('Đã xác nhận mã hàng trên thùng, nhập/điều chỉnh số lượng rồi nhấn OK.', 'text-green-700');
+
+    if (fromScanner && typeof window.closeQRScannerModal === 'function') {
+        window.closeQRScannerModal();
+    }
+
+    return true;
 }
 
 function renderHistory() {
@@ -958,6 +1015,22 @@ $('#box-qr-input').on('keydown', function(e) {
         parseBoxQrAndSuggestQty();
     }
 });
+
+window.handleQRScannerScan = function(targetId, scannedValue) {
+    const normalizedValue = normalizeQrText(scannedValue);
+
+    if (targetId === 'shelf-qr-input') {
+        $('#shelf-qr-input').val(normalizedValue);
+        return processShelfQrScan(normalizedValue, true);
+    }
+
+    if (targetId === 'box-qr-input') {
+        $('#box-qr-input').val(normalizedValue);
+        return processBoxQrScan(parseBoxQr(normalizedValue), true);
+    }
+
+    return false;
+};
 
 $('#pick-qty-input').on('keydown', function(e) {
     if (e.which === 13) {
