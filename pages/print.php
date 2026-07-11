@@ -27,32 +27,28 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
             <div id="import-result" class="import-result"></div>
         </div>
         <div class="form-group">
-            <label>Kiểu tìm kiếm:</label>
-            <div class="search-mode-group">
-                <label class="search-mode-option active">
-                    <input type="radio" name="export-search-type" value="command" checked>
-                    Theo Invoice
-                </label>
-                <label class="search-mode-option">
-                    <input type="radio" name="export-search-type" value="product_id">
-                    Theo Mã hàng
-                </label>
+            <label>Chọn ngày:</label>
+            <div class="flight-filter-row" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <input id="print-date" class="flight-date-input" type="date" style="flex: 1; min-width: 120px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px;">
+                <button type="button" class="flight-btn" data-day-offset="-1" style="padding: 6px 12px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">Hôm qua</button>
+                <button type="button" class="flight-btn active" data-day-offset="0" style="padding: 6px 12px; background: #007bff; color: white; border: 1px solid #0056b3; border-radius: 4px; cursor: pointer;">Hôm nay</button>
+                <button type="button" class="flight-btn" data-day-offset="1" style="padding: 6px 12px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">Ngày mai</button>
             </div>
-        </div>
-        <div class="form-group">
-            <label id="search-input-label">Invoice hoặc Mã hàng:</label>
-            <div class="qr-inline-wrap">
-                <input type="text" id="export-search-input" class="form-control" placeholder="Nhập mã Invoice hoặc mã hàng">
-                <button type="button" class="btn btn-outline-primary" id="search-qr-btn" onclick="openQRScannerModal('export-search-input', 'Mã CTSX')" title="Quét mã">
-                    <i class="fas fa-qrcode"></i>
-                </button>
-            </div>
-            <div id="export-search-suggestions" class="command-suggestions"></div>
         </div>
 
-        <button onclick="loadExportItems()" class="btn btn-primary search-command-btn" id="search-export-btn">
-            <i class="fas fa-search"></i> Tìm kiếm
-        </button>
+        <div class="form-group">
+            <label>Danh sách Invoice:</label>
+            <div id="invoices-list" style="border: 1px solid #ddd; border-radius: 4px; max-height: 200px; overflow-y: auto; background: #f9f9f9;">
+                <div class="text-muted" style="padding: 12px;">Chọn ngày để xem danh sách invoice</div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Danh sách mã hàng của Invoice:</label>
+            <div id="invoice-items-list" style="border: 1px solid #ddd; border-radius: 4px; max-height: 200px; overflow-y: auto; background: #f9f9f9;">
+                <div class="text-muted" style="padding: 12px;">Chọn một invoice để xem danh sách mã hàng</div>
+            </div>
+        </div>
 
         <div id="warning-container" class="warning">
             <i class="fas fa-exclamation-triangle"></i>
@@ -96,11 +92,11 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
 <div id="print-pages"></div>
 
 <script>
-    let currentSearchType = 'command';
-    let currentSearchKeyword = '';
+    let currentCommand = '';
+    let currentDate = '';
     let currentItems = [];
+    let selectedItems = [];
     let shelvesData = {};
-    let suggestionRequest = null;
     const printApiBase = 'api.php';
 
     function escapeHtml(value) {
@@ -116,161 +112,115 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         });
     }
 
-    function getSearchMeta() {
-        return currentSearchType === 'product_id'
-            ? {
-                label: 'Theo Mã LK:',
-                placeholder: 'Nhập hoặc chọn mã linh kiện',
-                buttonText: 'Tìm Mã LK',
-                qrLabel: 'Mã linh kiện'
-            }
-            : {
-                label: 'Theo CTSX:',
-                placeholder: 'Nhập hoặc chọn mã CTSX',
-                buttonText: 'Tìm CTSX',
-                qrLabel: 'Mã CTSX'
-            };
+    function pad2(v) {
+        return String(v).padStart(2, '0');
     }
 
-    function setSearchMode(mode) {
-        currentSearchType = mode === 'product_id' ? 'product_id' : 'command';
-        const meta = getSearchMeta();
-
-        $('#search-input-label').text(meta.label);
-        $('#export-search-input').attr('placeholder', meta.placeholder);
-        $('#search-export-btn').html(`<i class="fas fa-search"></i> ${meta.buttonText}`);
-        $('#search-qr-btn').attr('title', `Quét ${meta.qrLabel}`);
-
-        $('.search-mode-option').removeClass('active');
-        $(`input[name="export-search-type"][value="${currentSearchType}"]`).closest('.search-mode-option').addClass('active');
-
-        $('#export-search-input').val('');
-        $('#export-search-suggestions').empty();
-        resetExportResult('Chọn một chỉ thị để xem trước phiếu in');
-        refreshWarningState();
+    function toYmd(dateObj) {
+        return dateObj.getFullYear() + '-' + pad2(dateObj.getMonth() + 1) + '-' + pad2(dateObj.getDate());
     }
 
-    function showWarning(message) {
-        if (!message) {
-            $('#warning-container').removeClass('show');
-            $('#warning-text').text('');
-            return;
-        }
-
-        $('#warning-text').text(message);
-        $('#warning-container').addClass('show');
+    function setDateByOffset(dayOffset) {
+        const dt = new Date();
+        dt.setHours(0, 0, 0, 0);
+        dt.setDate(dt.getDate() + dayOffset);
+        const dateStr = toYmd(dt);
+        $('#print-date').val(dateStr);
+        currentDate = dateStr;
+        loadInvoicesByDate(dateStr);
     }
 
-    function resetExportResult(placeholderText) {
-        currentItems = [];
-        shelvesData = {};
-        $('#items-container').html('<div class="text-muted">Không có dữ liệu.</div>');
-        $('#pages-preview').html(`<div class="preview-placeholder">${placeholderText || 'Không có dữ liệu'}</div>`);
-        $('#print-pages').empty();
-        $('#print-btn').hide();
+    function markActiveQuickButton(offset) {
+        $('[data-day-offset]').removeClass('active');
+        $('[data-day-offset="' + offset + '"]').addClass('active');
     }
 
-    function refreshWarningState() {
-        if (!currentItems.length) {
-            showWarning('');
-            return;
-        }
+    function loadInvoicesByDate(dateStr) {
+        currentDate = dateStr;
+        const invoicesList = $('#invoices-list');
+        invoicesList.html('<div class="text-muted">Đang tải...</div>');
 
-        const shortages = [];
-        currentItems.forEach(item => {
-            const shelves = shelvesData[item.product_id] || [];
-            const totalStock = shelves.reduce(function(sum, shelf) {
-                return sum + Number(shelf.qty || 0);
-            }, 0);
-
-            if (totalStock < Number(item.total_qty || 0)) {
-                shortages.push(`${item.product_id}: ${totalStock}/${item.total_qty}`);
-            }
-        });
-
-        const hasEditableRows = currentItems.some(function(item) {
-            return !!item.is_editable;
-        });
-        const modeNote = hasEditableRows
-            ? 'Đang xem theo CTSX. Bạn có thể sửa Tổng và Mỗi phiếu trên từng dòng rồi nhấn Lưu.'
-            : (currentSearchType === 'command'
-                ? 'Đang xem tổng số lượng gộp theo Invoice. Chế độ này chỉ hiển thị tổng, không cho sửa từng dòng.'
-                : 'Đang xem tổng số lượng gộp theo Mã LK. Chế độ này chỉ hiển thị tổng, không cho sửa từng dòng.');
-
-        if (!shortages.length) {
-            showWarning(modeNote);
-            return;
-        }
-
-        showWarning(`${modeNote} Tồn không đủ cho: ${shortages.join(' | ')}`);
-    }
-
-    function renderSuggestionItem(item) {
-        const encodedValue = encodeURIComponent(item.value || '');
-        let detail = '';
-
-        if (currentSearchType === 'product_id') {
-            detail = `Tổng: ${item.total_qty || 0}`;
-            if (item.command_list) {
-                detail += ` | Lệnh: ${item.command_list}`;
-            }
-        } else {
-            detail = item.command_date || '';
-            if (item.row_count) {
-                detail += `${detail ? ' | ' : ''}${item.row_count} dòng`;
-            }
-        }
-
-        return `
-            <button type="button" class="suggestion-item suggestion-button" data-value="${encodedValue}">
-                <span>${escapeHtml(item.value || '')}</span>
-                <small>${escapeHtml(detail)}</small>
-            </button>
-        `;
-    }
-
-    function loadSearchSuggestions(keyword) {
-        const suggestions = $('#export-search-suggestions');
-        if (!keyword) {
-            suggestions.empty();
-            return;
-        }
-
-        if (suggestionRequest && typeof suggestionRequest.abort === 'function') {
-            suggestionRequest.abort();
-        }
-
-        suggestionRequest = $.ajax({
+        $.ajax({
             type: 'GET',
-            url: `${printApiBase}?action=get_export_search_suggestions`,
-            data: {
-                search_type: currentSearchType,
-                keyword: keyword
-            },
+            url: `${printApiBase}?action=get_invoices_by_date`,
+            data: { date: dateStr },
             dataType: 'json',
             success: function(res) {
-                if (!res.success || !Array.isArray(res.items) || !res.items.length) {
-                    suggestions.empty();
+                if (!res.success || !res.invoices || res.invoices.length === 0) {
+                    invoicesList.html('<div class="text-muted">Không có invoice nào trong ngày này</div>');
                     return;
                 }
 
-                const html = ['<div class="suggestion-label">Gợi ý:</div>'];
-                res.items.forEach(function(item) {
-                    html.push(renderSuggestionItem(item));
+                let html = '';
+                res.invoices.forEach(function(invoice) {
+                    html += `
+                        <button type="button" class="invoice-item-btn" style="display: block; width: 100%; text-align: left; padding: 10px; border: none; background: #f9f9f9; border-bottom: 1px solid #ddd; cursor: pointer;" data-command="${escapeHtml(invoice.command)}">
+                            <div style="font-weight: bold;">${escapeHtml(invoice.command)}</div>
+                            <small>${invoice.item_count} mã hàng | ${invoice.case_count} kiện</small>
+                        </button>
+                    `;
                 });
-                suggestions.html(html.join(''));
+                invoicesList.html(html);
             },
-            error: function(xhr, status) {
-                if (status !== 'abort') {
-                    suggestions.empty();
-                }
+            error: function() {
+                invoicesList.html('<div class="text-muted">Lỗi kết nối</div>');
             }
         });
     }
 
-    function selectSearchKeyword(value) {
-        $('#export-search-input').val(value);
-        $('#export-search-suggestions').empty();
+    function loadInvoiceItems(command) {
+        currentCommand = command;
+        const itemsList = $('#invoice-items-list');
+        itemsList.html('<div class="text-muted">Đang tải...</div>');
+
+        $.ajax({
+            type: 'GET',
+            url: `${printApiBase}?action=get_invoice_items_by_date`,
+            data: { command: command, date: currentDate },
+            dataType: 'json',
+            success: function(res) {
+                if (!res.success || !res.items || res.items.length === 0) {
+                    itemsList.html('<div class="text-muted">Không có mã hàng nào</div>');
+                    currentItems = [];
+                    selectedItems = [];
+                    resetPreview();
+                    return;
+                }
+
+                currentItems = res.items || [];
+                selectedItems = currentItems.map(function(item) {
+                    return {
+                        product_id: item.product_id,
+                        product_name: item.product_name,
+                        unit: item.unit,
+                        for_product: item.for_product,
+                        total_qty: item.total_qty,
+                        created_at: item.created_at
+                    };
+                });
+
+                let html = '';
+                currentItems.forEach(function(item, idx) {
+                    html += `
+                        <div style="padding: 10px; border-bottom: 1px solid #ddd; background: white; margin: 0; cursor: default;">
+                            <div><strong>${escapeHtml(item.product_id)}</strong> - ${escapeHtml(item.product_name || 'N/A')} (${escapeHtml(item.unit || 'pcs')})</div>
+                            <small>Số lượng: ${item.total_qty} | FOR: ${escapeHtml(item.for_product || '-')}</small>
+                        </div>
+                    `;
+                });
+                itemsList.html(html);
+                generatePrintPreview();
+            },
+            error: function() {
+                itemsList.html('<div class="text-muted">Lỗi kết nối</div>');
+            }
+        });
+    }
+
+    function resetPreview() {
+        $('#pages-preview').html('<div class="preview-placeholder">Chọn một invoice để xem trước phiếu in</div>');
+        $('#print-pages').empty();
+        $('#print-btn').hide();
     }
 
     async function importExportTemp() {
@@ -312,7 +262,8 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
                 : '';
             result.removeClass('error').addClass('success').text(`Import thành công ${res.imported_count} dòng.${warningText}`);
             input.value = '';
-            resetExportResult('Dữ liệu đã thay đổi. Hãy tìm lại để xem phiếu in.');
+            resetPreview();
+            loadInvoicesByDate(currentDate);
         } catch (error) {
             result.removeClass('success').addClass('error').text(error.message || 'Import thất bại');
         } finally {
@@ -379,266 +330,82 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         syncPrintModeToggles('init');
     }
 
-    function loadExportItems() {
-        const keyword = $('#export-search-input').val().trim().toUpperCase();
-        if (!keyword) {
-            alert(currentSearchType === 'command' ? 'Vui lòng nhập mã chỉ thị' : 'Vui lòng nhập mã linh kiện');
-            return;
-        }
-
-        currentSearchKeyword = keyword;
-
-        return $.ajax({
-            type: 'POST',
-            url: `${printApiBase}?action=get_export_items`,
-            data: {
-                search_type: currentSearchType,
-                keyword: keyword
-            },
-            dataType: 'json',
-            success: function(res) {
-                if (!res.success) {
-                    alert(res.message || 'Không tìm thấy dữ liệu');
-                    return;
-                }
-
-                currentSearchType = res.search_type || currentSearchType;
-                currentSearchKeyword = res.keyword || keyword;
-                currentItems = res.items || [];
-                displayItems();
-            },
-            error: function() {
-                alert('Lỗi kết nối khi tải danh sách dữ liệu picking');
-            }
-        });
-    }
-
-    async function updateExportItem(id) {
-        const row = $(`.item-card[data-item-id="${id}"]`);
-        const totalQty = parseInt(row.find('.edit-total-qty').val(), 10);
-        const bucketQty = parseInt(row.find('.edit-bucket-qty').val(), 10);
-
-        if (!Number.isInteger(totalQty) || !Number.isInteger(bucketQty) || totalQty <= 0 || bucketQty <= 0) {
-            alert('Tổng số lượng và Mỗi phiếu phải lớn hơn 0');
-            return;
-        }
-
-        const button = row.find('.save-item-btn');
-        button.prop('disabled', true).text('Đang lưu...');
-
-        try {
-            const res = await $.ajax({
-                type: 'POST',
-                url: `${printApiBase}?action=update_export_item`,
-                data: {
-                    id: id,
-                    total_qty: totalQty,
-                    bucket_qty: bucketQty
-                },
-                dataType: 'json'
-            });
-
-            if (!res.success) {
-                throw new Error(res.message || 'Không cập nhật được dữ liệu');
-            }
-
-            await loadExportItems();
-        } catch (error) {
-            alert(error.message || 'Cập nhật thất bại');
-        } finally {
-            button.prop('disabled', false).text('Lưu');
-        }
-    }
-
-    function displayItems() {
-        const container = $('#items-container');
-        container.empty();
-        shelvesData = {};
-
-        if (!currentItems.length) {
-            container.html('<div class="text-muted">Không có dữ liệu.</div>');
-            $('#pages-preview').html('<div class="preview-placeholder">Không có dữ liệu</div>');
-            $('#print-pages').empty();
-            $('#print-btn').hide();
-            refreshWarningState();
-            return;
-        }
-
-        let pending = currentItems.length;
-
-        currentItems.forEach(item => {
-            const isEditableRow = !!item.is_editable;
-            const qtyContent = isEditableRow
-                ? `
-                    <div class="item-edit-grid">
-                        <label class="item-edit-field">
-                            <span>Tổng</span>
-                            <input type="number" min="1" class="form-control edit-total-qty" value="${item.total_qty}">
-                        </label>
-                        <label class="item-edit-field">
-                            <span>Mỗi phiếu</span>
-                            <input type="number" min="1" class="form-control edit-bucket-qty" value="${item.bucket_qty}">
-                        </label>
-                        <button type="button" class="btn btn-save-inline save-item-btn" onclick="updateExportItem(${item.id})">Lưu</button>
-                    </div>
-                `
-                : `
-                    <div class="item-qty-summary">
-                        <strong>Tổng gộp:</strong> ${item.total_qty} ${escapeHtml(item.unit || 'pcs')}
-                    </div>
-                    <div class="item-meta-inline">
-                        Lệnh liên quan: ${escapeHtml(item.command_list || '-')}
-                    </div>
-                `;
-
-            container.append(`
-                <div class="item-card" data-item-id="${item.id}">
-                    <div class="item-header">
-                        <div class="product-id">${escapeHtml(item.product_id)}</div>
-                        <div class="qty-info">${isEditableRow ? `${item.num_pages} phiếu` : 'Tổng gộp'}</div>
-                    </div>
-                    <div class="item-meta">
-                        ${escapeHtml(item.product_name || 'N/A')} (${escapeHtml(item.unit || 'pcs')})
-                    </div>
-                    <div class="item-meta-inline">
-                        FOR: ${escapeHtml(item.for_product || '-')}
-                    </div>
-                    ${qtyContent}
-                    <div id="shelf-${item.id}" class="item-shelf-wrap"></div>
-                </div>
-            `);
-
-            $.ajax({
-                type: 'POST',
-                url: `${printApiBase}?action=get_shelf_inventory`,
-                data: { product_id: item.product_id },
-                dataType: 'json',
-                complete: function() {
-                    pending -= 1;
-                    if (pending === 0) {
-                        generatePrintPreview();
-                    }
-                },
-                success: function(res) {
-                    if (!res.success) return;
-
-                    shelvesData[item.product_id] = res.shelves || [];
-                    const unit = item.unit || 'pcs';
-                    let html = '';
-
-                    if (!res.shelves.length) {
-                        html = '<div class="insufficient-stock">Không có tồn ở KHO CHINH</div>';
-                    } else {
-                        res.shelves.forEach(shelf => {
-                            html += `<div class="shelf-item"><span>${escapeHtml(shelf.shelf_id)}</span><span>${shelf.qty} ${escapeHtml(unit)}</span></div>`;
-                        });
-                        if (res.total_stock < item.total_qty) {
-                            html += `<div class="insufficient-stock stock-summary">Tồn không đủ: ${res.total_stock}/${item.total_qty}</div>`;
-                        } else {
-                            html += `<div class="sufficient-stock stock-summary">Tồn đủ: ${res.total_stock}/${item.total_qty}</div>`;
-                        }
-                    }
-
-                    $(`#shelf-${item.id}`).html(html);
-                },
-                error: function() {
-                    $(`#shelf-${item.id}`).html('<div class="insufficient-stock">Lỗi kết nối khi tải tồn kho KHO CHINH</div>');
-                }
-            });
-        });
-    }
 
     function generatePrintPreview() {
         const preview = $('#pages-preview');
         const printPages = $('#print-pages');
 
+        if (!selectedItems || selectedItems.length === 0) {
+            resetPreview();
+            return;
+        }
+
         let previewHtml = '';
         let printHtml = '';
+        let pageNum = 0;
 
-        currentItems.forEach(item => {
-            const shelves = shelvesData[item.product_id] || [];
-            const groupedMode = !item.is_editable;
-            const numPages = groupedMode ? 1 : Math.max(1, parseInt(item.num_pages, 10) || 1);
-            let remainingQty = parseInt(item.total_qty, 10) || 0;
+        selectedItems.forEach((item, idx) => {
+            pageNum++;
+            const qrDataUrl = generateQRCodeDataUrl(currentCommand + '$' + item.product_id + '$' + item.total_qty);
+            const createdAt = item.created_at ? new Date(String(item.created_at).replace(' ', 'T')).toLocaleDateString('vi-VN') : '-';
+            const totalPages = selectedItems.length;
 
-            for (let page = 1; page <= numPages; page++) {
-                const bucketQty = parseInt(item.bucket_qty, 10) || 1;
-                const pageQty = groupedMode ? remainingQty : Math.min(bucketQty, remainingQty);
-                const totalQty = parseInt(item.total_qty, 10) || 0;
-                const forProduct = item.for_product || '-';
-                const qrDataUrl = generateQRCodeDataUrl(item.product_id + '$' + pageQty);
-                const commandLabel = currentSearchType === 'command' ? 'INVOICE' : 'LỆNH';
-                const commandValue = currentSearchType === 'command'
-                    ? (item.command || currentSearchKeyword)
-                    : (item.command_list || currentSearchKeyword);
-                const qtySubText = groupedMode
-                    ? (currentSearchType === 'command' ? 'Tổng gộp theo Invoice' : 'Tổng gộp theo Mã LK')
-                    : `/ Tổng ${totalQty}`;
+            const ticketHtml = `
+                <div class="picking-ticket" style="width: 80mm; padding: 4mm;">
+                    <!-- Row 1: Date/Time | PHIẾU PICKING | Page No -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 9px; margin-bottom: 3mm; border-bottom: 1px solid #000;">
+                        <span style="flex: 1; text-align: left;">${new Date().toLocaleDateString('vi-VN')} ${pad2(new Date().getHours())}:${pad2(new Date().getMinutes())}</span>
+                        <span style="flex: 1; text-align: center; font-weight: bold; font-size: 16px;">PHIẾU PICKING</span>
+                        <span style="flex: 1; text-align: right;">Phiếu: ${pageNum}/${totalPages}</span>
+                    </div>
 
-                let shelvesHtml = '';
-                if (shelves.length) {
-                    shelves.forEach(shelf => {
-                        shelvesHtml += `<div class="shelf-row"><span>${escapeHtml(shelf.shelf_id)}</span><span> (${shelf.qty})</span></div>`;
-                    });
-                } else {
-                    shelvesHtml = '<div class="text-muted no-location">Không có tồn kho</div>';
-                }
-
-                const ticketHtml = `
-                    <div class="picking-ticket">
-                        <div class="row1 picking-header">
-                            <span>${new Date().toLocaleDateString('vi-VN')}</span>
-                            <span class="ticket-title">PHIẾU PICKING</span>
-                            <span class="picking-page-num">Phiếu: ${page}/${numPages}</span>
+                    <!-- Row 2: Invoice | Customer | Created Date -->
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; font-size: 8px; margin-bottom: 3mm; gap: 2mm;">
+                        <div style="flex: 1.5;">
+                            <div style="font-weight: bold;">Invoice:</div>
+                            <div style="font-size: 16px; font-weight: bold;">${escapeHtml(currentCommand || '-')}</div>
                         </div>
-
-                        <div class="row2 picking-command">
-                            <div class="command-box">
-                                <span class="ticket-key">${commandLabel}</span>
-                                <span class="command-code">${escapeHtml(commandValue)}</span>
-                            </div>
-                            <div class="for-product-box">
-                                <span class="ticket-key">FOR</span>
-                                <span class="for-product-val">${escapeHtml(forProduct)}</span>
-                            </div>
+                        <div style="flex: 1.5;">
+                            <div style="font-weight: bold;">Khách hàng:</div>
+                            <div style="font-size: 16px;">${escapeHtml(item.for_product || '-')}</div>
                         </div>
-
-                        <div class="row3 picking-product">
-                            <div class="left qr-section">
-                                ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR ${item.product_id}" class="qr-image">` : '<div class="text-muted no-location">QR lỗi</div>'}
-                            </div>
-                            <div class="qty-needed">
-                                <div class="qty-label">SL PICK</div>
-                                <div class="qty-main">${pageQty} ${escapeHtml(item.unit || 'pcs')}</div>
-                                <div class="qty-sub">${qtySubText}</div>
-                            </div>
-                        </div>
-
-                        <div class="row4 product-info">
-                            <div class="product-code">${escapeHtml(item.product_id)}</div>
-                            <div class="product-name">${escapeHtml(item.product_name || 'N/A')}</div>
-                        </div>
-
-                        <div class="row5 shelves-section">
-                            <div class="shelves-header">Vị trí (SL):</div>
-                            ${shelvesHtml}
-                        </div>
-
-                        <div class="row6 picking-footer">
-                            <div class="sign-line">Ngày hoàn thành: _____________ Ký tên: _____________</div>
+                        <div style="flex: 1;">
+                            <div style="font-weight: bold;">Ngày xuất:</div>
+                            <div style="font-size: 16px;">${createdAt}</div>
                         </div>
                     </div>
-                `;
 
-                previewHtml += ticketHtml;
-                printHtml += ticketHtml;
-                remainingQty -= pageQty;
-            }
+                    <!-- Row 3: QR Code (30x30mm) | Quantity -->
+                    <div style="display: flex; gap: 3mm; margin-bottom: 3mm;">
+                        <div style="width: 30mm; height: 30mm; border: 1px solid #999;">
+                            ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR" style="width: 100%; height: 100%; object-fit: contain;">` : '<div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 8px;">QR lỗi</div>'}
+                        </div>
+                        <div style="flex: 1; border: 1px solid #ffc107; background: #fff9e6; padding: 2mm; text-align: center;">
+                            <div style="font-size: 16px; font-weight: bold;">SL CẦN PICK</div>
+                            <div style="font-size: 30px; font-weight: bold;">${item.total_qty}</div>
+                            <div style="font-size: 16px;">${escapeHtml(item.unit || 'pcs')}</div>
+                        </div>
+                    </div>
+
+                    <!-- Row 4: Product Code | Product Name -->
+                    <div style="margin-bottom: 3mm;">
+                        <div style="font-weight: bold; font-size: 16px;">${escapeHtml(item.product_id)}</div>
+                        <div style="font-size: 8px;">${escapeHtml(item.product_name || '-')}</div>
+                    </div>
+
+                    <!-- Row 5: Signature Line (20mm height) -->
+                    <div style="margin-top: auto; padding-top: 3mm; border-top: 1px solid #000; font-size: 8px; text-align: center; height: 20mm; display: flex; flex-direction: column; justify-content: center;">
+                        <div style="margin-bottom: 3mm;">Ngày hoàn thành: ________________Ký tên: ________________</div>
+                    </div>
+                </div>
+            `;
+
+            previewHtml += ticketHtml;
+            printHtml += ticketHtml;
         });
 
         preview.html(previewHtml || '<div class="preview-placeholder">Không có dữ liệu</div>');
         printPages.html(printHtml);
-        refreshWarningState();
 
         if (printHtml) {
             $('#print-btn').show();
@@ -763,24 +530,27 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
 
     $(document).ready(function() {
         initPrintOptions();
-        setSearchMode('command');
+        setDateByOffset(0);
+        markActiveQuickButton(0);
 
-        $('input[name="export-search-type"]').on('change', function() {
-            setSearchMode($(this).val());
+        $('[data-day-offset]').on('click', function() {
+            const offset = parseInt($(this).attr('data-day-offset') || '0', 10) || 0;
+            setDateByOffset(offset);
+            markActiveQuickButton(offset);
         });
 
-        $('#export-search-input').on('input', function() {
-            loadSearchSuggestions($(this).val().trim().toUpperCase());
-        });
-
-        $('#export-search-input').on('keypress', function(event) {
-            if (event.which === 13) {
-                loadExportItems();
+        $('#print-date').on('change', function() {
+            const dateStr = $(this).val();
+            if (dateStr) {
+                currentDate = dateStr;
+                loadInvoicesByDate(dateStr);
+                $('[data-day-offset]').removeClass('active');
             }
         });
 
-        $(document).on('click', '.suggestion-button', function() {
-            selectSearchKeyword(decodeURIComponent($(this).data('value') || ''));
+        $(document).on('click', '.invoice-item-btn', function() {
+            const command = $(this).attr('data-command');
+            loadInvoiceItems(command);
         });
     });
 </script>

@@ -555,39 +555,6 @@
     overflow-wrap: anywhere;
 }
 
-.qty-needed {
-    background: #fff9e6;
-    border: none;
-    padding: 4px 5px;
-    text-align: center;
-    font-weight: bold;
-    font-size: 13px;
-    margin: 0;
-    flex: 0 0 calc(50% - 2px);
-    width: calc(50% - 2px);
-    min-height: 25mm;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-}
-
-.qty-label {
-    font-size: 10px;
-    line-height: 1.1;
-    margin-bottom: 2px;
-}
-
-.qty-main {
-    font-size: 18px;
-    line-height: 1.1;
-    word-break: break-word;
-}
-
-.qty-sub {
-    font-size: 13px;
-    line-height: 1.1;
-    margin-top: 2px;
-}
 
 .shelves-section {
     background: #f9f9f9;
@@ -632,6 +599,161 @@
     text-align: left;
     font-size: 10px;
     width: 100%;
+}
+
+/* Invoice highlight row */
+.invoice-highlight {
+    background: #f0e8ff;
+    border: 2px solid #6f42c1;
+    padding: 4px 5px;
+    margin: 2px 0 3px;
+    border-radius: 2px;
+    min-height: 20mm;
+    justify-content: center;
+    align-items: center;
+}
+
+.invoice-box {
+    text-align: center;
+    padding: 0;
+    flex: 1;
+}
+
+.invoice-label {
+    font-size: 10px;
+    font-weight: bold;
+    display: block;
+    margin-bottom: 2px;
+    letter-spacing: 0.2px;
+}
+
+.invoice-code-large {
+    display: block;
+    font-size: 18px;
+    font-weight: bold;
+    line-height: 1.05;
+    letter-spacing: 0.5px;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+/* QR and Qty row */
+.qr-and-qty {
+    margin: 2px 0 3px;
+    gap: 2px;
+}
+
+.qr-section {
+    flex: 0 0 calc(50% - 1px);
+    border: 1px solid #333;
+    padding: 3px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 26mm;
+}
+
+.qr-label {
+    font-size: 9px;
+    font-weight: bold;
+    margin-bottom: 2px;
+    letter-spacing: 0.2px;
+}
+
+.qty-section {
+    flex: 0 0 calc(50% - 1px);
+    background: #fff9e6;
+    border: 1px solid #ffc107;
+    padding: 3px 4px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 26mm;
+}
+
+.qty-label {
+    font-size: 9px;
+    font-weight: bold;
+    margin-bottom: 1px;
+    letter-spacing: 0.2px;
+}
+
+.qty-main {
+    font-size: 20px;
+    font-weight: bold;
+    line-height: 1;
+    margin: 1px 0;
+}
+
+.qty-unit {
+    font-size: 10px;
+    margin-top: 1px;
+}
+
+/* Product info row */
+.product-info {
+    margin: 2px 0 3px;
+    padding: 3px 0;
+}
+
+.product-section {
+    width: 100%;
+}
+
+.product-label {
+    font-size: 9px;
+    font-weight: bold;
+    margin-bottom: 2px;
+    letter-spacing: 0.2px;
+}
+
+.product-code {
+    font-size: 18px;
+    font-weight: bold;
+    line-height: 1.05;
+    margin-bottom: 2px;
+    letter-spacing: 0.3px;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+.product-name {
+    font-size: 11px;
+    line-height: 1.15;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+/* For product info row */
+.for-product-info {
+    font-size: 11px;
+    margin: 2px 0 3px;
+    padding: 3px 0;
+    border-top: 1px dotted #ccc;
+    border-bottom: 1px dotted #ccc;
+}
+
+.for-label {
+    font-weight: bold;
+    font-size: 10px;
+}
+
+.for-value {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+/* Row 7 for new layout */
+.row7 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 3px;
+    box-sizing: border-box;
 }
 
 #print-pages {

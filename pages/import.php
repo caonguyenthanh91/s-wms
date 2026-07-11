@@ -67,7 +67,7 @@
         </table>
         </div>
 
-        <button onclick="submitImport()" class="w-full bg-orange-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-orange-700 shadow-lg">✓ Hoàn Tất Nhận Hàng</button>
+        <button id="btn-submit-import" onclick="submitImport()" class="w-full bg-orange-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-orange-700 shadow-lg">✓ Hoàn Tất Nhận Hàng</button>
 
         <!-- Danh sách hàng hiện có trên Pallet này (Giống inbound) -->
         <div id="current-pallet-content" class="mt-8 p-4 bg-orange-50 rounded-lg hidden border-t-2 border-orange-200">
@@ -84,6 +84,7 @@ let importItems = [];
 let qrScanTimer = null;
 let lastHandledQRRaw = '';
 let isContinuousImportScan = false;
+let isSubmitting = false;
 
 function setImportScanMode(isContinuous) {
     isContinuousImportScan = !!isContinuous;
@@ -329,25 +330,39 @@ function removeItem(index) {
 }
 
 async function submitImport() {
-    if (importItems.length === 0) return alert('Danh sách hàng trống!');
-    const palletId = $('#display-pallet').text();
+    if (isSubmitting) {
+        alert('Đang xử lý, vui lòng chờ...');
+        return;
+    }
 
-    for (const item of importItems) {
-        try {
+    if (importItems.length === 0) return alert('Danh sách hàng trống!');
+
+    const palletId = $('#display-pallet').text();
+    const submitBtn = $('#btn-submit-import');
+
+    isSubmitting = true;
+    submitBtn.prop('disabled', true).css('opacity', '0.5');
+    const originalText = submitBtn.html();
+    submitBtn.html('⏳ Đang xử lý...');
+
+    try {
+        for (const item of importItems) {
             const res = await $.post('api.php?action=import_temp_submit', {
                 pallet_id: palletId,
                 product_id: item.product_id,
                 quantity: item.quantity
             });
             if (!res.success) throw new Error(res.message);
-        } catch (e) {
-            alert(`Lỗi: ${e.message}`);
-            return;
         }
+        alert('Đã lưu dữ liệu pallet thành công!');
+        importItems = [];
+        checkPallet(); // Tải lại danh sách hiện có bên dưới
+    } catch (e) {
+        alert(`Lỗi: ${e.message}`);
+    } finally {
+        isSubmitting = false;
+        submitBtn.prop('disabled', false).css('opacity', '1').html(originalText);
     }
-    alert('Đã lưu dữ liệu pallet thành công!');
-    importItems = [];
-    checkPallet(); // Tải lại danh sách hiện có bên dưới
 }
 
 $(document).ready(function() {

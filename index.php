@@ -20,6 +20,8 @@ $pageShortLabels = [
     'transfer' => 'Pallet >>> Kệ',
     'change' => 'Đổi kệ',
     'print' => 'In phiếu',
+    'print_case' => 'In Case',
+    'print_pallet' => 'In Pallet',
     'layout' => 'Layout',
     'dashboard' => 'Dashboard',
     'shelves' => 'ĐK Kệ',
@@ -165,6 +167,14 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                     <span class="sidebar-nav-icon">🖨️</span>
                     <span class="ml-3 sidebar-nav-text">In Phiếu [Mới]</span>
                 </a>
+                <a href="?page=print_case" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'print_case' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">📦</span>
+                    <span class="ml-3 sidebar-nav-text">In Case</span>
+                </a>
+                <a href="?page=print_pallet" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'print_pallet' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">📮</span>
+                    <span class="ml-3 sidebar-nav-text">In Pallet</span>
+                </a>
                 <a href="?page=dashboard" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'dashboard' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
                     <span class="sidebar-nav-icon">🛫</span>
                     <span class="ml-3 sidebar-nav-text">Dashboard</span>
@@ -227,7 +237,7 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                     }
 
                     if (in_array($role, ['Leader', 'Manager', 'Admin'])) {
-                        $allowed_pages = array_merge($allowed_pages, ['transfer', 'change', 'print', 'dashboard']);
+                        $allowed_pages = array_merge($allowed_pages, ['transfer', 'change', 'print', 'print_case', 'print_pallet', 'dashboard']);
                     }
 
                     if (in_array($role, ['Manager', 'Admin'])) {

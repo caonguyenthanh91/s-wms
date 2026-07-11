@@ -10,7 +10,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
 
 <div class="container-main">
     <div class="panel">
-        <h3><i class="fas fa-list"></i> In phiếu picking</h3>
+        <h3><i class="fas fa-list"></i> In tem packing</h3>
         <div class="form-group import-box">
             <label>Import dữ liệu từ Excel:</label>
             <div class="import-note"><a href="../s-wms/assets/packing_list.xlsx">Tải file Excel mẫu tại đây.</a></div>
@@ -20,46 +20,45 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
                     <i class="fas fa-file-import"></i> Import Excel
                 </button>
             </div>
-            <!-- <label class="inline-checkbox">
-                <input type="checkbox" id="clear-existing-export" checked>
-                Xóa dữ liệu export_temp cũ trước khi import
-            </label> -->
             <div id="import-result" class="import-result"></div>
         </div>
+
         <div class="form-group">
-            <label>Invoice:</label>
-            <div class="qr-inline-wrap">
-                <input type="text" id="export-search-input" class="form-control" placeholder="Nhập hoặc quét mã Invoice">
-                <button type="button" class="btn btn-outline-primary" id="search-qr-btn" onclick="openQRScannerModal('export-search-input', 'Mã CTSX')" title="Quét mã">
-                    <i class="fas fa-qrcode"></i>
-                </button>
+            <label>Chọn ngày:</label>
+            <div class="flight-filter-row" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <input id="print-date" class="flight-date-input" type="date" style="flex: 1; min-width: 120px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px;">
+                <button type="button" class="flight-btn" data-day-offset="-1" style="padding: 6px 12px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">Hôm qua</button>
+                <button type="button" class="flight-btn active" data-day-offset="0" style="padding: 6px 12px; background: #007bff; color: white; border: 1px solid #0056b3; border-radius: 4px; cursor: pointer;">Hôm nay</button>
+                <button type="button" class="flight-btn" data-day-offset="1" style="padding: 6px 12px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">Ngày mai</button>
             </div>
-            <div id="export-search-suggestions" class="command-suggestions"></div>
         </div>
 
-        <button onclick="loadExportItems()" class="btn btn-primary search-command-btn" id="search-export-btn">
-            <i class="fas fa-search"></i> Tìm case theo Invoice
-        </button>
-
-        <div id="warning-container" class="warning">
-            <i class="fas fa-exclamation-triangle"></i>
-            <span id="warning-text"></span>
+        <div class="form-group">
+            <label>Danh sách Invoice:</label>
+            <div id="invoices-list" style="border: 1px solid #ddd; border-radius: 4px; max-height: 200px; overflow-y: auto; background: #f9f9f9;">
+                <div class="text-muted" style="padding: 12px;">Chọn ngày để xem danh sách invoice</div>
+            </div>
         </div>
 
-        <div id="items-container" class="items-scroll"></div>
+        <div class="form-group">
+            <label>Danh sách kiện (Case) của Invoice:</label>
+            <div id="cases-list" style="border: 1px solid #ddd; border-radius: 4px; max-height: 200px; overflow-y: auto; background: #f9f9f9;">
+                <div class="text-muted" style="padding: 12px;">Chọn một invoice để xem danh sách kiện</div>
+            </div>
+        </div>
     </div>
 
     <div class="panel">
-        <h3><i class="fas fa-print"></i> Xem trước phiếu picking</h3>
+        <h3><i class="fas fa-print"></i> Xem trước tem packing (115x80mm)</h3>
 
         <div class="pages-container" id="pages-preview">
             <div class="preview-placeholder">
-                Nhập mã Invoice để xem trước phiếu in theo case
+                Chọn một invoice để xem trước tem packing
             </div>
         </div>
 
         <button onclick="printTickets()" class="btn btn-print" id="print-btn">
-            <i class="fas fa-print"></i> In Phiếu Picking (80mm)
+            <i class="fas fa-print"></i> In Tem Packing (115x80mm)
         </button>
 
         <div class="mt-3 text-sm text-gray-600" id="print-options-wrap">
@@ -84,8 +83,9 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
 
 <script>
     let currentCommand = '';
-    let currentItems = [];
-    let suggestionRequest = null;
+    let currentDate = '';
+    let currentCases = [];
+    let selectedCases = [];
     const printApiBase = 'api.php';
 
     function escapeHtml(value) {
@@ -101,91 +101,108 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         });
     }
 
-    function showWarning(message) {
-        if (!message) {
-            $('#warning-container').removeClass('show');
-            $('#warning-text').text('');
-            return;
-        }
-        $('#warning-text').text(message);
-        $('#warning-container').addClass('show');
+    function pad2(v) {
+        return String(v).padStart(2, '0');
     }
 
-    function resetExportResult(placeholderText) {
-        currentItems = [];
-        $('#items-container').html('<div class="text-muted">Không có dữ liệu.</div>');
-        $('#pages-preview').html(`<div class="preview-placeholder">${placeholderText || 'Không có dữ liệu'}</div>`);
-        $('#print-pages').empty();
-        $('#print-btn').hide();
-        showWarning('');
+    function toYmd(dateObj) {
+        return dateObj.getFullYear() + '-' + pad2(dateObj.getMonth() + 1) + '-' + pad2(dateObj.getDate());
     }
 
-    function refreshWarningState() {
-        if (!currentItems.length) {
-            showWarning('');
-            return;
-        }
-        showWarning(`Đã tải ${currentItems.length} case cho Invoice ${currentCommand}. Mỗi case in 1 phiếu.`);
+    function setDateByOffset(dayOffset) {
+        const dt = new Date();
+        dt.setHours(0, 0, 0, 0);
+        dt.setDate(dt.getDate() + dayOffset);
+        const dateStr = toYmd(dt);
+        $('#print-date').val(dateStr);
+        currentDate = dateStr;
+        loadInvoicesByDate(dateStr);
     }
 
-    function renderSuggestionItem(item) {
-        const encodedValue = encodeURIComponent(item.value || '');
-        let detail = item.command_date || '';
-        if (item.row_count) {
-            detail += `${detail ? ' | ' : ''}${item.row_count} dòng`;
-        }
-
-        return `
-            <button type="button" class="suggestion-item suggestion-button" data-value="${encodedValue}">
-                <span>${escapeHtml(item.value || '')}</span>
-                <small>${escapeHtml(detail)}</small>
-            </button>
-        `;
+    function markActiveQuickButton(offset) {
+        $('[data-day-offset]').removeClass('active');
+        $('[data-day-offset="' + offset + '"]').addClass('active');
     }
 
-    function loadSearchSuggestions(keyword) {
-        const suggestions = $('#export-search-suggestions');
-        if (!keyword) {
-            suggestions.empty();
-            return;
-        }
+    function loadInvoicesByDate(dateStr) {
+        currentDate = dateStr;
+        const invoicesList = $('#invoices-list');
+        invoicesList.html('<div class="text-muted">Đang tải...</div>');
 
-        if (suggestionRequest && typeof suggestionRequest.abort === 'function') {
-            suggestionRequest.abort();
-        }
-
-        suggestionRequest = $.ajax({
+        $.ajax({
             type: 'GET',
-            url: `${printApiBase}?action=get_export_search_suggestions`,
-            data: {
-                search_type: 'command',
-                keyword: keyword
-            },
+            url: `${printApiBase}?action=get_invoices_by_date`,
+            data: { date: dateStr },
             dataType: 'json',
             success: function(res) {
-                if (!res.success || !Array.isArray(res.items) || !res.items.length) {
-                    suggestions.empty();
+                if (!res.success || !res.invoices || res.invoices.length === 0) {
+                    invoicesList.html('<div class="text-muted">Không có invoice nào trong ngày này</div>');
                     return;
                 }
 
-                const html = ['<div class="suggestion-label">Gợi ý:</div>'];
-                res.items.forEach(function(item) {
-                    html.push(renderSuggestionItem(item));
+                let html = '';
+                res.invoices.forEach(function(invoice) {
+                    html += `
+                        <button type="button" class="invoice-item-btn" style="display: block; width: 100%; text-align: left; padding: 10px; border: none; background: #f9f9f9; border-bottom: 1px solid #ddd; cursor: pointer;" data-command="${escapeHtml(invoice.command)}">
+                            <div style="font-weight: bold;">${escapeHtml(invoice.command)}</div>
+                            <small>${invoice.item_count} mã hàng | ${invoice.case_count} kiện</small>
+                        </button>
+                    `;
                 });
-                suggestions.html(html.join(''));
+                invoicesList.html(html);
             },
-            error: function(xhr, status) {
-                if (status !== 'abort') {
-                    suggestions.empty();
-                }
+            error: function() {
+                invoicesList.html('<div class="text-muted">Lỗi kết nối</div>');
             }
         });
     }
 
-    function selectSearchKeyword(value) {
-        $('#export-search-input').val(value);
-        $('#export-search-suggestions').empty();
+    function loadCasesByInvoice(command) {
+        currentCommand = command;
+        const casesList = $('#cases-list');
+        casesList.html('<div class="text-muted">Đang tải...</div>');
+
+        $.ajax({
+            type: 'GET',
+            url: `${printApiBase}?action=get_cases_by_invoice`,
+            data: { command: command },
+            dataType: 'json',
+            success: function(res) {
+                if (!res.success || !res.cases || res.cases.length === 0) {
+                    casesList.html('<div class="text-muted">Không có kiện nào</div>');
+                    currentCases = [];
+                    selectedCases = [];
+                    resetPreview();
+                    return;
+                }
+
+                currentCases = res.cases || [];
+                selectedCases = currentCases.slice();
+
+                let html = '';
+                currentCases.forEach(function(caseItem) {
+                    html += `
+                        <div style="padding: 10px; border-bottom: 1px solid #ddd; background: white; margin: 0; cursor: default;">
+                            <div><strong>Kiện: ${escapeHtml(caseItem.case_no)}</strong> - ${caseItem.item_count} mã hàng</div>
+                            <small>FOR: ${escapeHtml(caseItem.for_product || '-')} | VT: ${escapeHtml(caseItem.transport_type || '-')}</small>
+                        </div>
+                    `;
+                });
+                casesList.html(html);
+                generatePrintPreview();
+            },
+            error: function() {
+                casesList.html('<div class="text-muted">Lỗi kết nối</div>');
+            }
+        });
     }
+
+    function resetPreview() {
+        $('#pages-preview').html('<div class="preview-placeholder">Chọn một invoice để xem trước tem packing</div>');
+        $('#print-pages').empty();
+        $('#print-btn').hide();
+    }
+
 
     async function importExportTemp() {
         const input = document.getElementById('export-file');
@@ -199,7 +216,6 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         const result = $('#import-result');
         const formData = new FormData();
         formData.append('excel_file', file);
-        formData.append('clear_existing', $('#clear-existing-export').is(':checked') ? '1' : '0');
 
         button.prop('disabled', true).text('Đang import...');
         result.removeClass('error success').text('Đang tải và xử lý file...');
@@ -226,7 +242,8 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
                 : '';
             result.removeClass('error').addClass('success').text(`Import thành công ${res.imported_count} dòng.${warningText}`);
             input.value = '';
-            resetExportResult('Dữ liệu đã thay đổi. Hãy tìm lại Invoice để xem phiếu in theo case.');
+            resetPreview();
+            loadInvoicesByDate(currentDate);
         } catch (error) {
             result.removeClass('success').addClass('error').text(error.message || 'Import thất bại');
         } finally {
@@ -293,124 +310,60 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         syncPrintModeToggles('init');
     }
 
-    function loadExportItems() {
-        const keyword = $('#export-search-input').val().trim().toUpperCase();
-        if (!keyword) {
-            alert('Vui lòng nhập mã Invoice');
-            return;
-        }
-
-        currentCommand = keyword;
-
-        return $.ajax({
-            type: 'POST',
-            url: `${printApiBase}?action=get_export_cases_for_print`,
-            data: { command: keyword },
-            dataType: 'json',
-            success: function(res) {
-                if (!res.success) {
-                    alert(res.message || 'Không tìm thấy dữ liệu case cho Invoice này');
-                    resetExportResult('Không có dữ liệu case phù hợp');
-                    return;
-                }
-
-                currentCommand = res.command || keyword;
-                currentItems = Array.isArray(res.cases) ? res.cases : [];
-                displayItems();
-            },
-            error: function() {
-                alert('Lỗi kết nối khi tải danh sách case');
-            }
-        });
-    }
-
-    function displayItems() {
-        const container = $('#items-container');
-        container.empty();
-
-        if (!currentItems.length) {
-            container.html('<div class="text-muted">Không có dữ liệu case.</div>');
-            $('#pages-preview').html('<div class="preview-placeholder">Không có dữ liệu case</div>');
-            $('#print-pages').empty();
-            $('#print-btn').hide();
-            refreshWarningState();
-            return;
-        }
-
-        currentItems.forEach(function(item) {
-            container.append(`
-                <div class="item-card">
-                    <div class="item-header">
-                        <div class="product-id">${escapeHtml(item.command_case_id || '')}</div>
-                        <div class="qty-info">Case: ${escapeHtml(item.case_no || '-')}</div>
-                    </div>
-                    <div class="item-meta">FOR: ${escapeHtml(item.for_product || '-')}</div>
-                    <div class="item-meta-inline">Số items trong case: ${Number(item.total_items_in_case || 0)} items</div>
-                </div>
-            `);
-        });
-
-        generatePrintPreview();
-    }
 
     function generatePrintPreview() {
         const preview = $('#pages-preview');
         const printPages = $('#print-pages');
 
+        if (!selectedCases || selectedCases.length === 0) {
+            resetPreview();
+            return;
+        }
+
         let previewHtml = '';
         let printHtml = '';
-        const totalTickets = currentItems.length;
+        const totalCases = selectedCases.length;
 
-        currentItems.forEach(function(item, index) {
-            const command = item.command || currentCommand;
-            const caseNo = item.case_no || '-';
-            const commandCasePair = item.command_case_id || `[${command}][${caseNo}]`;
-            const itemCount = parseInt(item.total_items_in_case, 10) || 0;
-            const forProduct = item.for_product || '-';
-            const qrDataUrl = generateQRCodeDataUrl(commandCasePair);
+        selectedCases.forEach((caseItem, idx) => {
+            const command = currentCommand || '-';
+            const caseNo = caseItem.case_no || '-';
+            const forProduct = caseItem.for_product || '-';
+            const transportType = caseItem.transport_type || '-';
+            const itemCount = caseItem.item_count || 0;
+            const createdAt = caseItem.created_at ? new Date(String(caseItem.created_at).replace(' ', 'T')).toLocaleDateString('vi-VN') : '-';
+
+            const qrContent = `${command}$${caseNo}$${forProduct}$${itemCount}$${transportType}$${caseItem.created_at || ''}`;
+            const qrDataUrl = generateQRCodeDataUrl(qrContent);
 
             const ticketHtml = `
-                <div class="picking-ticket">
-                    <div class="row1 picking-header">
-                        <span>${new Date().toLocaleDateString('vi-VN')}</span>
-                        <span class="ticket-title">PHIẾU PICKING</span>
-                        <span class="picking-page-num">Phiếu: ${index + 1}/${totalTickets}</span>
-                    </div>
+                <div class="packing-label" style="width: 115mm; height: 80mm; padding: 3mm; display: flex; flex-direction: column; border: 1px solid #999; font-family: Arial, sans-serif; font-size: 13px;">
+                    <div style="text-align: center; font-weight: bold; font-size: 14px; margin-bottom: 2mm;">TEM PACKING</div>
 
-                    <div class="row2 picking-command">
-                        <div class="command-box">
-                            <span class="ticket-key">INVOICE</span>
-                            <span class="command-code">${escapeHtml(command)}</span>
+                    <div style="display: flex; gap: 3mm; margin-bottom: 2mm;">
+                        <div style="flex: 1; text-align: center;">
+                            ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR" style="width: 30mm; height: 30mm; object-fit: contain;">` : '<div style="width: 30mm; height: 30mm; border: 1px solid #999; display: flex; align-items: center; justify-content: center; font-size: 11px;">QR</div>'}
                         </div>
-                        <div class="for-product-box">
-                            <span class="ticket-key">FOR</span>
-                            <span class="for-product-val">${escapeHtml(forProduct)}</span>
-                        </div>
-                    </div>
-
-                    <div class="row3 picking-product">
-                        <div class="left qr-section">
-                            ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR ${escapeHtml(commandCasePair)}" class="qr-image">` : '<div class="text-muted no-location">QR lỗi</div>'}
-                        </div>
-                        <div class="qty-needed">
-                            <div class="qty-label">SL PICK</div>
-                            <div class="qty-main">${itemCount} items</div>
-                            <div class="qty-sub">Số items trong case</div>
+                        <div style="flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div>
+                                <div style="font-weight: bold; font-size: 12px;">Invoice:</div>
+                                <div style="font-size: 16px; font-weight: bold;">${escapeHtml(command)}</div>
+                            </div>
+                            <div>
+                                <div style="font-weight: bold; font-size: 12px;">Kiện:</div>
+                                <div style="font-size: 16px; font-weight: bold;">${escapeHtml(caseNo)}</div>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="row4 product-info">
-                        <div class="product-code">${escapeHtml(commandCasePair)}</div>
-                        <div class="product-name">Case No: ${escapeHtml(caseNo)}</div>
+                    <div style="font-size: 12px; margin-bottom: 2mm;">
+                        <div>Khách hàng: ${escapeHtml(forProduct)}</div>
+                        <div>Loại vận chuyển: ${escapeHtml(transportType)}</div>
+                        <div>Số mã hàng: <strong>${itemCount}</strong></div>
+                        <div>Ngày xuất: ${escapeHtml(createdAt)}</div>
                     </div>
 
-                    <div class="row5 shelves-section">
-                        <div class="shelves-header">CASE NO:</div>
-                        <div class="shelf-row"><span>${escapeHtml(caseNo)}</span></div>
-                    </div>
-
-                    <div class="row6 picking-footer">
-                        <div class="sign-line">Ngày hoàn thành: _____________ Ký tên: _____________</div>
+                    <div style="text-align: center; font-size: 11px; margin-top: auto;">
+                        In lúc: ${new Date().toLocaleDateString('vi-VN')} ${pad2(new Date().getHours())}:${pad2(new Date().getMinutes())}
                     </div>
                 </div>
             `;
@@ -421,7 +374,6 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
 
         preview.html(previewHtml || '<div class="preview-placeholder">Không có dữ liệu</div>');
         printPages.html(printHtml);
-        refreshWarningState();
 
         if (printHtml) {
             $('#print-btn').show();
@@ -459,18 +411,40 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         }
     }
 
+    function logPrintCase() {
+        if (!currentCommand) return;
+
+        $.ajax({
+            type: 'POST',
+            url: `${printApiBase}?action=insert_export_log_print_case`,
+            data: { command: currentCommand },
+            dataType: 'json',
+            success: function(res) {
+                if (res.success) {
+                    console.log('Logged print_case action');
+                }
+            },
+            error: function() {
+                console.log('Error logging print_case');
+            }
+        });
+    }
+
     function printTickets() {
         const isTestMode = document.getElementById('print-test-mode')?.checked;
         const splitMode = document.getElementById('print-split-mode')?.checked;
-        const tickets = Array.from(document.querySelectorAll('#print-pages .picking-ticket'));
+        const tickets = Array.from(document.querySelectorAll('#print-pages .packing-label'));
         if (!tickets.length) {
             return;
         }
 
         if (isTestMode) {
-            alert(`Chế độ test: Đã bỏ qua lệnh in thật. Số phiếu: ${tickets.length}`);
+            alert(`Chế độ test: Đã bỏ qua lệnh in thật. Số tem: ${tickets.length}`);
+            logPrintCase();
             return;
         }
+
+        logPrintCase();
 
         if (!splitMode) {
             window.print();
@@ -526,13 +500,11 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
                 <html lang="vi">
                 <head>
                     <meta charset="UTF-8">
-                    <title>Print ticket ${index + 1}</title>
-                    <link rel="stylesheet" href="${cssHref}">
+                    <title>Print label ${index + 1}</title>
                     <style>
                         body { margin: 0; padding: 0; background: #fff; }
-                        .picking-ticket { margin: 0; }
-                        .qr-image { width: 100%; height: auto; aspect-ratio: 1 / 1; object-fit: contain; display: block; }
-                        @page { size: 80mm auto; margin: 0; }
+                        .packing-label { margin: 0; }
+                        @page { size: 115mm 80mm; margin: 0; }
                     </style>
                 </head>
                 <body>${ticketHtml}</body>
@@ -545,20 +517,31 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
 
     $(document).ready(function() {
         initPrintOptions();
-        resetExportResult('Nhập mã Invoice để xem trước phiếu in theo case');
+        setDateByOffset(0);
+        markActiveQuickButton(0);
 
-        $('#export-search-input').on('input', function() {
-            loadSearchSuggestions($(this).val().trim().toUpperCase());
+        $('[data-day-offset]').on('click', function() {
+            const offset = parseInt($(this).attr('data-day-offset') || '0', 10) || 0;
+            setDateByOffset(offset);
+            markActiveQuickButton(offset);
         });
 
-        $('#export-search-input').on('keypress', function(event) {
-            if (event.which === 13) {
-                loadExportItems();
+        $('#print-date').on('change', function() {
+            const dateStr = $(this).val();
+            if (dateStr) {
+                currentDate = dateStr;
+                loadInvoicesByDate(dateStr);
+                $('[data-day-offset]').removeClass('active');
             }
         });
 
-        $(document).on('click', '.suggestion-button', function() {
-            selectSearchKeyword(decodeURIComponent($(this).data('value') || ''));
+        $(document).on('click', '.invoice-item-btn', function() {
+            const command = $(this).attr('data-command');
+            loadCasesByInvoice(command);
+        });
+
+        $('input[id="print-split-mode"], input[id="print-single-mode"], input[id="print-test-mode"]').on('change', function() {
+            syncPrintModeToggles($(this).attr('id'));
         });
     });
 </script>

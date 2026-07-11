@@ -41,17 +41,19 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
     <div id="step-1" class="pda-step active pda-card p-3 mb-3">
         <div class="pda-subtitle">Bước 1</div>
         <div class="pda-title mt-1">Quét QR lệnh picking</div>
-        <div class="text-xs text-slate-500 mt-1">Định dạng bắt buộc: [MÃ HÀNG]$[SỐ LƯỢNG]</div>
+        <div class="text-xs text-slate-500 mt-1">Định dạng: [INVOICE]$[MÃ HÀNG]$[SỐ LƯỢNG GỘP]</div>
 
-        <div class="relative mt-3">
-            <input type="text" id="pick-order-input" class="pda-input" placeholder="VD: ABC123$24">
-            <button type="button" onclick="openQRScannerModal('pick-order-input', 'QR Lệnh Picking')" class="absolute right-3 top-1/2 -translate-y-1/2 text-sky-600">
-                <i class="fas fa-qrcode text-lg"></i>
-            </button>
+        <div class="mt-3">
+            <div class="relative">
+                <input type="text" id="pick-order-input" class="pda-input" placeholder="VD: VUN350$ABC123$50" maxlength="100">
+                <button type="button" onclick="openQRScannerModal('pick-order-input', 'QR Lệnh Picking')" class="absolute right-3 top-1/2 -translate-y-1/2 text-sky-600">
+                    <i class="fas fa-qrcode text-lg"></i>
+                </button>
+            </div>
         </div>
 
         <div class="mt-3">
-            <button type="button" class="pda-btn pda-btn-primary" onclick="handleStep1OrderScan()">Xác nhận QR lệnh</button>
+            <button type="button" class="pda-btn pda-btn-primary" onclick="handleStep1OrderScan()">Xác nhận lệnh picking</button>
         </div>
 
         <div id="step1-error" class="pda-msg-error mt-2 hidden"></div>
@@ -82,7 +84,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
     <div id="step-3" class="pda-step pda-card p-3 mb-3">
         <div class="pda-subtitle">Bước 3</div>
         <div class="pda-title mt-1">Quét thùng hàng và xác nhận số lượng</div>
-        <div class="text-xs text-slate-500 mt-1">Định dạng quét thùng: [TEXT]$[MÃ HÀNG]$[TEXT]$[SỐ LƯỢNG]$...</div>
+        <div class="text-xs text-slate-500 mt-1">Định dạng quét thùng: [TEXT]$[MÃ HÀNG]$[TEXT]$[SỐ LƯỢNG]$ (Tự động điền số lượng khi quét đúng mã)</div>
 
         <div class="relative mt-3">
             <input type="text" id="box-qr-input" class="pda-input" placeholder="Quét QR trên thùng" disabled>
@@ -136,6 +138,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
 
 <script>
 let pickingState = {
+    command: '',
     productId: '',
     productName: '',
     requiredQty: 0,
@@ -315,13 +318,25 @@ function parsePickOrderQr(raw) {
     const parts = text.split('$').map(function(part) {
         return part.trim();
     });
-    if (parts.length !== 2) return null;
 
-    const productId = parts[0];
-    const requiredQty = parseInt(parts[1], 10);
-    if (!productId || isNaN(requiredQty) || requiredQty <= 0) return null;
+    // Format mới: [command]$[product_id]$[quantity]
+    if (parts.length >= 3) {
+        const command = parts[0];
+        const productId = parts[1];
+        const requiredQty = parseInt(parts[2], 10);
+        if (!command || !productId || isNaN(requiredQty) || requiredQty <= 0) return null;
+        return { command, productId, requiredQty };
+    }
 
-    return { productId, requiredQty };
+    // Format cũ (legacy): [product_id]$[quantity]
+    if (parts.length === 2) {
+        const productId = parts[0];
+        const requiredQty = parseInt(parts[1], 10);
+        if (!productId || isNaN(requiredQty) || requiredQty <= 0) return null;
+        return { command: '', productId, requiredQty };
+    }
+
+    return null;
 }
 
 function buildAuxStockMessage(auxRes) {
@@ -343,6 +358,8 @@ function buildAuxStockMessage(auxRes) {
 
 function resetPickingJob(clearInput) {
     pickingState = {
+        command: '',
+        caseNo: '',
         productId: '',
         productName: '',
         requiredQty: 0,
@@ -388,11 +405,13 @@ function handleStep1OrderScan() {
 
     const parsedOrder = parsePickOrderQr($('#pick-order-input').val());
     if (!parsedOrder) {
-        showError('#step1-error', 'QR lệnh không hợp lệ. Cần đúng định dạng [MÃ HÀNG]$[SỐ LƯỢNG].');
+        alert('QR lệnh không hợp lệ. Cần đúng định dạng [INVOICE]$[MÃ HÀNG]$[SỐ LƯỢNG].');
+        showError('#step1-error', 'QR lệnh không hợp lệ. Cần đúng định dạng [INVOICE]$[MÃ HÀNG]$[SỐ LƯỢNG].');
         return;
     }
 
     pickingState.busy = true;
+    pickingState.command = parsedOrder.command;
     setWorkflowStatus('Đang kiểm tra mã hàng và tồn kho chính...', 'text-sky-700');
 
     $.getJSON('api.php?action=check_product', { product_id: parsedOrder.productId }, function(productRes) {
@@ -407,12 +426,36 @@ function handleStep1OrderScan() {
             type: 'POST',
             url: 'api.php?action=get_shelf_inventory',
             dataType: 'json',
-            data: { product_id: parsedOrder.productId },
+            data: {
+                product_id: parsedOrder.productId,
+                command: parsedOrder.command
+            },
             success: function(stockRes) {
                 const shelves = sortShelvesByQtyAndCode(stockRes.shelves || []);
                 const totalMain = parseFloat(stockRes.total_stock || 0);
 
+                // Kiểm tra nếu đã picking xong
+                if (parsedOrder.command && stockRes.remaining_qty <= 0 && (stockRes.required_qty || 0) > 0) {
+                    const msg = `✅ ĐÃ HOÀN TẤT PICKING!\n\n` +
+                        `Mã hàng: ${parsedOrder.productId}\n` +
+                        `Yêu cầu: ${stockRes.required_qty} items\n` +
+                        `Đã picking: ${stockRes.picked_qty} items\n` +
+                        `Còn lại: 0 items\n\n` +
+                        `Mã hàng này không cần picking lại.`;
+                    alert(msg);
+                    showError('#step1-error', msg.replace(/\n/g, ' '));
+                    setWorkflowStatus('Picking mã hàng này đã hoàn tất', 'text-green-700');
+                    pickingState.busy = false;
+                    return;
+                }
+
                 if (!shelves.length || totalMain <= 0) {
+                    const msg = `❌ KHÔNG CÓ TỒN KHO!\n\n` +
+                        `Mã hàng: ${parsedOrder.productId}\n` +
+                        `Số lượng cần: ${parsedOrder.requiredQty} items\n\n` +
+                        `Không tìm thấy vị trí nào có tồn kho chính.\n` +
+                        `Vui lòng liên hệ Leader để kiểm tra!`;
+                    alert(msg);
                     $.getJSON('api.php?action=get_aux_stock_by_product', { product_id: parsedOrder.productId }, function(auxRes) {
                         showError('#step1-error', 'Không có tồn kho chính để pick.');
                         showInfoStep1(buildAuxStockMessage(auxRes));
@@ -429,7 +472,10 @@ function handleStep1OrderScan() {
 
                 pickingState.productId = parsedOrder.productId;
                 pickingState.productName = productRes.data.product_name || '';
-                pickingState.requiredQty = parsedOrder.requiredQty;
+                // Sử dụng remaining_qty từ API (đã tính từ export_temp - export_log)
+                pickingState.requiredQty = parsedOrder.command && stockRes.remaining_qty > 0
+                    ? stockRes.remaining_qty
+                    : parsedOrder.requiredQty;
                 pickingState.pickedQty = 0;
                 pickingState.shelves = shelves;
                 pickingState.selectedShelf = null;
@@ -441,7 +487,20 @@ function handleStep1OrderScan() {
                 renderShelfList();
                 setStepState(2);
                 updateTopSummary();
-                setWorkflowStatus('Chọn vị trí đầu danh sách và quét QR kệ.', 'text-amber-700');
+
+                // Hiển thị thông báo nếu có lịch sử picking
+                let statusMsg = 'Chọn vị trí đầu danh sách và quét QR kệ.';
+                let infoMsg = '';
+                if (parsedOrder.command && stockRes.required_qty > 0) {
+                    infoMsg = `📋 Yêu cầu: ${stockRes.required_qty} | Đã picking: ${stockRes.picked_qty} | Còn lại: ${stockRes.remaining_qty}`;
+                    if (stockRes.picked_qty > 0) {
+                        statusMsg += ` (Tiếp tục picking ${stockRes.remaining_qty} items còn lại)`;
+                    }
+                }
+                if (infoMsg) {
+                    showInfoStep1(infoMsg);
+                }
+                setWorkflowStatus(statusMsg, 'text-amber-700');
                 pickingState.busy = false;
             },
             error: function() {
@@ -500,18 +559,23 @@ function processShelfQrScan(scanned, fromScanner) {
     pickingState.shelfConfirmed = true;
     hideError('#step2-error');
 
-    $('#box-qr-input').prop('disabled', false).val('').focus();
+    $('#box-qr-input').prop('disabled', false).val('');
     $('#btn-parse-box').prop('disabled', false);
     $('#pick-qty-input').prop('disabled', true).val('');
     $('#btn-submit-pick').prop('disabled', true);
     $('#shelf-qr-input').val('');
 
     setStepState(3);
-    setWorkflowStatus(`Đã xác nhận đúng vị trí ${expected}.`, 'text-green-700');
+    setWorkflowStatus(`Đã xác nhận đúng vị trí ${expected}. Sẵn sàng quét mã thùng.`, 'text-green-700');
 
     if (fromScanner && typeof window.closeQRScannerModal === 'function') {
         window.closeQRScannerModal();
     }
+
+    // Focus vào ô quét mã thùng sau khi modal đóng
+    setTimeout(function() {
+        $('#box-qr-input').focus();
+    }, 100);
 
     return true;
 }
@@ -570,7 +634,9 @@ function processBoxQrScan(parsed, fromScanner) {
     }
 
     if (!parsed) {
-        showError('#step3-error', 'QR thùng không đúng định dạng yêu cầu.');
+        const msg = 'QR thùng không đúng định dạng yêu cầu. Cần [TEXT]$[MÃ HÀNG]$[TEXT]$[SỐ LƯỢNG]';
+        alert(msg);
+        showError('#step3-error', msg);
         if (fromScanner && typeof window.resetQRScannerModalState === 'function') {
             window.resetQRScannerModalState();
         }
@@ -578,8 +644,9 @@ function processBoxQrScan(parsed, fromScanner) {
     }
 
     if (parsed.productId !== pickingState.productId) {
-        alert(`Sai mã hàng. Cần ${pickingState.productId} nhưng quét ${parsed.productId}.`);
-        showError('#step3-error', `Sai mã hàng. Cần ${pickingState.productId} nhưng quét ${parsed.productId}.`);
+        const msg = `❌ SAI MÃ HÀNG!\n\n✓ Cần: ${pickingState.productId}\n✗ Quét: ${parsed.productId}\n\nVui lòng quét lại đúng mã hàng!`;
+        alert(msg);
+        showError('#step3-error', msg.replace(/\n/g, ' '));
         $('#box-qr-input').val('').focus();
         setWorkflowStatus('Sai QR mã hàng thùng', 'text-red-700');
         if (fromScanner && typeof window.resetQRScannerModalState === 'function') {
@@ -590,7 +657,9 @@ function processBoxQrScan(parsed, fromScanner) {
 
     const maxAllowed = getMaxPickAllowedNow();
     if (maxAllowed <= 0) {
-        showError('#step3-error', 'Không còn số lượng hợp lệ để pick tại vị trí hiện tại.');
+        const msg = 'Không còn số lượng hợp lệ để pick tại vị trí hiện tại.';
+        alert(msg);
+        showError('#step3-error', msg);
         if (fromScanner && typeof window.resetQRScannerModalState === 'function') {
             window.resetQRScannerModalState();
         }
@@ -599,8 +668,26 @@ function processBoxQrScan(parsed, fromScanner) {
 
     const suggestedQty = Math.min(parsed.qty, maxAllowed);
 
+    // Kiểm tra nếu thùng này lớn hơn maxAllowed (tức là thùng cuối cùng)
+    const isLastBoxAtThisShelf = parsed.qty > maxAllowed;
+    if (isLastBoxAtThisShelf) {
+        const remainingNeed = pickingState.requiredQty - pickingState.pickedQty;
+        const msg = `⚠️ CẢNH BÁO: THÙNG QUÁ SỐ LƯỢNG!\n\n` +
+            `Thùng này có: ${parsed.qty} items\n` +
+            `Cần pick tại vị trí này: ${maxAllowed} items\n` +
+            `(Cần tổng cộng: ${remainingNeed} items)\n\n` +
+            `Hệ thống sẽ pick ${suggestedQty} items và chuyển sang vị trí khác.`;
+        alert(msg);
+        showError('#step3-error',
+            `⚠️ Thùng quá số lượng (${parsed.qty} > ${maxAllowed}). ` +
+            `Gợi ý pick ${suggestedQty} items và chuyển vị trí khác.`
+        );
+    }
+
     pickingState.productConfirmed = true;
-    hideError('#step3-error');
+    if (!isLastBoxAtThisShelf) {
+        hideError('#step3-error');
+    }
     $('#step3-max-qty').text(maxAllowed);
     $('#pick-qty-input').prop('disabled', false).val(suggestedQty).focus().select();
     $('#btn-submit-pick').prop('disabled', false);
@@ -649,24 +736,66 @@ function moveToNextShelfIfNeeded() {
     }
 
     if (pickingState.selectedShelf && parseFloat(pickingState.selectedShelf.qty || 0) <= 0) {
+        const remainingNeed = pickingState.requiredQty - pickingState.pickedQty;
+
+        if (remainingNeed > 0) {
+            if (!pickingState.shelves.length) {
+                // Hết vị trí + chưa đủ số lượng → Cho phép hoàn tất
+                const msg = `⚠️ HẾT VỊ TRÍ CÓ TỒN!\n\n` +
+                    `Đã pick: ${pickingState.pickedQty} items\n` +
+                    `Cần pick: ${pickingState.requiredQty} items\n` +
+                    `Còn thiếu: ${remainingNeed} items\n\n` +
+                    `Không còn vị trí nào có hàng.\n` +
+                    `Bạn có thể hoàn tất picking và quay lại chờ phiếu tiếp theo.`;
+                alert(msg);
+
+                // Cho phép hoàn tất
+                $('#btn-finish-order').prop('disabled', false);
+                setStepState(4);
+                $('#box-qr-input').prop('disabled', true);
+                $('#pick-qty-input').prop('disabled', true);
+                $('#btn-parse-box').prop('disabled', true);
+                $('#btn-submit-pick').prop('disabled', true);
+                setWorkflowStatus('Hết vị trí có tồn. Nhấn "Xác nhận hoàn thành" để hoàn tất picking.', 'text-amber-700');
+                return;
+            }
+            const currentShelf = pickingState.selectedShelf.shelf_id || 'vị trí hiện tại';
+            const msg = `⚠️ VỊ TRÍ HẾT TỒN!\n\n` +
+                `Vị trí: ${currentShelf}\n` +
+                `Tồn lại: 0 items\n\n` +
+                `Đã pick: ${pickingState.pickedQty}/${pickingState.requiredQty} items\n\n` +
+                `Vui lòng chọn vị trí tiếp theo để tiếp tục!`;
+            alert(msg);
+        }
+
         pickingState.selectedShelf = null;
         pickingState.shelfConfirmed = false;
         pickingState.productConfirmed = false;
 
-        if (!pickingState.shelves.length) {
-            setWorkflowStatus('Không còn tồn kho chính ở các vị trí. Chưa đủ số lượng cần pick.', 'text-red-700');
-            return;
-        }
+        if (pickingState.shelves.length) {
+            // Loại bỏ vị trí hết tồn khỏi danh sách
+            const selectedShelfId = pickingState.selectedShelf.shelf_id;
+            pickingState.shelves = pickingState.shelves.filter(function(shelf) {
+                return shelf.shelf_id !== selectedShelfId;
+            });
 
-        setStepState(2);
-        renderShelfList();
-        $('#shelf-qr-input').prop('disabled', true).val('');
-        $('#btn-confirm-shelf').prop('disabled', true);
-        $('#box-qr-input').prop('disabled', true).val('');
-        $('#pick-qty-input').prop('disabled', true).val('');
-        $('#btn-parse-box').prop('disabled', true);
-        $('#btn-submit-pick').prop('disabled', true);
-        setWorkflowStatus('Vị trí đã hết tồn. Quay lại bước 2 để chọn vị trí đầu danh sách tiếp theo.', 'text-amber-700');
+            // Quay lại bước 2 với danh sách vị trí đã được refresh
+            setStepState(2);
+            renderShelfList();
+
+            // Enable bước 2 để quét mã vị trí mới
+            $('#shelf-qr-input').prop('disabled', false).val('').focus();
+            $('#btn-confirm-shelf').prop('disabled', false);
+
+            // Disable bước 3
+            $('#box-qr-input').prop('disabled', true).val('');
+            $('#pick-qty-input').prop('disabled', true).val('');
+            $('#btn-parse-box').prop('disabled', true);
+            $('#btn-submit-pick').prop('disabled', true);
+            $('#step3-max-qty').text('0');
+
+            setWorkflowStatus('Vị trí đã hết tồn. Quay lại bước 2 để chọn vị trí đầu danh sách tiếp theo.', 'text-amber-700');
+        }
     } else {
         const maxAllowed = getMaxPickAllowedNow();
         $('#step3-max-qty').text(maxAllowed);
@@ -695,7 +824,9 @@ function submitPickFromCurrentShelf() {
     }
 
     if (qty > maxAllowed) {
-        showError('#step3-error', `Số lượng nhập vượt giới hạn. Tối đa hiện tại là ${maxAllowed}.`);
+        const msg = `Số lượng nhập vượt giới hạn. Tối đa hiện tại là ${maxAllowed}.`;
+        alert(msg);
+        showError('#step3-error', msg);
         return;
     }
 
@@ -707,7 +838,10 @@ function submitPickFromCurrentShelf() {
     $.post('api.php?action=outbound_submit', {
         shelf_id: pickingState.selectedShelf.shelf_id,
         product_id: pickingState.productId,
-        quantity: qty
+        quantity: qty,
+        command: pickingState.command,
+        case_no: '001',
+        is_picking: pickingState.command ? 1 : 0
     }, function(res) {
         if (!res.success) {
             showError('#step3-error', res.message || 'Không thể trừ tồn.');
@@ -767,13 +901,29 @@ function submitPickFromCurrentShelf() {
 }
 
 function finishCurrentPickingOrder() {
-    if (pickingState.pickedQty !== pickingState.requiredQty || !pickingState.requiredQty) {
+    if (!pickingState.requiredQty || pickingState.pickedQty <= 0) {
         return;
     }
+
+    const isComplete = pickingState.pickedQty >= pickingState.requiredQty;
+    const status = isComplete ? '✅ HOÀN TẤT' : '⚠️ HOÀN TẤT (CHƯA ĐỦ)';
+    const msg = `${status}\n\n` +
+        `Mã hàng: ${pickingState.productId}\n` +
+        `Đã pick: ${pickingState.pickedQty} items\n` +
+        `Cần pick: ${pickingState.requiredQty} items\n\n` +
+        `Quay lại màn hình chờ phiếu picking tiếp theo.`;
+    alert(msg);
 
     setWorkflowStatus(`Đã hoàn tất lệnh ${pickingState.productId} (${pickingState.pickedQty}/${pickingState.requiredQty}).`, 'text-green-700');
     resetPickingJob(true);
 }
+
+$('#invoice-input').on('keydown', function(e) {
+    if (e.which === 13) {
+        e.preventDefault();
+        $('#pick-order-input').focus();
+    }
+});
 
 $('#pick-order-input').on('keydown', function(e) {
     if (e.which === 13) {
