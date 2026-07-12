@@ -74,6 +74,11 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
                 <input type="checkbox" id="print-single-mode">
                 Chế độ in gộp 1 phiếu dài (không tự cắt phiếu, không phải nhấn xác nhận)
             </label>
+            <label style="display:block; margin-bottom:6px;">
+                Vị trí QR Code (lên/xuống): 
+                <input type="range" id="qr-vertical-offset" min="-15" max="15" value="0" step="1" style="width: 150px; vertical-align: middle;">
+                <span id="qr-offset-display" style="margin-left: 8px; font-weight: bold;">0</span> mm
+            </label>
             <div id="print-mode-note" class="text-xs text-gray-500"></div>
         </div>
     </div>
@@ -81,12 +86,126 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
 
 <div id="print-pages"></div>
 
+<style>
+    .error-modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+    }
+    .error-modal-content {
+        background-color: white;
+        border-radius: 12px;
+        padding: 32px;
+        max-width: 500px;
+        width: 90%;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        text-align: center;
+        animation: slideUp 0.3s ease-out;
+    }
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    .error-modal-content h2 {
+        font-size: 24px;
+        font-weight: bold;
+        margin-bottom: 16px;
+    }
+    .error-modal-content.error h2 {
+        color: #dc2626;
+    }
+    .error-modal-content.success h2 {
+        color: #059669;
+    }
+    .error-modal-content.warning h2 {
+        color: #d97706;
+    }
+    .error-modal-content p {
+        font-size: 16px;
+        color: #374151;
+        margin-bottom: 24px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+    }
+    .error-modal-btn {
+        color: white;
+        padding: 12px 32px;
+        border-radius: 8px;
+        font-weight: bold;
+        font-size: 16px;
+        cursor: pointer;
+        border: none;
+        transition: background-color 0.2s;
+    }
+    .error-modal-content.error .error-modal-btn {
+        background-color: #dc2626;
+    }
+    .error-modal-content.error .error-modal-btn:hover {
+        background-color: #b91c1c;
+    }
+    .error-modal-content.success .error-modal-btn {
+        background-color: #059669;
+    }
+    .error-modal-content.success .error-modal-btn:hover {
+        background-color: #047857;
+    }
+    .error-modal-content.warning .error-modal-btn {
+        background-color: #d97706;
+    }
+    .error-modal-content.warning .error-modal-btn:hover {
+        background-color: #b45309;
+    }
+</style>
+
+<!-- Universal Modal -->
+<div id="error-modal" class="error-modal-overlay" style="display: none;">
+    <div id="error-modal-content" class="error-modal-content error">
+        <h2 id="error-modal-title">⚠️ Cảnh báo</h2>
+        <p id="error-modal-message"></p>
+        <button onclick="closeErrorModal()" class="error-modal-btn">OK</button>
+    </div>
+</div>
+
 <script>
     let currentCommand = '';
     let currentDate = '';
     let currentCases = [];
     let selectedCases = [];
     const printApiBase = 'api.php';
+
+    function showModal(message, type = 'error', title = null) {
+        const titles = {
+            error: '❌ Lỗi',
+            success: '✅ Thành công',
+            warning: '⚠️ Cảnh báo'
+        };
+
+        $('#error-modal-title').text(title || titles[type]);
+        $('#error-modal-message').text(message);
+        $('#error-modal-content').removeClass('error success warning').addClass(type);
+        $('#error-modal').css('display', 'flex');
+    }
+
+    function showErrorModal(message) {
+        showModal(message, 'error');
+    }
+
+    function closeErrorModal() {
+        $('#error-modal').css('display', 'none');
+    }
 
     function escapeHtml(value) {
         return String(value || '').replace(/[&<>"']/g, function(character) {
@@ -208,7 +327,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         const input = document.getElementById('export-file');
         const file = input?.files?.[0];
         if (!file) {
-            alert('Vui lòng chọn file Excel để import');
+            showModal('Vui lòng chọn file Excel để import', 'error');
             return;
         }
 
@@ -308,6 +427,28 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         });
 
         syncPrintModeToggles('init');
+        initQROffset();
+    }
+
+    function initQROffset() {
+        const qrInput = document.getElementById('qr-vertical-offset');
+        const display = document.getElementById('qr-offset-display');
+        
+        if (!qrInput || !display) return;
+        
+        const savedOffset = localStorage.getItem('qr_vertical_offset') || '0';
+        qrInput.value = savedOffset;
+        display.textContent = savedOffset;
+        
+        qrInput.addEventListener('change', function() {
+            localStorage.setItem('qr_vertical_offset', this.value);
+            display.textContent = this.value;
+            generatePrintPreview();
+        });
+        
+        qrInput.addEventListener('input', function() {
+            display.textContent = this.value;
+        });
     }
 
 
@@ -323,6 +464,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         let previewHtml = '';
         let printHtml = '';
         const totalCases = selectedCases.length;
+        const qrVerticalOffset = localStorage.getItem('qr_vertical_offset') || '0';
 
         selectedCases.forEach((caseItem, idx) => {
             const command = currentCommand || '-';
@@ -336,34 +478,48 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
             const qrDataUrl = generateQRCodeDataUrl(qrContent);
 
             const ticketHtml = `
-                <div class="packing-label" style="width: 115mm; height: 80mm; padding: 3mm; display: flex; flex-direction: column; border: 1px solid #999; font-family: Arial, sans-serif; font-size: 13px;">
-                    <div style="text-align: center; font-weight: bold; font-size: 14px; margin-bottom: 2mm;">TEM PACKING</div>
+                <div class="packing-label" style="width: 115mm; height: 80mm; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid #000; font-family: Arial, sans-serif; box-sizing: border-box;">
 
-                    <div style="display: flex; gap: 3mm; margin-bottom: 2mm;">
-                        <div style="flex: 1; text-align: center;">
-                            ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR" style="width: 30mm; height: 30mm; object-fit: contain;">` : '<div style="width: 30mm; height: 30mm; border: 1px solid #999; display: flex; align-items: center; justify-content: center; font-size: 11px;">QR</div>'}
+                    <!-- Top 55mm Section -->
+                    <div style="height: 55mm; display: flex; gap: 2mm; padding: 2mm; box-sizing: border-box; border-bottom: 1px dashed #999;">
+                        <!-- Left: QR Code 40x40mm -->
+                        <div style="width: 40mm; height: 40mm; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: ${qrVerticalOffset}mm;">
+                            ${qrDataUrl ? `<img src="${qrDataUrl}" alt="QR" style="width: 100%; height: 100%; object-fit: contain;">` : '<div style="width: 100%; height: 100%; border: 2px solid #000; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold;">QR</div>'}
                         </div>
-                        <div style="flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
-                            <div>
-                                <div style="font-weight: bold; font-size: 12px;">Invoice:</div>
-                                <div style="font-size: 16px; font-weight: bold;">${escapeHtml(command)}</div>
-                            </div>
-                            <div>
-                                <div style="font-weight: bold; font-size: 12px;">Kiện:</div>
-                                <div style="font-size: 16px; font-weight: bold;">${escapeHtml(caseNo)}</div>
-                            </div>
+
+                        <!-- Right: Product Info -->
+                        <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 2mm; padding: 2mm; box-sizing: border-box; justify-items: start; align-content: space-between; font-size: 11px; padding: 2mm 0;">
+                            <!-- Invoice Label and Case Label -->
+                            <div style="font-weight: bold; font-size: 9px; color: #666; text-align: left;">INVOICE<br>CASE:</div>
+                            <div style="font-size: 24px; font-weight: bold; text-align: center; width: 100%;">${escapeHtml(command)}${escapeHtml(caseNo)}</div>
+
+                            <!-- Customer Label and Transport Type Label -->
+                            <div style="font-weight: bold; font-size: 9px; color: #666; text-align: left;">CUSTOMER<br>TRANSPORT TYPE:</div>
+                            <div style="font-size: 20px; text-align: center; width: 100%;">${escapeHtml(forProduct)} / ${escapeHtml(transportType)}</div>
+
+                            <!-- Item Count Label -->
+                            <div style="font-weight: bold; font-size: 9px; color: #666; text-align: left;">NUM OF ITEM:</div>
+                            <!-- Item Count Value -->
+                            <div style="font-size: 20px; text-align: center; width: 100%;">${itemCount} items</div>
+
+                            <!-- Created At Label -->
+                            <div style="font-weight: bold; font-size: 9px; color: #666; text-align: left;">PICKING DATE:</div>
+                            <!-- Created At Value -->
+                            <div style="font-size: 20px; text-align: center; width: 100%;">${caseItem.created_at}</div>
                         </div>
                     </div>
 
-                    <div style="font-size: 12px; margin-bottom: 2mm;">
-                        <div>Khách hàng: ${escapeHtml(forProduct)}</div>
-                        <div>Loại vận chuyển: ${escapeHtml(transportType)}</div>
-                        <div>Số mã hàng: <strong>${itemCount}</strong></div>
-                        <div>Ngày xuất: ${escapeHtml(createdAt)}</div>
-                    </div>
+                    <!-- Bottom 25mm Section -->
+                    <div style="height: 25mm; display: flex; align-items: flex-end; padding: 2mm; box-sizing: border-box; background: linear-gradient(to bottom, #fff, #f9f9f9);">
+                        <!-- Left: Print Time (small text) -->
+                        <div style="font-size: 8px; color: #666; flex-shrink: 0;">
+                            In: ${new Date().toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${pad2(new Date().getHours())}:${pad2(new Date().getMinutes())}
+                        </div>
 
-                    <div style="text-align: center; font-size: 11px; margin-top: auto;">
-                        In lúc: ${new Date().toLocaleDateString('vi-VN')} ${pad2(new Date().getHours())}:${pad2(new Date().getMinutes())}
+                        <!-- Right: Space for signature/notes -->
+                        <div style="flex: 1; border-left: 1px dashed #ccc; margin-left: 3mm; padding-left: 3mm; font-size: 9px; color: #999;">
+                            Sign / Note
+                        </div>
                     </div>
                 </div>
             `;
@@ -439,7 +595,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         }
 
         if (isTestMode) {
-            alert(`Chế độ test: Đã bỏ qua lệnh in thật. Số tem: ${tickets.length}`);
+            showModal(`Đã bỏ qua lệnh in thật.\n\nSố tem: ${tickets.length}`, 'warning', 'Chế độ test');
             logPrintCase();
             return;
         }
@@ -542,6 +698,15 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
 
         $('input[id="print-split-mode"], input[id="print-single-mode"], input[id="print-test-mode"]').on('change', function() {
             syncPrintModeToggles($(this).attr('id'));
+        });
+
+        $(document).on('keydown', function(e) {
+            if (e.key === 'Escape' && $('#error-modal').css('display') !== 'none') {
+                closeErrorModal();
+            }
+            if (e.key === 'Enter' && $('#error-modal').css('display') !== 'none') {
+                closeErrorModal();
+            }
         });
     });
 </script>

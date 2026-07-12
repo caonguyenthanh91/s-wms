@@ -6,14 +6,104 @@
                 overflow-y: auto;
             }
         }
+        .error-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .error-modal-content {
+            background-color: white;
+            border-radius: 12px;
+            padding: 32px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            animation: slideUp 0.3s ease-out;
+        }
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .error-modal-content h2 {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 16px;
+        }
+        .error-modal-content.error h2 {
+            color: #dc2626;
+        }
+        .error-modal-content.success h2 {
+            color: #059669;
+        }
+        .error-modal-content.warning h2 {
+            color: #d97706;
+        }
+        .error-modal-content p {
+            font-size: 16px;
+            color: #374151;
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+        .error-modal-btn {
+            color: white;
+            padding: 12px 32px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.2s;
+        }
+        .error-modal-content.error .error-modal-btn {
+            background-color: #dc2626;
+        }
+        .error-modal-content.error .error-modal-btn:hover {
+            background-color: #b91c1c;
+        }
+        .error-modal-content.success .error-modal-btn {
+            background-color: #059669;
+        }
+        .error-modal-content.success .error-modal-btn:hover {
+            background-color: #047857;
+        }
+        .error-modal-content.warning .error-modal-btn {
+            background-color: #d97706;
+        }
+        .error-modal-content.warning .error-modal-btn:hover {
+            background-color: #b45309;
+        }
     </style>
+
+    <!-- Universal Modal -->
+    <div id="error-modal" class="error-modal-overlay" style="display: none;">
+        <div id="error-modal-content" class="error-modal-content error">
+            <h2 id="error-modal-title">⚠️ Cảnh báo</h2>
+            <p id="error-modal-message"></p>
+            <button onclick="closeErrorModal()" class="error-modal-btn">OK</button>
+        </div>
+    </div>
+
     <!-- Bước 1: Quét Mã Kệ -->
     <div id="step-1" class="bg-white p-2 rounded-lg shadow-md text-center">
-        <h3 class="text-lg font-bold mb-2 text-gray-800">Nhập mã Kệ Xuất</h3>
+        <h3 class="text-lg font-bold mb-2 text-gray-800">Nhập mã Kệ</h3>
         <div class="relative w-full max-w-sm mx-auto mb-2">
-            <input type="text" id="shelf-input" placeholder="Nhập mã kệ (VD: A-01-01)"
+            <input type="text" id="shelf-input" placeholder="Nhập / Quét mã kệ"
                    class="w-full px-4 py-3 pr-11 border-2 border-gray-300 rounded-lg text-center text-xl uppercase font-mono focus:border-red-600 outline-none">
-            <button type="button" onclick="openQRScannerModal('shelf-input', 'Mã Kệ Xuất')" class="absolute right-2 top-1/2 -translate-y-1/2 text-red-600 hover:text-red-800">
+            <button type="button" onclick="openQRScannerModal('shelf-input', 'Mã Kệ')" class="absolute right-2 top-1/2 -translate-y-1/2 text-red-600 hover:text-red-800">
                 <i class="fas fa-qrcode text-lg"></i>
             </button>
         </div>
@@ -26,6 +116,11 @@
         <div class="flex justify-between items-center mb-3">
             <h3 class="text-base sm:text-lg font-bold text-gray-800">Kệ: <span id="display-shelf" class="text-red-600"></span></h3>
             <button onclick="resetOutbound()" class="text-gray-500 text-xs sm:text-sm underline">Đổi</button>
+        </div>
+
+        <div class="mb-2 inline-flex rounded-lg border border-gray-300 overflow-hidden self-start">
+            <button type="button" id="scan-mode-interrupt" onclick="setOutboundScanMode(false)" class="px-1 py-1 text-sm font-semibold bg-red-600 text-white">Gián đoạn</button>
+            <button type="button" id="scan-mode-continuous" onclick="setOutboundScanMode(true)" class="px-1 py-1 text-sm font-semibold bg-white text-gray-700 hover:bg-gray-100">Liên tục</button>
         </div>
 
         <div class="grid grid-cols-12 gap-2 mb-2">
@@ -79,6 +174,26 @@ let outboundItems = [];
 let shelfInventory = {}; // Lưu trữ tồn kho thực tế của kệ để validate
 let outboundQrScanTimer = null;
 let outboundLastHandledQRRaw = '';
+let isContinuousOutboundScan = false;
+
+function setOutboundScanMode(isContinuous) {
+    isContinuousOutboundScan = !!isContinuous;
+    updateOutboundScanModeUI();
+    $('#product_id').focus();
+}
+
+function updateOutboundScanModeUI() {
+    const interruptBtn = $('#scan-mode-interrupt');
+    const continuousBtn = $('#scan-mode-continuous');
+
+    if (isContinuousOutboundScan) {
+        interruptBtn.removeClass('bg-red-600 text-white').addClass('bg-white text-gray-700 hover:bg-gray-100');
+        continuousBtn.removeClass('bg-white text-gray-700 hover:bg-gray-100').addClass('bg-red-600 text-white');
+    } else {
+        continuousBtn.removeClass('bg-red-600 text-white').addClass('bg-white text-gray-700 hover:bg-gray-100');
+        interruptBtn.removeClass('bg-white text-gray-700 hover:bg-gray-100').addClass('bg-red-600 text-white');
+    }
+}
 
 function normalizeOutboundQRRaw(rawValue) {
     return (rawValue || '')
@@ -109,9 +224,46 @@ function parseOutboundQRPayload(rawValue) {
     return { productId, quantity };
 }
 
+function showModal(message, type = 'error', title = null) {
+    const titles = {
+        error: '❌ Lỗi',
+        success: '✅ Thành công',
+        warning: '⚠️ Cảnh báo'
+    };
+
+    $('#error-modal-title').text(title || titles[type]);
+    $('#error-modal-message').text(message);
+    $('#error-modal-content').removeClass('error success warning').addClass(type);
+    $('#error-modal').css('display', 'flex');
+}
+
+function showErrorModal(message) {
+    showModal(message, 'error');
+}
+
+function closeErrorModal() {
+    const modalContent = $('#error-modal-content');
+    const isSuccess = modalContent.hasClass('success');
+
+    $('#error-modal').css('display', 'none');
+
+    if (isSuccess) {
+        resetOutbound();
+    } else {
+        // Nếu ở step 1, focus shelf-input; nếu ở step 2, focus product_id
+        if ($('#step-1').hasClass('hidden')) {
+            // Step 2 is visible
+            $('#product_id').val('').focus();
+            clearOutboundProductError();
+        } else {
+            // Step 1 is visible
+            $('#shelf-input').val('').focus();
+        }
+    }
+}
+
 function showOutboundProductError(message) {
-    $('#product-error').text(message).removeClass('hidden');
-    $('#product_id').addClass('border-red-500').removeClass('border-green-500');
+    showErrorModal(message);
 }
 
 function clearOutboundProductError() {
@@ -150,8 +302,15 @@ function handleOutboundQRProductPayload(rawValue) {
     validateOutboundProductInShelf(parsed.productId, function() {
         $('#product_id').val(parsed.productId);
         $('#qty-input').val(parsed.quantity);
-        updateOutboundCounters();
-        $('#qty-input').focus().select();
+
+        if (isContinuousOutboundScan) {
+            addItemOutbound();
+            // Cho phep quet lai cung 1 ma o lan tiep theo.
+            outboundLastHandledQRRaw = '';
+        } else {
+            updateOutboundCounters();
+            $('#qty-input').focus().select();
+        }
     }, function() {
         $('#product_id').val(parsed.productId).select();
         $('#qty-input').val('');
@@ -217,7 +376,7 @@ function checkShelfOutbound() {
                 $('#product_id').focus();
             });
         } else {
-            $('#shelf-error').text('Mã kệ không tồn tại!').removeClass('hidden');
+            showErrorModal('Mã kệ không tồn tại!\n\nVui lòng kiểm tra lại mã kệ.');
         }
     }, 'json');
 }
@@ -242,18 +401,18 @@ function addItemOutbound() {
     const maxQty = shelfInventory[sku] || 0;
 
     if (!sku || isNaN(qty) || qty <= 0) {
-        alert('Vui lòng quét/nhập mã sản phẩm và nhập số lượng.');
+        showModal('Vui lòng quét/nhập mã sản phẩm và nhập số lượng.', 'warning');
         return;
     }
 
     if (!Object.prototype.hasOwnProperty.call(shelfInventory, sku)) {
-        showOutboundProductError('❌ Mã sản phẩm không thuộc kệ đang chọn!');
+        showErrorModal('Mã sản phẩm không thuộc kệ đang chọn!\n\nVui lòng kiểm tra lại.');
         $('#product_id').focus().select();
         return;
     }
 
     if (qty > maxQty) {
-        alert(`Không đủ tồn kho! Số lượng tối đa có thể xuất là ${maxQty}`);
+        showModal(`Không đủ tồn kho! Số lượng tối đa có thể xuất là ${maxQty}`, 'error');
         return;
     }
 
@@ -282,7 +441,7 @@ function renderOutboundList() {
 }
 
 async function submitOutbound() {
-    if (outboundItems.length === 0) return alert('Danh sách xuất trống!');
+    if (outboundItems.length === 0) return showModal('Danh sách xuất trống!', 'warning');
     const shelfId = $('#display-shelf').text();
 
     for (const item of outboundItems) {
@@ -292,16 +451,25 @@ async function submitOutbound() {
             quantity: item.quantity
         });
         if (!res.success) {
-            alert(`Lỗi: ${res.message}`);
+            showModal(res.message, 'error');
             return;
         }
     }
-    alert('Xuất kho thành công!');
-    resetOutbound();
+    showModal('Xuất kho thành công!', 'success');
 }
 
 $(document).ready(function() {
+    setOutboundScanMode(false);
     updateOutboundCounters();
+
+    $(document).on('keydown', function(e) {
+        if (e.key === 'Escape' && $('#error-modal').css('display') !== 'none') {
+            closeErrorModal();
+        }
+        if (e.key === 'Enter' && $('#error-modal').css('display') !== 'none') {
+            closeErrorModal();
+        }
+    });
 
     $('#product_id').on('input', function() {
         updateOutboundCounters();

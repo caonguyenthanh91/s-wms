@@ -1,5 +1,6 @@
 <?php
-// Dashboard hiển thị full screen trên monitor, không cần login
+// S-WMS Export Monitor - Bảng tiến độ xuất hàng full-screen cho màn hình TV lớn.
+// Không cần đăng nhập (Guest). Tự động tải lại dữ liệu mỗi 5 phút và cuộn danh sách tự động.
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -12,423 +13,596 @@ if ($assetBaseUrl !== '/') {
     $assetBaseUrl .= '/';
 }
 
-$bootstrapCssPath = __DIR__ . '/../assets/css/bootstrap.min.css';
-$fontAwesomeCssPath = __DIR__ . '/../assets/css/all.min.css';
-$customCssPath = __DIR__ . '/../assets/css/customs.css';
-
-$bootstrapCssVersion = file_exists($bootstrapCssPath) ? (string) filemtime($bootstrapCssPath) : '1';
+$fontAwesomeCssPath = __DIR__ . '/assets/css/all.min.css';
 $fontAwesomeCssVersion = file_exists($fontAwesomeCssPath) ? (string) filemtime($fontAwesomeCssPath) : '1';
-$customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssPath) : '1';
 ?>
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="vi" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>S-WMS Export Monitor - Bảng tiến độ xuất hàng</title>
+    <title>S-WMS Export Monitor · Bảng tiến độ xuất hàng</title>
     <link rel="icon" type="image/png" sizes="16x16" href="<?php echo $assetBaseUrl; ?>assets/img/icon.png">
-    <link rel="stylesheet" href="<?php echo $assetBaseUrl; ?>assets/css/bootstrap.min.css?v=<?php echo $bootstrapCssVersion; ?>">
     <link rel="stylesheet" href="<?php echo $assetBaseUrl; ?>assets/css/all.min.css?v=<?php echo $fontAwesomeCssVersion; ?>">
-    <link rel="stylesheet" href="<?php echo $assetBaseUrl; ?>assets/css/customs.css?v=<?php echo $customCssVersion; ?>">
     <script src="<?php echo $assetBaseUrl; ?>assets/js/jquery.min.js"></script>
-    <script src="<?php echo $assetBaseUrl; ?>assets/js/tailwindcss.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
+        :root {
+            --board-radius: 14px;
         }
-        html, body {
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
+        html[data-theme="dark"] {
+            --bg: #0b1220;
+            --bg-grad: radial-gradient(1200px 600px at 15% -10%, #17233c 0%, #0b1220 55%);
+            --panel: #111c31;
+            --panel-2: #0e1729;
+            --row: #0f1a2e;
+            --row-alt: #12203a;
+            --row-hover: #16294a;
+            --border: #1e2c47;
+            --text: #f1f5f9;
+            --text-dim: #94a3b8;
+            --text-faint: #64748b;
+            --accent: #38bdf8;
+            --track: #1e2c47;
+            --green: #22c55e;
+            --green-soft: rgba(34,197,94,0.16);
+            --amber: #f59e0b;
+            --amber-soft: rgba(245,158,11,0.16);
+            --red: #ef4444;
+            --red-soft: rgba(239,68,68,0.14);
         }
+        html[data-theme="light"] {
+            --bg: #eef2f7;
+            --bg-grad: radial-gradient(1200px 600px at 15% -10%, #ffffff 0%, #e6ecf4 55%);
+            --panel: #ffffff;
+            --panel-2: #f8fafc;
+            --row: #ffffff;
+            --row-alt: #f4f7fb;
+            --row-hover: #eaf1fb;
+            --border: #dce3ec;
+            --text: #0f172a;
+            --text-dim: #52606d;
+            --text-faint: #94a3b8;
+            --accent: #0284c7;
+            --track: #e2e8f0;
+            --green: #16a34a;
+            --green-soft: rgba(22,163,74,0.14);
+            --amber: #d97706;
+            --amber-soft: rgba(217,119,6,0.14);
+            --red: #dc2626;
+            --red-soft: rgba(220,38,38,0.12);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; overflow: hidden; }
         body {
-            background: #f3f4f6;
-            font-family: system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            background-image: var(--bg-grad);
+            color: var(--text);
+            font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+            font-variant-numeric: tabular-nums;
+            -webkit-font-smoothing: antialiased;
         }
-        #dashboard-container {
-            width: 100%;
-            height: 100vh;
+        #board {
             display: flex;
             flex-direction: column;
-            overflow: hidden;
+            height: 100vh;
+            padding: clamp(0.75rem, 1.4vw, 1.6rem);
+            gap: clamp(0.6rem, 1vw, 1rem);
         }
-        .dashboard-header {
+
+        /* ===== Header ===== */
+        .board-head {
             flex-shrink: 0;
-            padding: 1.5rem;
-            background: #ffffff;
-            border-bottom: 1px solid #e5e7eb;
-        }
-        .dashboard-content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 1.5rem;
-        }
-        .dashboard-kpi-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin-bottom: 2rem;
-        }
-        .dashboard-kpi {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 0.5rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        .dashboard-kpi-label {
-            font-size: 0.875rem;
-            color: #6b7280;
-            margin-bottom: 0.5rem;
-            font-weight: 500;
-        }
-        .dashboard-kpi-value {
-            font-size: 1.875rem;
-            font-weight: bold;
-            color: #1f2937;
-        }
-        .dashboard-table-wrap {
-            background: white;
-            border-radius: 0.5rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-        .dashboard-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.95rem;
-        }
-        .dashboard-table thead {
-            background: #f3f4f6;
-            border-bottom: 2px solid #e5e7eb;
-        }
-        .dashboard-table th {
-            padding: 1rem;
-            text-align: left;
-            font-weight: 600;
-            color: #374151;
-        }
-        .dashboard-table td {
-            padding: 1rem;
-            border-bottom: 1px solid #e5e7eb;
-        }
-        .dashboard-table tbody tr:hover {
-            background: #f9fafb;
-        }
-        .dashboard-table-col-command {
-            font-weight: 600;
-            color: #1f2937;
-            font-family: monospace;
-        }
-        .dashboard-state {
-            display: inline-flex;
+            display: flex;
             align-items: center;
-            gap: 0.5rem;
-        }
-        .dashboard-dot {
-            width: 0.75rem;
-            height: 0.75rem;
-            border-radius: 50%;
-            flex-shrink: 0;
-        }
-        .dot-red { background: #ef4444; }
-        .dot-amber { background: #f59e0b; }
-        .dot-green { background: #10b981; }
-        .dashboard-empty {
-            text-align: center;
-            padding: 3rem 1rem;
-            color: #9ca3af;
-        }
-        .dashboard-title {
-            font-size: 1.875rem;
-            font-weight: bold;
-            color: #1f2937;
-            margin: 0;
-        }
-        .dashboard-subtitle {
-            font-size: 0.875rem;
-            color: #6b7280;
-        }
-        .dashboard-muted {
-            font-size: 0.875rem;
-            color: #9ca3af;
-        }
-        .dashboard-filter-row {
-            display: flex;
-            gap: 0.75rem;
-            flex-wrap: wrap;
-            margin-bottom: 1.5rem;
-        }
-        .dashboard-date-input,
-        .dashboard-btn {
-            padding: 0.5rem 1rem;
-            border: 1px solid #d1d5db;
-            border-radius: 0.375rem;
-            background: white;
-            color: #374151;
-            font-size: 0.875rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .dashboard-date-input {
-            font-family: monospace;
-        }
-        .dashboard-btn:hover {
-            background: #f3f4f6;
-        }
-        .dashboard-btn.active {
-            background: #3b82f6;
-            color: white;
-            border-color: #3b82f6;
-        }
-        #dashboard-status {
-            font-size: 0.875rem;
-            color: #6b7280;
-        }
-        .dashboard-header-top {
-            display: flex;
             justify-content: space-between;
-            align-items: flex-start;
+            gap: 1rem;
         }
-        .dashboard-header-left div:first-child {
-            margin-bottom: 0.5rem;
+        .brand { display: flex; align-items: center; gap: 0.9rem; }
+        .brand-logo {
+            width: clamp(2.4rem, 3vw, 3.2rem);
+            height: clamp(2.4rem, 3vw, 3.2rem);
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--accent), #6366f1);
+            display: flex; align-items: center; justify-content: center;
+            color: #fff; font-size: clamp(1.1rem, 1.6vw, 1.6rem);
+            box-shadow: 0 6px 20px rgba(56,189,248,0.35);
         }
+        .brand-title {
+            font-size: clamp(1.15rem, 1.9vw, 2rem);
+            font-weight: 800; letter-spacing: 0.02em; line-height: 1.1;
+        }
+        .brand-sub {
+            font-size: clamp(0.7rem, 0.95vw, 0.95rem);
+            color: var(--text-dim); font-weight: 500; letter-spacing: 0.14em;
+            text-transform: uppercase;
+        }
+        .head-right { display: flex; align-items: center; gap: clamp(0.8rem, 1.6vw, 1.8rem); }
+        .clock { text-align: right; }
+        .clock-time {
+            font-size: clamp(1.5rem, 2.8vw, 3rem);
+            font-weight: 800; line-height: 1; letter-spacing: 0.02em;
+        }
+        .clock-time .sec { color: var(--accent); }
+        .clock-date {
+            font-size: clamp(0.72rem, 1vw, 1rem);
+            color: var(--text-dim); font-weight: 600; margin-top: 0.2rem;
+        }
+        .theme-toggle {
+            width: clamp(2.6rem, 3.2vw, 3.4rem);
+            height: clamp(2.6rem, 3.2vw, 3.4rem);
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: var(--panel);
+            color: var(--text);
+            font-size: clamp(1rem, 1.4vw, 1.4rem);
+            cursor: pointer;
+            transition: transform 0.15s, background 0.2s;
+        }
+        .theme-toggle:hover { transform: rotate(-18deg) scale(1.05); background: var(--row-hover); }
+
+        /* ===== KPI strip ===== */
+        .kpi-strip {
+            flex-shrink: 0;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: clamp(0.6rem, 1vw, 1rem);
+        }
+        .kpi {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: var(--board-radius);
+            padding: clamp(0.7rem, 1.1vw, 1.1rem) clamp(0.9rem, 1.4vw, 1.4rem);
+            display: flex; align-items: center; gap: clamp(0.7rem, 1.2vw, 1.1rem);
+            position: relative; overflow: hidden;
+        }
+        .kpi::before {
+            content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
+            background: var(--accent);
+        }
+        .kpi.k-picking::before { background: var(--amber); }
+        .kpi.k-packing::before { background: var(--accent); }
+        .kpi.k-pickup::before { background: var(--green); }
+        .kpi-icon {
+            font-size: clamp(1.2rem, 1.8vw, 1.9rem);
+            color: var(--text-dim); width: 1.6em; text-align: center;
+        }
+        .kpi-body { display: flex; flex-direction: column; }
+        .kpi-value { font-size: clamp(1.4rem, 2.6vw, 2.6rem); font-weight: 800; line-height: 1; }
+        .kpi-value small { font-size: 0.5em; color: var(--text-faint); font-weight: 600; }
+        .kpi-label {
+            font-size: clamp(0.66rem, 0.9vw, 0.9rem); color: var(--text-dim);
+            text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-top: 0.25rem;
+        }
+
+        /* ===== Board table ===== */
+        .board-panel {
+            flex: 1; min-height: 0;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: var(--board-radius);
+            display: flex; flex-direction: column; overflow: hidden;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+        }
+        .board-thead {
+            flex-shrink: 0;
+            display: grid;
+            grid-template-columns: var(--grid);
+            background: var(--panel-2);
+            border-bottom: 2px solid var(--border);
+        }
+        .board-thead > div {
+            padding: clamp(0.6rem, 0.9vw, 1rem) clamp(0.5rem, 0.8vw, 0.9rem);
+            font-size: clamp(0.66rem, 0.92vw, 0.98rem);
+            font-weight: 700; color: var(--text-dim);
+            text-transform: uppercase; letter-spacing: 0.06em;
+        }
+        .board-thead .col-num { text-align: center; }
+        .board-scroll { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+        .board-track { will-change: transform; }
+        .brow {
+            display: grid;
+            grid-template-columns: var(--grid);
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            background: var(--row);
+            animation: fadein 0.4s ease;
+        }
+        .brow:nth-child(even) { background: var(--row-alt); }
+        .brow > div { padding: clamp(0.55rem, 0.95vw, 1.05rem) clamp(0.5rem, 0.8vw, 0.9rem); }
+        @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+
+        .cell-cmd { font-size: clamp(1rem, 1.5vw, 1.6rem); font-weight: 800; letter-spacing: 0.03em; font-family: "Consolas", "Menlo", monospace; }
+        .cell-cmd .cust { display:block; font-size: 0.62em; color: var(--text-dim); font-weight: 600; letter-spacing: 0.04em; margin-top: 0.15rem; }
+        .cell-date { font-size: clamp(0.8rem, 1.1vw, 1.15rem); color: var(--text-dim); font-weight: 600; }
+
+        .chip {
+            display: inline-flex; align-items: center; gap: 0.4em;
+            padding: 0.25em 0.7em; border-radius: 999px;
+            font-size: clamp(0.72rem, 1vw, 1.05rem); font-weight: 700; letter-spacing: 0.05em;
+        }
+        .chip-sea { background: rgba(56,189,248,0.16); color: var(--accent); }
+        .chip-air { background: rgba(99,102,241,0.18); color: #818cf8; }
+
+        /* progress cell */
+        .prog { display: flex; flex-direction: column; gap: 0.35rem; }
+        .prog-head { display: flex; align-items: baseline; gap: 0.15rem; font-weight: 800; }
+        .prog-done { font-size: clamp(1.05rem, 1.7vw, 1.9rem); }
+        .prog-sep { font-size: clamp(0.85rem, 1.2vw, 1.3rem); color: var(--text-faint); }
+        .prog-total { font-size: clamp(0.85rem, 1.2vw, 1.3rem); color: var(--text-dim); }
+        .prog-bar { height: clamp(6px, 0.7vw, 10px); border-radius: 999px; background: var(--track); overflow: hidden; }
+        .prog-fill { height: 100%; border-radius: 999px; transition: width 0.6s ease; }
+        .prog-remain { font-size: clamp(0.64rem, 0.9vw, 0.92rem); font-weight: 600; letter-spacing: 0.02em; }
+
+        .is-done .prog-done { color: var(--green); }
+        .is-done .prog-fill { background: var(--green); }
+        .is-done .prog-remain { color: var(--green); }
+        .is-partial .prog-done { color: var(--amber); }
+        .is-partial .prog-fill { background: var(--amber); }
+        .is-partial .prog-remain { color: var(--amber); }
+        .is-none .prog-done { color: var(--red); }
+        .is-none .prog-fill { background: var(--red); }
+        .is-none .prog-remain { color: var(--red); }
+
+        .cell-pickup-time { font-size: clamp(0.85rem, 1.15vw, 1.25rem); font-weight: 700; color: var(--text-dim); }
+        .cell-pickup-time.done { color: var(--green); }
+
+        .status-pill {
+            display: inline-flex; align-items: center; gap: 0.45em;
+            font-size: clamp(0.7rem, 0.95vw, 1rem); font-weight: 700;
+            padding: 0.3em 0.7em; border-radius: 999px;
+        }
+        .status-pill i { font-size: 0.85em; }
+        .st-done { background: var(--green-soft); color: var(--green); }
+        .st-progress { background: var(--amber-soft); color: var(--amber); }
+        .st-wait { background: var(--red-soft); color: var(--red); }
+
+        .board-empty {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100%; color: var(--text-faint); gap: 1rem;
+            font-size: clamp(1rem, 1.6vw, 1.6rem);
+        }
+        .board-empty i { font-size: 3em; opacity: 0.4; }
+
+        /* ===== Footer status ===== */
+        .board-foot {
+            flex-shrink: 0;
+            display: flex; align-items: center; justify-content: space-between;
+            font-size: clamp(0.68rem, 0.92vw, 0.95rem);
+            color: var(--text-dim); padding: 0 0.4rem;
+        }
+        .foot-status { display: flex; align-items: center; gap: 0.5rem; }
+        .live-dot {
+            width: 0.6em; height: 0.6em; border-radius: 50%; background: var(--green);
+            box-shadow: 0 0 0 0 rgba(34,197,94,0.6); animation: pulse 2s infinite;
+        }
+        .live-dot.err { background: var(--red); animation: none; }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); }
+            70% { box-shadow: 0 0 0 8px rgba(34,197,94,0); }
+            100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+        }
+        .foot-legend { display: flex; align-items: center; gap: 1.1rem; }
+        .lg { display: inline-flex; align-items: center; gap: 0.4em; }
+        .lg-dot { width: 0.7em; height: 0.7em; border-radius: 50%; }
+        .lg-dot.green { background: var(--green); }
+        .lg-dot.amber { background: var(--amber); }
+        .lg-dot.red { background: var(--red); }
     </style>
 </head>
 <body>
-    <div id="dashboard-container">
-        <div class="dashboard-header">
-            <div class="dashboard-header-top">
+    <!-- Grid template shared by header + rows: Invoice | Date | Type | Picking | Packing | Pickup | Status | Time -->
+    <div id="board" style="--grid: 1.5fr 0.9fr 0.8fr 1.4fr 1.4fr 1.4fr 1fr 0.9fr;">
+        <div class="board-head">
+            <div class="brand">
+                <div class="brand-logo"><i class="fa-solid fa-truck-fast"></i></div>
                 <div>
-                    <div class="dashboard-subtitle">S-WMS Export Monitor</div>
-                    <h3 class="dashboard-title">Bảng tiến độ xuất hàng</h3>
-                    <div class="dashboard-muted" style="margin-top: 0.25rem;">Theo dõi tiến độ picking, packing và pickup theo ngày tạo lệnh.</div>
+                    <div class="brand-sub">S-WMS Export Monitor</div>
+                    <div class="brand-title">Bảng tiến độ xuất hàng</div>
                 </div>
-                <div id="dashboard-status" class="dashboard-muted">Đang tải dữ liệu...</div>
+            </div>
+            <div class="head-right">
+                <div class="clock">
+                    <div id="clock-time" class="clock-time">--:--<span class="sec">:--</span></div>
+                    <div id="clock-date" class="clock-date">--</div>
+                </div>
+                <button id="theme-toggle" class="theme-toggle" title="Đổi giao diện Sáng / Tối">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
             </div>
         </div>
 
-        <div class="dashboard-content">
-            <div class="dashboard-filter-row">
-                <input id="flight-date" class="dashboard-date-input" type="date">
-                <button type="button" class="dashboard-btn" data-day-offset="-1">Hôm qua</button>
-                <button type="button" class="dashboard-btn active" data-day-offset="0">Hôm nay</button>
-                <button type="button" class="dashboard-btn" data-day-offset="1">Ngày mai</button>
-                <button type="button" id="btn-refresh-flight" class="dashboard-btn">Tải lại</button>
-            </div>
-
-            <div class="dashboard-kpi-grid">
-                <div class="dashboard-kpi">
-                    <div class="dashboard-kpi-label">Total Invoice</div>
-                    <div id="kpi-commands" class="dashboard-kpi-value">0</div>
-                </div>
-                <div class="dashboard-kpi">
-                    <div class="dashboard-kpi-label">Picking complete</div>
-                    <div id="kpi-picking" class="dashboard-kpi-value">0</div>
-                </div>
-                <div class="dashboard-kpi">
-                    <div class="dashboard-kpi-label">Packing complete</div>
-                    <div id="kpi-packing" class="dashboard-kpi-value">0</div>
-                </div>
-                <div class="dashboard-kpi">
-                    <div class="dashboard-kpi-label">Pickup complete</div>
-                    <div id="kpi-pickup" class="dashboard-kpi-value">0</div>
+        <div class="kpi-strip">
+            <div class="kpi">
+                <div class="kpi-icon"><i class="fa-solid fa-file-invoice"></i></div>
+                <div class="kpi-body">
+                    <div class="kpi-value" id="kpi-total">0</div>
+                    <div class="kpi-label">Tổng Invoice</div>
                 </div>
             </div>
+            <div class="kpi k-picking">
+                <div class="kpi-icon"><i class="fa-solid fa-hand"></i></div>
+                <div class="kpi-body">
+                    <div class="kpi-value" id="kpi-picking">0<small> /0</small></div>
+                    <div class="kpi-label">Picking xong</div>
+                </div>
+            </div>
+            <div class="kpi k-packing">
+                <div class="kpi-icon"><i class="fa-solid fa-box"></i></div>
+                <div class="kpi-body">
+                    <div class="kpi-value" id="kpi-packing">0<small> /0</small></div>
+                    <div class="kpi-label">Packing xong</div>
+                </div>
+            </div>
+            <div class="kpi k-pickup">
+                <div class="kpi-icon"><i class="fa-solid fa-truck-ramp-box"></i></div>
+                <div class="kpi-body">
+                    <div class="kpi-value" id="kpi-pickup">0<small> /0</small></div>
+                    <div class="kpi-label">Pickup xong</div>
+                </div>
+            </div>
+        </div>
 
-            <div class="dashboard-table-wrap">
-                <table class="dashboard-table">
-                    <thead>
-                        <tr>
-                            <th>Invoice No.</th>
-                            <th>Type</th>
-                            <th>Picking</th>
-                            <th>Packing</th>
-                            <th>Pickup</th>
-                            <th>Pickup Time</th>
-                        </tr>
-                    </thead>
-                    <tbody id="flight-board-body">
-                        <tr><td colspan="6" class="dashboard-empty">Đang tải dữ liệu...</td></tr>
-                    </tbody>
-                </table>
+        <div class="board-panel">
+            <div class="board-thead">
+                <div>Invoice / Khách hàng</div>
+                <div>Ngày xuất</div>
+                <div>Vận chuyển</div>
+                <div class="col-num">Picking (SP)</div>
+                <div class="col-num">Packing (kiện)</div>
+                <div class="col-num">Pickup (kiện)</div>
+                <div class="col-num">Trạng thái</div>
+                <div class="col-num">Giờ bốc</div>
+            </div>
+            <div class="board-scroll" id="board-scroll">
+                <div class="board-track" id="board-track">
+                    <div class="board-empty"><i class="fa-solid fa-spinner fa-spin"></i><span>Đang tải dữ liệu...</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="board-foot">
+            <div class="foot-status">
+                <span class="live-dot" id="live-dot"></span>
+                <span id="board-status">Đang khởi tạo...</span>
+            </div>
+            <div class="foot-legend">
+                <span class="lg"><span class="lg-dot green"></span> Hoàn thành</span>
+                <span class="lg"><span class="lg-dot amber"></span> Đang xử lý</span>
+                <span class="lg"><span class="lg-dot red"></span> Chưa bắt đầu</span>
+                <span id="foot-updated">Cập nhật: --</span>
             </div>
         </div>
     </div>
 
     <script>
-        let flightBoardRows = [];
+        var RELOAD_MS = 300000;      // Tự động tải lại dữ liệu mỗi 5 phút
+        var SCROLL_SPEED = 0.4;      // px mỗi frame khi cuộn tự động
+        var SCROLL_PAUSE = 3500;     // dừng ở đầu/cuối danh sách (ms)
 
-        function pad2(v) {
-            return String(v).padStart(2, '0');
-        }
-
-        function toYmd(dateObj) {
-            return dateObj.getFullYear() + '-' + pad2(dateObj.getMonth() + 1) + '-' + pad2(dateObj.getDate());
-        }
+        function pad2(v) { return String(v).padStart(2, '0'); }
 
         function escHtml(text) {
-            return String(text || '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#039;');
+            return String(text == null ? '' : text)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
         }
 
-        function setFlightStatus(text, isError) {
-            const el = $('#dashboard-status');
-            el.text(text || '');
-            el.toggleClass('text-red-400', !!isError);
+        var DOW = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
+
+        function updateClock() {
+            var now = new Date();
+            $('#clock-time').html(pad2(now.getHours()) + ':' + pad2(now.getMinutes()) +
+                '<span class="sec">:' + pad2(now.getSeconds()) + '</span>');
+            $('#clock-date').text(DOW[now.getDay()] + ', ' + pad2(now.getDate()) + '/' +
+                pad2(now.getMonth() + 1) + '/' + now.getFullYear());
         }
 
-        function setDateByOffset(dayOffset) {
-            const dt = new Date();
-            dt.setHours(0, 0, 0, 0);
-            dt.setDate(dt.getDate() + dayOffset);
-            $('#flight-date').val(toYmd(dt));
+        function toYmd(d) {
+            return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
         }
 
-        function markActiveQuickButton(offset) {
-            $('[data-day-offset]').removeClass('active');
-            $('[data-day-offset="' + offset + '"]').addClass('active');
-        }
-
-        function inferDotClass(done, total) {
-            if (total <= 0) return 'dot-red';
-            if (done >= total) return 'dot-green';
-            if (done > 0) return 'dot-amber';
-            return 'dot-red';
-        }
-
-        function formatPickupTime(value) {
+        function fmtDate(value) {
             if (!value) return '--';
-            const dt = new Date(String(value).replace(' ', 'T'));
-            if (Number.isNaN(dt.getTime())) return '--';
-            return pad2(dt.getHours()) + ':' + pad2(dt.getMinutes()) + ' ' + pad2(dt.getDate()) + '/' + pad2(dt.getMonth() + 1);
+            var d = new Date(String(value).replace(' ', 'T'));
+            if (isNaN(d.getTime())) return escHtml(value);
+            return pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1);
         }
 
-        function renderFlightRows(rows) {
-            const body = $('#flight-board-body');
-            body.empty();
+        function fmtPickupTime(value) {
+            if (!value) return '--';
+            var d = new Date(String(value).replace(' ', 'T'));
+            if (isNaN(d.getTime())) return '--';
+            return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+        }
+
+        function progClass(done, total) {
+            if (total <= 0) return 'is-none';
+            if (done >= total) return 'is-done';
+            if (done > 0) return 'is-partial';
+            return 'is-none';
+        }
+
+        function progCell(done, total, remainLabel) {
+            var cls = progClass(done, total);
+            var pct = total > 0 ? Math.min(100, Math.round(done / total * 100)) : 0;
+            var remain = Math.max(0, total - done);
+            return '<div class="prog ' + cls + '">' +
+                '<div class="prog-head"><span class="prog-done">' + done + '</span>' +
+                '<span class="prog-sep">/</span><span class="prog-total">' + total + '</span></div>' +
+                '<div class="prog-bar"><div class="prog-fill" style="width:' + pct + '%"></div></div>' +
+                '<div class="prog-remain">' + (remain > 0 ? 'Còn ' + remain + ' ' + remainLabel : '✓ Đủ') + '</div>' +
+                '</div>';
+        }
+
+        function statusPill(pickDone, packDone, pickupDone, totalItems, totalCases) {
+            if (totalItems <= 0 && totalCases <= 0) {
+                return '<span class="status-pill st-wait"><i class="fa-solid fa-hourglass-start"></i> Chờ</span>';
+            }
+            if (pickupDone) {
+                return '<span class="status-pill st-done"><i class="fa-solid fa-circle-check"></i> Hoàn tất</span>';
+            }
+            if (pickDone && packDone) {
+                return '<span class="status-pill st-progress"><i class="fa-solid fa-truck-ramp-box"></i> Chờ bốc</span>';
+            }
+            if (pickDone) {
+                return '<span class="status-pill st-progress"><i class="fa-solid fa-box"></i> Packing</span>';
+            }
+            return '<span class="status-pill st-progress"><i class="fa-solid fa-hand"></i> Picking</span>';
+        }
+
+        function renderRows(rows) {
+            var track = $('#board-track');
+            track.empty();
 
             if (!rows || !rows.length) {
-                body.html('<tr><td colspan="6" class="dashboard-empty">Không có invoice nào trong ngày đã chọn.</td></tr>');
+                track.html('<div class="board-empty"><i class="fa-solid fa-clipboard-check"></i>' +
+                    '<span>Chưa có Invoice nào trong ngày.</span></div>');
                 return;
             }
 
+            var html = '';
             rows.forEach(function(row) {
-                // Items: picking, packing
-                const pickingItems = parseInt(row.picking_items || 0, 10) || 0;
-                const packingItems = parseInt(row.packing_items || 0, 10) || 0;
-                const totalItems = parseInt(row.total_items || 0, 10) || 0;
+                var totalItems = parseInt(row.total_items, 10) || 0;      // count distinct product_id
+                var pickItems = parseInt(row.picking_items, 10) || 0;     // count distinct product_id done picking
+                var packItems = parseInt(row.packing_items, 10) || 0;     // count distinct case_no done packing
+                var totalCases = parseInt(row.total_cases, 10) || 0;      // count distinct case_no
+                var pickedCases = parseInt(row.picked_cases, 10) || 0;    // count distinct case_no done pickup
 
-                // Cases: pickup
-                const pickedCases = parseInt(row.picked_cases || 0, 10) || 0;
-                const totalCases = parseInt(row.total_cases || 0, 10) || 0;
+                var pickDone = totalItems > 0 && pickItems >= totalItems;       // picking: product_id vs product_id
+                var packDone = totalCases > 0 && packItems >= totalCases;       // packing: case_no vs case_no
+                var pickupDone = totalCases > 0 && pickedCases >= totalCases;   // pickup: case_no vs case_no
 
-                const pickDot = inferDotClass(pickingItems, totalItems);
-                const packDot = inferDotClass(packingItems, totalItems);
-                const pickupDot = inferDotClass(pickedCases, totalCases);
+                var type = String(row.transport_type || 'SEA').toUpperCase();
+                var chipCls = (type.indexOf('AIR') >= 0) ? 'chip-air' : 'chip-sea';
+                var chipIcon = (type.indexOf('AIR') >= 0) ? 'fa-plane' : 'fa-ship';
+                var cust = String(row.for_product || '').trim();
 
-                body.append(
-                    '<tr>' +
-                        '<td class="dashboard-table-col-command">' + escHtml(row.command) + '</td>' +
-                        '<td>SEA/AIR</td>' +
-                        '<td><span class="dashboard-state"><span class="dashboard-dot ' + pickDot + '"></span>' + pickingItems + ' / ' + totalItems + '</span></td>' +
-                        '<td><span class="dashboard-state"><span class="dashboard-dot ' + packDot + '"></span>' + packingItems + ' / ' + totalItems + '</span></td>' +
-                        '<td><span class="dashboard-state"><span class="dashboard-dot ' + pickupDot + '"></span>' + pickedCases + ' / ' + totalCases + '</span></td>' +
-                        '<td>' + escHtml(formatPickupTime(row.last_pickup_at)) + '</td>' +
-                    '</tr>'
-                );
+                var pickupTime = fmtPickupTime(row.last_pickup_at);
+
+                html += '<div class="brow">' +
+                    '<div class="cell-cmd">' + escHtml(row.command) +
+                        (cust ? '<span class="cust"><i class="fa-solid fa-user-tag"></i> ' + escHtml(cust) + '</span>' : '') +
+                    '</div>' +
+                    '<div class="cell-date">' + fmtDate(row.export_date) + '</div>' +
+                    '<div><span class="chip ' + chipCls + '"><i class="fa-solid ' + chipIcon + '"></i> ' + escHtml(type) + '</span></div>' +
+                    '<div>' + progCell(pickItems, totalItems, 'SP') + '</div>' +
+                    '<div>' + progCell(packItems, totalCases, 'kiện') + '</div>' +
+                    '<div>' + progCell(pickedCases, totalCases, 'kiện') + '</div>' +
+                    '<div class="col-num" style="text-align:center;">' +
+                        statusPill(pickDone, packDone, pickupDone, totalItems, totalCases) + '</div>' +
+                    '<div class="cell-pickup-time' + (pickupDone ? ' done' : '') + '" style="text-align:center;">' +
+                        escHtml(pickupTime) + '</div>' +
+                '</div>';
             });
+            track.html(html);
         }
 
-        function renderFlightKpi(rows) {
-            const totalCommands = rows.length;
-            let pickingComplete = 0;
-            let packingComplete = 0;
-            let pickupComplete = 0;
-
+        function renderKpi(rows) {
+            var total = rows.length, pk = 0, pc = 0, pu = 0;
             rows.forEach(function(row) {
-                // Items
-                const totalItems = parseInt(row.total_items || 0, 10) || 0;
-                const pickingItems = parseInt(row.picking_items || 0, 10) || 0;
-                const packingItems = parseInt(row.packing_items || 0, 10) || 0;
-                // Cases
-                const totalCases = parseInt(row.total_cases || 0, 10) || 0;
-                const pickedCases = parseInt(row.picked_cases || 0, 10) || 0;
-
-                if (totalItems > 0 && pickingItems >= totalItems) pickingComplete++;
-                if (totalItems > 0 && packingItems >= totalItems) packingComplete++;
-                if (totalCases > 0 && pickedCases >= totalCases) pickupComplete++;
+                var ti = parseInt(row.total_items, 10) || 0;
+                var tc = parseInt(row.total_cases, 10) || 0;
+                if (ti > 0 && (parseInt(row.picking_items, 10) || 0) >= ti) pk++;        // picking: product_id vs product_id
+                if (tc > 0 && (parseInt(row.packing_items, 10) || 0) >= tc) pc++;        // packing: case_no vs case_no
+                if (tc > 0 && (parseInt(row.picked_cases, 10) || 0) >= tc) pu++;         // pickup: case_no vs case_no
             });
-
-            $('#kpi-commands').text(totalCommands);
-            $('#kpi-picking').text(pickingComplete + ' / ' + totalCommands);
-            $('#kpi-packing').text(packingComplete + ' / ' + totalCommands);
-            $('#kpi-pickup').text(pickupComplete + ' / ' + totalCommands);
+            $('#kpi-total').text(total);
+            $('#kpi-picking').html(pk + '<small> /' + total + '</small>');
+            $('#kpi-packing').html(pc + '<small> /' + total + '</small>');
+            $('#kpi-pickup').html(pu + '<small> /' + total + '</small>');
         }
 
-        function loadCommandFlightBoard() {
-            const selectedDate = $('#flight-date').val();
-            if (!selectedDate) {
-                setFlightStatus('Chưa chọn ngày lọc.', true);
-                return;
+        function setStatus(text, isError) {
+            $('#board-status').text(text || '');
+            $('#live-dot').toggleClass('err', !!isError);
+        }
+
+        /* ===== Auto scroll (kiểu bảng thông tin sân bay) ===== */
+        var scrollRAF = null, scrollState = 'wait-top', waitUntil = 0;
+
+        function stopAutoScroll() {
+            if (scrollRAF) { cancelAnimationFrame(scrollRAF); scrollRAF = null; }
+        }
+
+        function startAutoScroll() {
+            stopAutoScroll();
+            var el = document.getElementById('board-scroll');
+            el.scrollTop = 0;
+            scrollState = 'wait-top';
+            waitUntil = performance.now() + SCROLL_PAUSE;
+
+            function step(now) {
+                var maxScroll = el.scrollHeight - el.clientHeight;
+                if (maxScroll <= 2) { scrollRAF = requestAnimationFrame(step); return; }
+
+                if (scrollState === 'wait-top') {
+                    if (now >= waitUntil) scrollState = 'down';
+                } else if (scrollState === 'down') {
+                    el.scrollTop += SCROLL_SPEED;
+                    if (el.scrollTop >= maxScroll - 1) {
+                        el.scrollTop = maxScroll;
+                        scrollState = 'wait-bottom';
+                        waitUntil = now + SCROLL_PAUSE;
+                    }
+                } else if (scrollState === 'wait-bottom') {
+                    if (now >= waitUntil) { el.scrollTop = 0; scrollState = 'wait-top'; waitUntil = now + SCROLL_PAUSE; }
+                }
+                scrollRAF = requestAnimationFrame(step);
             }
+            scrollRAF = requestAnimationFrame(step);
+        }
 
-            setFlightStatus('Đang tải danh sách command...');
-
-            $.getJSON('api.php?action=get_command_flight_board', { date: selectedDate }, function(res) {
+        /* ===== Load data ===== */
+        function loadBoard() {
+            var date = toYmd(new Date());
+            $.getJSON('api.php?action=get_monitor_board', { date: date }, function(res) {
                 if (!res || !res.success) {
-                    setFlightStatus((res && res.message) ? res.message : 'Không thể tải dữ liệu dashboard.', true);
-                    renderFlightRows([]);
-                    renderFlightKpi([]);
+                    setStatus((res && res.message) ? res.message : 'Không thể tải dữ liệu.', true);
                     return;
                 }
-
-                flightBoardRows = res.rows || [];
-                renderFlightRows(flightBoardRows);
-                renderFlightKpi(flightBoardRows);
-                setFlightStatus('Ngày ' + selectedDate + ' - Có ' + flightBoardRows.length + ' command.');
+                var rows = res.rows || [];
+                renderRows(rows);
+                renderKpi(rows);
+                var now = new Date();
+                setStatus('Trực tiếp · ' + rows.length + ' Invoice trong ngày', false);
+                $('#foot-updated').text('Cập nhật: ' + pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + ':' + pad2(now.getSeconds()));
+                startAutoScroll();
             }).fail(function(xhr) {
-                let message = 'Lỗi tải dữ liệu dashboard.';
-                try {
-                    const response = JSON.parse(xhr.responseText || '{}');
-                    if (response.message) message = response.message;
-                } catch (e) {}
-                setFlightStatus(message, true);
-                renderFlightRows([]);
-                renderFlightKpi([]);
+                var msg = 'Lỗi kết nối máy chủ.';
+                try { var r = JSON.parse(xhr.responseText || '{}'); if (r.message) msg = r.message; } catch (e) {}
+                setStatus(msg, true);
             });
+        }
+
+        /* ===== Theme ===== */
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            $('#theme-toggle i').attr('class', theme === 'dark' ? 'fa-solid fa-moon' : 'fa-solid fa-sun');
+            try { localStorage.setItem('swms-monitor-theme', theme); } catch (e) {}
         }
 
         $(document).ready(function() {
-            setDateByOffset(0);
-            markActiveQuickButton(0);
-            loadCommandFlightBoard();
+            var saved = 'dark';
+            try { saved = localStorage.getItem('swms-monitor-theme') || 'dark'; } catch (e) {}
+            applyTheme(saved);
 
-            $('[data-day-offset]').on('click', function() {
-                const offset = parseInt($(this).attr('data-day-offset') || '0', 10) || 0;
-                setDateByOffset(offset);
-                markActiveQuickButton(offset);
-                loadCommandFlightBoard();
+            $('#theme-toggle').on('click', function() {
+                var cur = document.documentElement.getAttribute('data-theme');
+                applyTheme(cur === 'dark' ? 'light' : 'dark');
             });
 
-            $('#flight-date').on('change', function() {
-                $('[data-day-offset]').removeClass('active');
-                loadCommandFlightBoard();
-            });
+            updateClock();
+            setInterval(updateClock, 1000);
 
-            $('#btn-refresh-flight').on('click', function() {
-                loadCommandFlightBoard();
-            });
+            loadBoard();
+            setInterval(loadBoard, RELOAD_MS);
 
-            // Auto reload mỗi 5 phút (300000ms)
-            setInterval(function() {
-                loadCommandFlightBoard();
-            }, 300000);
+            // Nếu cửa sổ đổi kích thước thì tính lại vùng cuộn
+            var rt;
+            window.addEventListener('resize', function() {
+                clearTimeout(rt);
+                rt = setTimeout(startAutoScroll, 400);
+            });
         });
     </script>
 </body>

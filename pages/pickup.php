@@ -11,116 +11,174 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
 <div class="pda-pickup-wrap pb-4">
     <div class="pda-card p-3 mb-3">
         <div class="flex items-center justify-between gap-2">
-            <div class="pda-title">Pickup Case PDA</div>
-            <div id="workflow-status" class="text-xs font-bold text-sky-700">Cho quet QR case</div>
+            <div class="pda-title">Pickup - Xác nhận bốc hàng</div>
+            <div id="workflow-status" class="text-xs font-bold text-sky-700">Quét tem hàng</div>
         </div>
 
         <div class="pda-kpi-row mt-3">
             <div class="pda-kpi">
-                <div class="pda-kpi-label">Command</div>
+                <div class="pda-kpi-label">Invoice</div>
                 <div id="summary-command" class="pda-kpi-value">-</div>
             </div>
             <div class="pda-kpi">
-                <div class="pda-kpi-label">Case vừa quét</div>
+                <div class="pda-kpi-label">Kiện</div>
                 <div id="summary-case" class="pda-kpi-value">-</div>
             </div>
             <div class="pda-kpi">
-                <div class="pda-kpi-label">OK / Tổng case</div>
-                <div id="summary-ok" class="pda-kpi-value">0 / 0</div>
+                <div class="pda-kpi-label">Khách hàng</div>
+                <div id="summary-customer" class="pda-kpi-value text-sm">-</div>
             </div>
             <div class="pda-kpi">
-                <div class="pda-kpi-label">Lượt quét</div>
-                <div id="summary-scan-count" class="pda-kpi-value">0</div>
+                <div class="pda-kpi-label">Tổng kiện</div>
+                <div id="summary-total-cases" class="pda-kpi-value">0</div>
             </div>
         </div>
     </div>
 
     <div class="pda-card p-3">
-        <div class="pda-subtitle">Quét Pickup</div>
-        <div class="pda-title mt-1">Quét QR [command6][case3]</div>
-        <div class="text-xs text-slate-500 mt-1">Ví dụ: ABCDEF001. Khi case_no đúng, hệ thống ghi log status=pickup, quantity=1 cho tất cả dòng khớp command + case_no.</div>
+        <div class="pda-subtitle">Bước 1: Quét Tem Hàng</div>
+        <div class="pda-title mt-1">QR trên Tem Kiện</div>
+        <div class="text-xs text-slate-500 mt-1">Quét QR dạng [command]$[case_no]$[for_product]$[distinct_products]$[transport_type]$[created_at].</div>
 
         <div class="relative mt-3">
-            <input type="text" id="pickup-qr-input" class="pda-input" placeholder="Quét QR pickup" maxlength="32">
-            <button type="button" onclick="openQRScannerModal('pickup-qr-input', 'QR Pickup Case')" class="absolute right-3 top-1/2 -translate-y-1/2 text-sky-600">
+            <input type="text" id="pallet-qr-input" class="pda-input" placeholder="Quét QR tem kiện" maxlength="128" autocomplete="off">
+            <button type="button" onclick="openQRScannerModal('pallet-qr-input', 'QR Tem Kiện')" class="absolute right-3 top-1/2 -translate-y-1/2 text-sky-600">
                 <i class="fas fa-qrcode text-lg"></i>
             </button>
         </div>
 
-        <div class="mt-3 flex gap-2">
-            <button type="button" class="pda-btn pda-btn-primary" onclick="handlePickupScanFromInput()">Xác nhận QR</button>
-            <button type="button" class="pda-btn pda-btn-muted" onclick="resetPickupState(true)">Đổi command</button>
-        </div>
-    
-        <div id="pickup-error" class="pda-msg-error mt-2 hidden"></div>
-        <div id="pickup-info" class="pda-msg-info mt-2 hidden"></div>
+        <button type="button" class="pda-btn pda-btn-primary mt-3" onclick="handlePalletQrScan()">Xác nhận Tem Kiện</button>
 
-        <div class="mt-3">
-            <div class="text-xs font-bold text-slate-600 uppercase tracking-wide">Danh sách case theo command</div>
-            <div class="pda-table-wrap">
-                <table class="w-full pda-table">
-                    <thead>
-                        <tr>
-                            <th>Case No</th>
-                            <th>Trạng thái</th>
-                            <th>Số lượt pickup</th>
-                        </tr>
-                    </thead>
-                    <tbody id="pickup-case-list"></tbody>
-                </table>
+        <div id="pallet-error" class="pda-msg-error mt-2 hidden"></div>
+        <div id="pallet-info" class="pda-msg-info mt-2 hidden"></div>
+
+        <!-- Display pallet QR info -->
+        <div id="pallet-info-box" class="hidden mt-3 p-3 bg-sky-50 border border-sky-200 rounded">
+            <div class="text-xs font-bold text-sky-900 mb-2">✓ Thông tin tem kiện:</div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+                <div><span class="text-slate-600">Invoice:</span> <span class="font-bold" id="pallet-info-command">-</span></div>
+                <div><span class="text-slate-600">Kiện:</span> <span class="font-bold" id="pallet-info-case">-</span></div>
+                <div><span class="text-slate-600">Khách hàng:</span> <span class="font-bold" id="pallet-info-customer">-</span></div>
+                <div><span class="text-slate-600">Loại vận chuyển:</span> <span class="font-bold" id="pallet-info-transport">-</span></div>
+                <div><span class="text-slate-600">Mã hàng:</span> <span class="font-bold" id="pallet-info-products">-</span></div>
+                <div><span class="text-slate-600">Ngày xuất:</span> <span class="font-bold" id="pallet-info-date">-</span></div>
             </div>
+        </div>
+    </div>
+
+    <div class="pda-card p-3 mt-3" id="shipping-mark-section" style="display:none;">
+        <div class="pda-subtitle">Bước 2: Xác nhận Phiếu Shipping Mark</div>
+        <div class="pda-title mt-1">QR Phiếu Shipping Mark</div>
+        <div class="text-xs text-slate-500 mt-1">Quét QR dạng [command6][case3] từ phiếu shipping mark, ví dụ: ABCDEF001.</div>
+
+        <div class="relative mt-3">
+            <input type="text" id="shipping-qr-input" class="pda-input" placeholder="Quét QR phiếu shipping mark" maxlength="32" autocomplete="off">
+            <button type="button" onclick="openQRScannerModal('shipping-qr-input', 'QR Phiếu Shipping Mark')" class="absolute right-3 top-1/2 -translate-y-1/2 text-sky-600">
+                <i class="fas fa-qrcode text-lg"></i>
+            </button>
+        </div>
+
+        <button type="button" class="pda-btn pda-btn-primary mt-3" onclick="handleShippingMarkQrScan()">Xác nhận Phiếu</button>
+
+        <div id="shipping-error" class="pda-msg-error mt-2 hidden"></div>
+        <div id="shipping-info" class="pda-msg-info mt-2 hidden"></div>
+
+        <!-- Verification result -->
+        <div id="shipping-match-box" class="hidden mt-3 p-3 bg-green-50 border border-green-200 rounded">
+            <div class="text-xs font-bold text-green-900">✓ Thông tin khớp! Đang ghi nhận pickup...</div>
+        </div>
+    </div>
+
+    <!-- Session summary -->
+    <div class="pda-card p-3 mt-3">
+        <div class="pda-subtitle">Thống kê Pickup</div>
+        <div class="pda-table-wrap">
+            <table class="w-full pda-table">
+                <thead>
+                    <tr>
+                        <th>Invoice</th>
+                        <th>Kiện</th>
+                        <th>Khách hàng</th>
+                        <th>Trạng thái</th>
+                        <th>Giờ ghi nhận</th>
+                    </tr>
+                </thead>
+                <tbody id="pickup-session-list">
+                    <tr><td colspan="5" class="text-center text-slate-500 text-xs">Chưa ghi nhận pickup nào</td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
 
 <script>
-let pickupState = {
-    command: '',
-    lastCaseNo: '',
-    totalCases: 0,
-    okCases: 0,
-    waitCases: 0,
-    scanCount: 0,
-    cases: [],
-    busy: false,
-    qrScanTimer: null,
-    lastHandledQRRaw: ''
+let pickupSession = {
+    palletQR: null,  // {command, case_no, for_product, distinct_products, transport_type, created_at}
+    sessionHistory: [],  // [{command, case_no, customer, timestamp}]
+    busy: false
 };
 
 function normalizeQrText(text) {
     return (text || '')
-        .replace(/\uFF04/g, '$')
+        .replace(/＄/g, '$')
         .replace(/\\\$/g, '$')
         .replace(/&#36;/g, '$')
         .trim()
         .toUpperCase();
 }
 
-function parsePickupCode(rawValue) {
+// Parse QR from pallet (tem kiện): [command]$[case_no]$[for_product]$[distinct_products]$[transport_type]$[created_at]
+function parsePalletQR(rawValue) {
+    const text = normalizeQrText(rawValue);
+    const parts = text.split('$').map(p => p.trim());
+    if (parts.length < 6) {
+        return null;
+    }
+    return {
+        command: parts[0],
+        case_no: parts[1],
+        for_product: parts[2],
+        distinct_products: parts[3],
+        transport_type: parts[4],
+        created_at: parts[5]
+    };
+}
+
+// Parse shipping mark QR: [command6][case3], e.g. ABCDEF001
+function parseShippingMarkQR(rawValue) {
     const text = normalizeQrText(rawValue).replace(/\s+/g, '');
     const matched = text.match(/^([A-Z0-9]{6})([A-Z0-9]{3})$/);
     if (!matched) return null;
     return {
         command: matched[1],
-        caseNo: matched[2],
-        fullCode: text
+        case_no: matched[2]
     };
 }
 
-function showError(message) {
-    $('#pickup-error').removeClass('hidden').text(message || 'Có lỗi xảy ra.');
+function showPalletError(msg) {
+    $('#pallet-error').removeClass('hidden').text(msg || 'Có lỗi xảy ra');
+    $('#pallet-info').addClass('hidden');
 }
 
-function hideError() {
-    $('#pickup-error').addClass('hidden').text('');
+function hidePalletError() {
+    $('#pallet-error').addClass('hidden');
 }
 
-function showInfo(message) {
-    if (!message) {
-        $('#pickup-info').addClass('hidden').text('');
+function showShippingError(msg) {
+    $('#shipping-error').removeClass('hidden').text(msg || 'Có lỗi xảy ra');
+    $('#shipping-info').addClass('hidden');
+}
+
+function hideShippingError() {
+    $('#shipping-error').addClass('hidden');
+}
+
+function showShippingInfo(msg) {
+    if (!msg) {
+        $('#shipping-info').addClass('hidden');
         return;
     }
-    $('#pickup-info').removeClass('hidden').text(message);
+    $('#shipping-info').removeClass('hidden').text(msg);
 }
 
 function setWorkflowStatus(text, toneClass) {
@@ -131,228 +189,201 @@ function setWorkflowStatus(text, toneClass) {
 }
 
 function updateSummary() {
-    $('#summary-command').text(pickupState.command || '-');
-    $('#summary-case').text(pickupState.lastCaseNo || '-');
-    $('#summary-ok').text(`${pickupState.okCases || 0} / ${pickupState.totalCases || 0}`);
-    $('#summary-scan-count').text(pickupState.scanCount || 0);
+    if (!pickupSession.palletQR) {
+        $('#summary-command').text('-');
+        $('#summary-case').text('-');
+        $('#summary-customer').text('-');
+        $('#summary-total-cases').text('0');
+        return;
+    }
+    const qr = pickupSession.palletQR;
+    $('#summary-command').text(qr.command || '-');
+    $('#summary-case').text(qr.case_no || '-');
+    $('#summary-customer').text(qr.for_product || '-');
+    $('#summary-total-cases').text(qr.distinct_products || '-');
 }
 
-function applyCaseListFromResponse(res) {
-    pickupState.command = normalizeQrText(res.command || pickupState.command);
-    pickupState.cases = (res.cases || []).map(function(row) {
-        return {
-            case_no: normalizeQrText(row.case_no),
-            pickup_logs: parseInt(row.pickup_logs || 0, 10) || 0,
-            is_ok: !!row.is_ok
-        };
-    }).sort(function(a, b) {
-        return a.case_no.localeCompare(b.case_no, undefined, { numeric: true });
-    });
-
-    pickupState.totalCases = parseInt(res.total_cases || pickupState.cases.length || 0, 10) || 0;
-    pickupState.okCases = parseInt(res.ok_cases || 0, 10) || 0;
-    pickupState.waitCases = parseInt(res.wait_cases || Math.max(0, pickupState.totalCases - pickupState.okCases), 10) || 0;
-
-    renderCaseList();
-    updateSummary();
+function displayPalletQRInfo(qr) {
+    $('#pallet-info-command').text(qr.command);
+    $('#pallet-info-case').text(qr.case_no);
+    $('#pallet-info-customer').text(qr.for_product || '(không có)');
+    $('#pallet-info-transport').text(qr.transport_type || '(không có)');
+    $('#pallet-info-products').text(qr.distinct_products + ' SP');
+    $('#pallet-info-date').text(qr.created_at || '(không có)');
+    $('#pallet-info-box').removeClass('hidden');
 }
 
-function renderCaseList() {
-    const body = $('#pickup-case-list');
-    body.empty();
-
-    if (!pickupState.command || !pickupState.cases.length) {
-        body.append('<tr><td colspan="3" class="text-center text-slate-500">Chưa có dữ liệu command.</td></tr>');
+function handlePalletQrScan() {
+    const raw = $('#pallet-qr-input').val();
+    if (!raw) {
+        showPalletError('Vui lòng quét QR tem kiện');
         return;
     }
 
-    pickupState.cases.forEach(function(item) {
-        const statusText = item.is_ok ? 'OK' : 'WAIT';
-        const statusClass = item.is_ok ? 'pda-status-ok' : 'pda-status-wait';
-        const rowClass = item.is_ok ? 'pda-row-ok' : '';
-
-        body.append(`
-            <tr class="${rowClass}">
-                <td>${item.case_no}</td>
-                <td class="${statusClass}">${statusText}</td>
-                <td>${item.pickup_logs}</td>
-            </tr>
-        `);
-    });
-}
-
-function resetPickupState(clearInput) {
-    pickupState = {
-        command: '',
-        lastCaseNo: '',
-        totalCases: 0,
-        okCases: 0,
-        waitCases: 0,
-        scanCount: 0,
-        cases: [],
-        busy: false,
-        qrScanTimer: null,
-        lastHandledQRRaw: ''
-    };
-
-    hideError();
-    showInfo('');
-    setWorkflowStatus('Cho quét QR case', 'text-sky-700');
-    updateSummary();
-    renderCaseList();
-
-    if (clearInput) {
-        $('#pickup-qr-input').val('').focus();
-    }
-}
-
-function loadCommandCases(command, onDone) {
-    $.getJSON('api.php?action=get_pickup_cases_by_command', { command: command }, function(res) {
-        if (!res.success) {
-            showError(res.message || 'Không tải được danh sách case theo command.');
-            setWorkflowStatus('Không tìm thấy command', 'text-red-700');
-            if (typeof onDone === 'function') onDone(false);
-            return;
-        }
-
-        applyCaseListFromResponse(res);
-        setWorkflowStatus(`Đã nạp danh sách case cho command ${command}.`, 'text-sky-700');
-        if (typeof onDone === 'function') onDone(true);
-    }).fail(function() {
-        showError('Lỗi kết nối khi tải danh sách case.');
-        setWorkflowStatus('Lỗi kết nối', 'text-red-700');
-        if (typeof onDone === 'function') onDone(false);
-    });
-}
-
-function submitPickupCase(parsed, fromScanner) {
-    const currentCase = pickupState.cases.find(function(item) {
-        return item.case_no === parsed.caseNo;
-    });
-
-    if (!currentCase) {
-        const message = `Case ${parsed.caseNo} không thuộc command ${pickupState.command}.`;
-        showError(message);
-        setWorkflowStatus('Sai case_no', 'text-red-700');
-        if (fromScanner && typeof window.resetQRScannerModalState === 'function') {
-            window.resetQRScannerModalState();
-        }
-        return;
-    }
-
-    const wasOk = currentCase.is_ok;
-
-    $.post('api.php?action=pickup_scan_case', {
-        command: pickupState.command,
-        case_no: parsed.caseNo
-    }, function(res) {
-        if (!res.success) {
-            showError(res.message || 'Không thể ghi nhận pickup.');
-            setWorkflowStatus('Ghi nhận thất bại', 'text-red-700');
-            pickupState.busy = false;
-            return;
-        }
-
-        pickupState.scanCount += 1;
-        pickupState.lastCaseNo = parsed.caseNo;
-        applyCaseListFromResponse(res);
-
-        if (wasOk) {
-            showInfo(`Case ${parsed.caseNo} đã OK từ trước, tiếp tục ghi nhận lượt quét.`);
-            setWorkflowStatus('Case đã OK (quét lặp vẫn hợp lệ)', 'text-amber-700');
-        } else {
-            showInfo(`Case ${parsed.caseNo} đã chuyển trạng thái OK.`);
-            setWorkflowStatus('Ghi nhận pickup thành công', 'text-green-700');
-        }
-
-        $('#pickup-qr-input').val('').focus();
-        pickupState.lastHandledQRRaw = '';
-        pickupState.busy = false;
-
-        if (fromScanner && typeof window.closeQRScannerModal === 'function') {
-            window.closeQRScannerModal();
-        }
-    }, 'json').fail(function() {
-        showError('Lỗi kết nối khi ghi nhận pickup.');
-        setWorkflowStatus('Lỗi kết nối', 'text-red-700');
-        pickupState.busy = false;
-    });
-}
-
-function processPickupScan(parsed, fromScanner) {
-    if (pickupState.busy) return false;
-
+    const parsed = parsePalletQR(raw);
     if (!parsed) {
-        showError('QR không hợp lệ. Cần dùng [command6][case3], ví dụ ABCDEF001.');
-        setWorkflowStatus('Sai định dạng QR', 'text-red-700');
-        if (fromScanner && typeof window.resetQRScannerModalState === 'function') {
+        showPalletError('QR không hợp lệ. Cần dùng format: [command]$[case_no]$[customer]$[products]$[type]$[date]');
+        setWorkflowStatus('QR tem kiện không hợp lệ', 'text-red-700');
+        return;
+    }
+
+    hidePalletError();
+    pickupSession.palletQR = parsed;
+    updateSummary();
+    displayPalletQRInfo(parsed);
+
+    setWorkflowStatus('Đã quét tem kiện, quét phiếu shipping mark tiếp', 'text-green-700');
+
+    // Show step 2
+    $('#shipping-mark-section').show();
+    $('#shipping-qr-input').val('').focus();
+    hideShippingError();
+    showShippingInfo('');
+    $('#shipping-match-box').addClass('hidden');
+}
+
+function handleShippingMarkQrScan() {
+    if (!pickupSession.palletQR) {
+        showShippingError('Vui lòng quét tem kiện trước (Bước 1)');
+        return;
+    }
+
+    const raw = $('#shipping-qr-input').val();
+    if (!raw) {
+        showShippingError('Vui lòng quét QR phiếu shipping mark');
+        return;
+    }
+
+    const parsed = parseShippingMarkQR(raw);
+    if (!parsed) {
+        showShippingError('QR phiếu không hợp lệ. Cần dùng format [command6][case3], ví dụ: ABCDEF001');
+        setWorkflowStatus('QR phiếu shipping mark không hợp lệ', 'text-red-700');
+        if (typeof window.resetQRScannerModalState === 'function') {
             window.resetQRScannerModalState();
         }
-        return false;
+        return;
     }
 
-    hideError();
-    pickupState.busy = true;
-    setWorkflowStatus('Đang xử lý QR pickup...', 'text-sky-700');
+    // Verify match
+    const pallet = pickupSession.palletQR;
+    if (parsed.command !== pallet.command || parsed.case_no !== pallet.case_no) {
+        showShippingError(`Không khớp! Tem kiện: ${pallet.command}/${pallet.case_no}, Phiếu: ${parsed.command}/${parsed.case_no}`);
+        setWorkflowStatus('Phiếu không khớp với tem kiện', 'text-red-700');
+        $('#shipping-match-box').addClass('hidden');
+        if (typeof window.resetQRScannerModalState === 'function') {
+            window.resetQRScannerModalState();
+        }
+        return;
+    }
 
-    const continueAfterLoad = function(ok) {
-        if (!ok) {
-            pickupState.busy = false;
+    // Match confirmed
+    hideShippingError();
+    $('#shipping-match-box').removeClass('hidden');
+    setWorkflowStatus('Thông tin khớp, đang ghi nhận pickup...', 'text-green-700');
+
+    if (pickupSession.busy) return;
+    pickupSession.busy = true;
+
+    // Submit to API
+    $.post('api.php?action=pickup_submit', {
+        command: pallet.command,
+        case_no: pallet.case_no
+    }, function(res) {
+        pickupSession.busy = false;
+
+        if (!res.success) {
+            showShippingError(res.message || 'Không thể ghi nhận pickup');
+            setWorkflowStatus('Ghi nhận thất bại', 'text-red-700');
             return;
         }
-        submitPickupCase(parsed, fromScanner);
-    };
 
-    if (!pickupState.command || pickupState.command !== parsed.command) {
-        pickupState.command = parsed.command;
-        loadCommandCases(parsed.command, continueAfterLoad);
-    } else {
-        continueAfterLoad(true);
-    }
+        // Success: add to history and reset
+        const now = new Date();
+        const timeStr = now.getHours().toString().padStart(2, '0') + ':' +
+                       now.getMinutes().toString().padStart(2, '0') + ':' +
+                       now.getSeconds().toString().padStart(2, '0');
 
-    return true;
+        pickupSession.sessionHistory.push({
+            command: pallet.command,
+            case_no: pallet.case_no,
+            customer: pallet.for_product,
+            timestamp: timeStr
+        });
+
+        showShippingInfo(`✓ Pickup ${pallet.command}/${pallet.case_no} đã ghi nhận thành công`);
+        setWorkflowStatus('Ghi nhận thành công! Quét tem kiện tiếp theo', 'text-green-700');
+
+        renderSessionHistory();
+
+        // Reset for next
+        setTimeout(function() {
+            pickupSession.palletQR = null;
+            $('#pallet-qr-input').val('').focus();
+            $('#shipping-mark-section').hide();
+            $('#pallet-info-box').addClass('hidden');
+            $('#shipping-match-box').addClass('hidden');
+            updateSummary();
+            showShippingInfo('');
+        }, 800);
+    }, 'json').fail(function() {
+        pickupSession.busy = false;
+        showShippingError('Lỗi kết nối khi ghi nhận pickup');
+        setWorkflowStatus('Lỗi kết nối', 'text-red-700');
+    });
 }
 
-function handlePickupScanFromInput() {
-    const parsed = parsePickupCode($('#pickup-qr-input').val());
-    return processPickupScan(parsed, false);
+function renderSessionHistory() {
+    const body = $('#pickup-session-list');
+    if (!pickupSession.sessionHistory.length) {
+        body.html('<tr><td colspan="5" class="text-center text-slate-500 text-xs">Chưa ghi nhận pickup nào</td></tr>');
+        return;
+    }
+
+    let html = '';
+    pickupSession.sessionHistory.forEach(function(item) {
+        html += '<tr>' +
+            '<td>' + (item.command || '-') + '</td>' +
+            '<td>' + (item.case_no || '-') + '</td>' +
+            '<td>' + (item.customer || '(không có)') + '</td>' +
+            '<td><span class="pda-status-ok">✓ OK</span></td>' +
+            '<td class="text-xs">' + (item.timestamp || '-') + '</td>' +
+        '</tr>';
+    });
+    body.html(html);
 }
 
-$('#pickup-qr-input').on('keydown', function(e) {
-    if (e.which === 13) {
-        e.preventDefault();
-        handlePickupScanFromInput();
-    }
-});
-
-$('#pickup-qr-input').on('input', function() {
-    const raw = normalizeQrText($(this).val()).replace(/\s+/g, '');
-    if (!raw || raw.length < 9) return;
-
-    clearTimeout(pickupState.qrScanTimer);
-    pickupState.qrScanTimer = setTimeout(function() {
-        const finalRaw = normalizeQrText($('#pickup-qr-input').val()).replace(/\s+/g, '');
-        if (!finalRaw || finalRaw === pickupState.lastHandledQRRaw) return;
-
-        const parsed = parsePickupCode(finalRaw);
-        if (!parsed) return;
-
-        pickupState.lastHandledQRRaw = finalRaw;
-        processPickupScan(parsed, false);
-    }, 100);
-});
-
+// Handle QR scanner events
 window.handleQRScannerScan = function(targetId, scannedValue) {
-    const normalized = normalizeQrText(scannedValue).replace(/\s+/g, '');
-    if (targetId !== 'pickup-qr-input') return false;
-
-    $('#pickup-qr-input').val(normalized);
-    pickupState.lastHandledQRRaw = normalized;
-    return processPickupScan(parsePickupCode(normalized), true);
+    if (targetId === 'pallet-qr-input') {
+        $('#pallet-qr-input').val(scannedValue);
+        handlePalletQrScan();
+        return true;
+    }
+    if (targetId === 'shipping-qr-input') {
+        $('#shipping-qr-input').val(scannedValue);
+        handleShippingMarkQrScan();
+        return true;
+    }
+    return false;
 };
 
+// Auto-submit on Enter
+$('#pallet-qr-input').on('keydown', function(e) {
+    if (e.which === 13) {
+        e.preventDefault();
+        handlePalletQrScan();
+    }
+});
+
+$('#shipping-qr-input').on('keydown', function(e) {
+    if (e.which === 13) {
+        e.preventDefault();
+        handleShippingMarkQrScan();
+    }
+});
+
 $(document).ready(function() {
-    resetPickupState(false);
-    $('#pickup-qr-input').focus();
+    renderSessionHistory();
+    $('#pallet-qr-input').focus();
 });
 </script>

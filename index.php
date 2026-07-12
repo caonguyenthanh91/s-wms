@@ -7,7 +7,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 $user = $_SESSION['user'] ?? null;
 $role = $user['role'] ?? '';
-$page = $_GET['page'] ?? 'inbound';
+$page = $_GET['page'] ?? 'inventory';
 
 $pageShortLabels = [
     'import' => 'Nhập Pallet',
@@ -123,10 +123,33 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                 <span class="sidebar-title-collapsed hidden"><small>S-WMS</small></span>
             </div>
             <nav id="sidebar-nav" class="hidden md:block p-4 space-y-2">
+                <?php if ($role === '' || $role === 'Guest'): ?>
+                <a href="?page=inventory" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'inventory' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">📦</span>
+                    <span class="ml-3 sidebar-nav-text">Tra tồn</span>
+                </a>
+                <a href="?page=dashboard" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'dashboard' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">🛫</span>
+                    <span class="ml-3 sidebar-nav-text">Dashboard</span>
+                </a>
+                <?php endif; ?>
+
                 <?php if (in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])): ?>
                 <a href="?page=import" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'import' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
                     <span class="sidebar-nav-icon">🚚</span>
                     <span class="ml-3 sidebar-nav-text">Nhận hàng (Pallet)</span>
+                </a>
+                <a href="?page=picking" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'picking' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">🧭</span>
+                    <span class="ml-3 sidebar-nav-text">Picking</span>
+                </a>
+                <a href="?page=packing" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'packing' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">📫</span>
+                    <span class="ml-3 sidebar-nav-text">Packing</span>
+                </a>
+                <a href="?page=pickup" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'pickup' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon">🚛</span>
+                    <span class="ml-3 sidebar-nav-text">Pickup</span>
                 </a>
                 <a href="?page=inbound" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'inbound' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
                     <span class="sidebar-nav-icon">📥</span>
@@ -139,19 +162,8 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                 <a href="?page=inventory" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'inventory' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
                     <span class="sidebar-nav-icon">📦</span>
                     <span class="ml-3 sidebar-nav-text">Tồn Kho</span>
-                </a>
-                <a href="?page=packing" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'packing' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">📫</span>
-                    <span class="ml-3 sidebar-nav-text">Packing</span>
-                </a>
-                <a href="?page=pickup" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'pickup' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">🚛</span>
-                    <span class="ml-3 sidebar-nav-text">Pickup</span>
-                </a>
-                <a href="?page=picking" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'picking' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">🧭</span>
-                    <span class="ml-3 sidebar-nav-text">Picking</span>
-                </a>
+                </a>               
+                
                 <?php endif; ?>
 
                 <?php if (in_array($role, ['Leader', 'Manager', 'Admin'])): ?>
@@ -165,15 +177,15 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                 </a>
                 <a href="?page=print" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'print' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
                     <span class="sidebar-nav-icon">🖨️</span>
-                    <span class="ml-3 sidebar-nav-text">In Phiếu [Mới]</span>
+                    <span class="ml-3 sidebar-nav-text">In phiếu [Picking]</span>
                 </a>
                 <a href="?page=print_case" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'print_case' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
                     <span class="sidebar-nav-icon">📦</span>
-                    <span class="ml-3 sidebar-nav-text">In Case</span>
+                    <span class="ml-3 sidebar-nav-text">In tem [Packing]</span>
                 </a>
                 <a href="?page=print_pallet" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'print_pallet' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
                     <span class="sidebar-nav-icon">📮</span>
-                    <span class="ml-3 sidebar-nav-text">In Pallet</span>
+                    <span class="ml-3 sidebar-nav-text">In tem [Pallet]</span>
                 </a>
                 <a href="?page=dashboard" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'dashboard' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
                     <span class="sidebar-nav-icon">🛫</span>
@@ -232,6 +244,11 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                     // Cấu hình quyền truy cập trang (Access Control List)
                     $allowed_pages = [];
 
+                    // Guest: Chỉ xem inventory và dashboard
+                    if ($role === '' || $role === 'Guest') {
+                        $allowed_pages = array_merge($allowed_pages, ['inventory', 'dashboard']);
+                    }
+
                     if (in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
                         $allowed_pages = array_merge($allowed_pages, ['import', 'inbound', 'outbound', 'inventory', 'packing', 'pickup', 'picking']);
                     }
@@ -251,7 +268,7 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                     if (in_array($page, $allowed_pages)) {
                         include "pages/$page.php";
                     } else {
-                        include "pages/inbound.php";
+                        include "pages/inventory.php";
                     }
                 ?>
             </div>

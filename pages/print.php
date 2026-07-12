@@ -91,6 +91,99 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
 
 <div id="print-pages"></div>
 
+<style>
+    .error-modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+    }
+    .error-modal-content {
+        background-color: white;
+        border-radius: 12px;
+        padding: 32px;
+        max-width: 500px;
+        width: 90%;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        text-align: center;
+        animation: slideUp 0.3s ease-out;
+    }
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    .error-modal-content h2 {
+        font-size: 24px;
+        font-weight: bold;
+        margin-bottom: 16px;
+    }
+    .error-modal-content.error h2 {
+        color: #dc2626;
+    }
+    .error-modal-content.success h2 {
+        color: #059669;
+    }
+    .error-modal-content.warning h2 {
+        color: #d97706;
+    }
+    .error-modal-content p {
+        font-size: 16px;
+        color: #374151;
+        margin-bottom: 24px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+    }
+    .error-modal-btn {
+        color: white;
+        padding: 12px 32px;
+        border-radius: 8px;
+        font-weight: bold;
+        font-size: 16px;
+        cursor: pointer;
+        border: none;
+        transition: background-color 0.2s;
+    }
+    .error-modal-content.error .error-modal-btn {
+        background-color: #dc2626;
+    }
+    .error-modal-content.error .error-modal-btn:hover {
+        background-color: #b91c1c;
+    }
+    .error-modal-content.success .error-modal-btn {
+        background-color: #059669;
+    }
+    .error-modal-content.success .error-modal-btn:hover {
+        background-color: #047857;
+    }
+    .error-modal-content.warning .error-modal-btn {
+        background-color: #d97706;
+    }
+    .error-modal-content.warning .error-modal-btn:hover {
+        background-color: #b45309;
+    }
+</style>
+
+<!-- Universal Modal -->
+<div id="error-modal" class="error-modal-overlay" style="display: none;">
+    <div id="error-modal-content" class="error-modal-content error">
+        <h2 id="error-modal-title">⚠️ Cảnh báo</h2>
+        <p id="error-modal-message"></p>
+        <button onclick="closeErrorModal()" class="error-modal-btn">OK</button>
+    </div>
+</div>
+
 <script>
     let currentCommand = '';
     let currentDate = '';
@@ -98,6 +191,27 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
     let selectedItems = [];
     let shelvesData = {};
     const printApiBase = 'api.php';
+
+    function showModal(message, type = 'error', title = null) {
+        const titles = {
+            error: '❌ Lỗi',
+            success: '✅ Thành công',
+            warning: '⚠️ Cảnh báo'
+        };
+
+        $('#error-modal-title').text(title || titles[type]);
+        $('#error-modal-message').text(message);
+        $('#error-modal-content').removeClass('error success warning').addClass(type);
+        $('#error-modal').css('display', 'flex');
+    }
+
+    function showErrorModal(message) {
+        showModal(message, 'error');
+    }
+
+    function closeErrorModal() {
+        $('#error-modal').css('display', 'none');
+    }
 
     function escapeHtml(value) {
         return String(value || '').replace(/[&<>"']/g, function(character) {
@@ -227,7 +341,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         const input = document.getElementById('export-file');
         const file = input?.files?.[0];
         if (!file) {
-            alert('Vui lòng chọn file Excel để import');
+            showModal('Vui lòng chọn file Excel để import', 'error');
             return;
         }
 
@@ -452,7 +566,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         }
 
         if (isTestMode) {
-            alert(`Chế độ test: Đã bỏ qua lệnh in thật. Số phiếu: ${tickets.length}`);
+            showModal(`Đã bỏ qua lệnh in thật.\n\nSố phiếu: ${tickets.length}`, 'warning', 'Chế độ test');
             return;
         }
 
@@ -551,6 +665,15 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         $(document).on('click', '.invoice-item-btn', function() {
             const command = $(this).attr('data-command');
             loadInvoiceItems(command);
+        });
+
+        $(document).on('keydown', function(e) {
+            if (e.key === 'Escape' && $('#error-modal').css('display') !== 'none') {
+                closeErrorModal();
+            }
+            if (e.key === 'Enter' && $('#error-modal').css('display') !== 'none') {
+                closeErrorModal();
+            }
         });
     });
 </script>

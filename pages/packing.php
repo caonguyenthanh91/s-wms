@@ -118,6 +118,99 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
     </div>
 </div>
 
+<style>
+    .error-modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+    }
+    .error-modal-content {
+        background-color: white;
+        border-radius: 12px;
+        padding: 32px;
+        max-width: 500px;
+        width: 90%;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        text-align: center;
+        animation: slideUp 0.3s ease-out;
+    }
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    .error-modal-content h2 {
+        font-size: 24px;
+        font-weight: bold;
+        margin-bottom: 16px;
+    }
+    .error-modal-content.error h2 {
+        color: #dc2626;
+    }
+    .error-modal-content.success h2 {
+        color: #059669;
+    }
+    .error-modal-content.warning h2 {
+        color: #d97706;
+    }
+    .error-modal-content p {
+        font-size: 16px;
+        color: #374151;
+        margin-bottom: 24px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+    }
+    .error-modal-btn {
+        color: white;
+        padding: 12px 32px;
+        border-radius: 8px;
+        font-weight: bold;
+        font-size: 16px;
+        cursor: pointer;
+        border: none;
+        transition: background-color 0.2s;
+    }
+    .error-modal-content.error .error-modal-btn {
+        background-color: #dc2626;
+    }
+    .error-modal-content.error .error-modal-btn:hover {
+        background-color: #b91c1c;
+    }
+    .error-modal-content.success .error-modal-btn {
+        background-color: #059669;
+    }
+    .error-modal-content.success .error-modal-btn:hover {
+        background-color: #047857;
+    }
+    .error-modal-content.warning .error-modal-btn {
+        background-color: #d97706;
+    }
+    .error-modal-content.warning .error-modal-btn:hover {
+        background-color: #b45309;
+    }
+</style>
+
+<!-- Universal Modal -->
+<div id="error-modal" class="error-modal-overlay" style="display: none;">
+    <div id="error-modal-content" class="error-modal-content error">
+        <h2 id="error-modal-title">⚠️ Cảnh báo</h2>
+        <p id="error-modal-message"></p>
+        <button onclick="closeErrorModal()" class="error-modal-btn">OK</button>
+    </div>
+</div>
+
 <script>
 let packingState = {
     command: '',
@@ -131,6 +224,27 @@ let packingState = {
     lastHandledQRRaw: '',
     qrScanTimer: null
 };
+
+function showModal(message, type = 'error', title = null) {
+    const titles = {
+        error: '❌ Lỗi',
+        success: '✅ Thành công',
+        warning: '⚠️ Cảnh báo'
+    };
+
+    $('#error-modal-title').text(title || titles[type]);
+    $('#error-modal-message').text(message);
+    $('#error-modal-content').removeClass('error success warning').addClass(type);
+    $('#error-modal').css('display', 'flex');
+}
+
+function showErrorModal(message) {
+    showModal(message, 'error');
+}
+
+function closeErrorModal() {
+    $('#error-modal').css('display', 'none');
+}
 
 function normalizeQrText(text) {
     return (text || '')
@@ -424,12 +538,12 @@ function focusBoxInput() {
 
 function completePackingJob() {
     if (!packingState.invoiceCode) {
-        alert('Cần quét invoice ở bước 1 trước.');
+        showModal('Cần quét invoice ở bước 1 trước.', 'error');
         return;
     }
 
     if (packingState.requiredTotal <= 0) {
-        alert('Không có dữ liệu để hoàn thành.');
+        showModal('Không có dữ liệu để hoàn thành.', 'error');
         return;
     }
 
@@ -438,18 +552,18 @@ function completePackingJob() {
 
     if (packedQty < requiredQty) {
         const shortfall = requiredQty - packedQty;
-        alert(`Packing chưa đủ số lượng, vui lòng kiểm tra lại.\n\nCòn thiếu: ${shortfall}/${requiredQty}`);
+        showModal(`Còn thiếu: ${shortfall}/${requiredQty}`, 'warning', 'Packing chưa đủ số lượng');
         setWorkflowStatus('Packing chưa đủ', 'text-amber-700');
         return;
     }
 
     if (packedQty > requiredQty) {
-        alert(`Packing đã vượt số lượng, cần xóa log không hợp lệ.\n\nVượt: ${packedQty - requiredQty}/${requiredQty}`);
+        showModal(`Vượt: ${packedQty - requiredQty}/${requiredQty}`, 'warning', 'Packing đã vượt số lượng');
         setWorkflowStatus('Packing vượt quá', 'text-amber-700');
         return;
     }
 
-    alert(`Packing hoàn tất, vui lòng chuyển sang bước Pickup.\n\nĐã đóng gói: ${packedQty}/${requiredQty}`);
+    showModal(`Đã đóng gói: ${packedQty}/${requiredQty}\n\nVui lòng chuyển sang bước Pickup.`, 'success', 'Packing hoàn tất');
     setWorkflowStatus('Packing đã hoàn tất', 'text-green-700');
 }
 
@@ -512,7 +626,7 @@ function processBoxScan(parsed, fromScanner) {
 
     if (!line) {
         const message = `Mã hàng ${parsed.productId} không thuộc invoice ${packingState.invoiceCode}.`;
-        alert(message);
+        showModal(message, 'error');
         showError('#step2-error', message);
         $('#box-qr-input').val('').focus();
         setWorkflowStatus('Sai mã hàng', 'text-red-700');
@@ -525,9 +639,9 @@ function processBoxScan(parsed, fromScanner) {
     const wouldPack = (line.packed_qty || 0) + parsed.qty;
     const required = line.required_qty || 0;
     if (wouldPack > required) {
-        const message = `Mã hàng ${parsed.productId} sẽ vượt số lượng yêu cầu.\nHiện tại: ${line.packed_qty || 0}, thêm: ${parsed.qty}, yêu cầu: ${required}`;
-        alert(message);
-        showError('#step2-error', message);
+        const message = `Mã hàng ${parsed.productId} sẽ vượt số lượng yêu cầu.\n\nHiện tại: ${line.packed_qty || 0}\nThêm: ${parsed.qty}\nYêu cầu: ${required}`;
+        showModal(message, 'warning', 'Vượt quá số lượng');
+        showError('#step2-error', message.replace(/\n/g, ' '));
         $('#box-qr-input').val('').focus();
         setWorkflowStatus('Vượt quá số lượng', 'text-red-700');
         if (fromScanner && typeof window.resetQRScannerModalState === 'function') {
@@ -666,5 +780,14 @@ window.handleQRScannerScan = function(targetId, scannedValue) {
 $(document).ready(function() {
     resetPackingJob(false);
     $('#invoice-input').focus();
+
+    $(document).on('keydown', function(e) {
+        if (e.key === 'Escape' && $('#error-modal').css('display') !== 'none') {
+            closeErrorModal();
+        }
+        if (e.key === 'Enter' && $('#error-modal').css('display') !== 'none') {
+            closeErrorModal();
+        }
+    });
 });
 </script>

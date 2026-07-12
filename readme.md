@@ -26,6 +26,7 @@ Giao diện chức năng tập trung vào các khu vực nhập liệu, nút nh�
 17. **Quản trị (admin.php)**: Quản trị và phân quyền người dùng được phép truy cập đến mức nào trong hệ thống.
 18. **[Mới] Nhập dữ liệu (import_data.php)**: Cho phép import các dữ liệu từ nguồn Excel vào hệ thống.
 19. **[Mới] Xuất dữ liệu (export_data.php)**: Cho phép xuất các dữ liệu từ hệ thống ra Excel.
+20. **[Mới] Monitor (monitor.php)**: Bảng giám sát tiến độ xuất hàng theo Invoice (`command`), tiến độ picking theo items (`product_id` duy nhất của invoice), tiến độ packing theo items (`product_id` duy nhất của invoice), tiến độ pickup theo số kiện hàng (`case_no` duy nhất của invoice).
 
 ---
 
@@ -141,9 +142,18 @@ Giao diện chức năng tập trung vào các khu vực nhập liệu, nút nh�
   - Bước 3: Khi đã quét hết tất cả các thùng hàng đầu vào, dù đủ hay chưa đủ thì cũng có thể nhấn HOÀN THÀNH để kết thúc Packing. Tuyệt đối không ghi nhận trường hợp thừa số lượng cho mỗi `case_no`. Nếu còn thiếu số lượng thì báo Popup màu VÀNG là "Packing chưa đủ số lượng, vui lòng kiểm tra lại". Nếu đủ số lượng thì báo Popup màu XANH là "Packing hoàn tất, vui lòng chuyển sang bước Pickup".
   
 ### 13. Pickup (pickup.php)
-* **Mục tiêu:** Quét mã vạch khi bốc hàng lên xe, bàn giao cho đơn vị vận chuyển.
+* **Mục tiêu:** Quét mã vạch xác nhận tem trên pallet và tem trên phiếu shipping mark khi bốc hàng lên xe, nếu khớp thì mới bàn giao cho đơn vị vận chuyển.
 * **Luồng nghiệp vụ:**
-  - Bước 1: Quét QR Invoice -> Quét mã Thùng (`case_no`).
-  - Bước 2: Kiểm tra kiện hàng này đã qua bước packing chưa (`export_log`). Nếu chưa, báo lỗi kiện chưa hợp lệ.
-  - Bước 3: Xác nhận bốc hàng. Ghi nhận `INSERT INTO export_log (status='pickup')`. Cập nhật `bucket_qty` (nếu cần).
+  - Bước 1: Quét QR trên tem pallet dạng chuỗi [command]$[case_no]$[for_product]$[count distinct product_id]$[transprot_type]$[created_at] thể hiện tất cả thông tin sau khi quét bao gồm số invoice, số kiện, mã khách hàng, loại hình vận chuyển, ngày xuất.
+  - Bước 2: Tiếp tục quét thông tin trên phiếu shipping mark dạng chuỗi [command][case_no] với command 6 ký tự đi liền với case_no 3 ký tự. Hệ thống sẽ đối chiếu với thông tin đã quét ở bước 1. Nếu không khớp thì báo lỗi bằng poup màu ĐỎ. Nếu khớp thì hiển thị dòng thông tin "đã khớp thông tin" và đặt con trỏ ở ô quét tem Pallet chờ nhận lệnh Bước 1.
+  - Bước 3: Ghi nhận `INSERT INTO export_log (status='pickup')`.
+
+### 14. Monitor (monitor.php)
+* **Mục tiêu:** Giám sát tiến độ xuất hàng theo Invoice (`command`), tiến độ picking theo items (`product_id` duy nhất của invoice), tiến độ packing theo items (`product_id` duy nhất của invoice), tiến độ pickup theo số kiện hàng (`case_no` duy nhất của invoice).
+* **Cách thể hiện**
+  * Đây là giao diện cho Khách hàng tham quan xem và cảm nhận mức độ chuyên nghiệp của hệ thống nên không cần đăng nhập, chỉ cần mở trình duyệt và truy cập vào link. Giao diện này sẽ tự động reload sau mỗi 5 phút để cập nhật tiến độ mới nhất.
+  - Toàn bộ thông tin thể hiện trên 1 trang màn hình và danh sách cuộn tự động chứ người dùng không cần thao tác. Tham khảo dashboard lịch trình chuyến bay tại các sân bay để thấy cách thể hiện trực quan, dễ hiểu. Mỗi dòng là 1 Invoice, hiển thị các thông tin: số Invoice, ngày xuất, loại hình vận chuyển, mã khách hàng, số items cần picking, số items đã picking, số items còn lại cần picking, số items đã packing, số items còn lại cần packing, số kiện hàng đã pickup, số kiện hàng còn lại cần pickup.
+  - Layout full màn hình, không có header, footer, sidebar. Chỉ có danh sách các Invoice theo ngày và tiến độ picking (theo số items), packing (theo items), pickup (theo số kiện hàng, ngày bốc hàng lên xe).
+  - Có chế độ Light và Dark mode cho người dùng lựa chọn (nút toggle). Mặc định là Dark mode nền đen chữ trắng (thông thường), màu sắc tiến độ picking, packing, pickup là màu xanh lá cây và màu đỏ.
+
 

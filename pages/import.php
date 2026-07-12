@@ -6,7 +6,97 @@
                 overflow-y: auto;
             }
         }
+        .error-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .error-modal-content {
+            background-color: white;
+            border-radius: 12px;
+            padding: 32px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            animation: slideUp 0.3s ease-out;
+        }
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .error-modal-content h2 {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 16px;
+        }
+        .error-modal-content.error h2 {
+            color: #dc2626;
+        }
+        .error-modal-content.success h2 {
+            color: #059669;
+        }
+        .error-modal-content.warning h2 {
+            color: #d97706;
+        }
+        .error-modal-content p {
+            font-size: 16px;
+            color: #374151;
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+        .error-modal-btn {
+            color: white;
+            padding: 12px 32px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.2s;
+        }
+        .error-modal-content.error .error-modal-btn {
+            background-color: #dc2626;
+        }
+        .error-modal-content.error .error-modal-btn:hover {
+            background-color: #b91c1c;
+        }
+        .error-modal-content.success .error-modal-btn {
+            background-color: #059669;
+        }
+        .error-modal-content.success .error-modal-btn:hover {
+            background-color: #047857;
+        }
+        .error-modal-content.warning .error-modal-btn {
+            background-color: #d97706;
+        }
+        .error-modal-content.warning .error-modal-btn:hover {
+            background-color: #b45309;
+        }
     </style>
+
+    <!-- Universal Modal -->
+    <div id="error-modal" class="error-modal-overlay" style="display: none;">
+        <div id="error-modal-content" class="error-modal-content error">
+            <h2 id="error-modal-title">⚠️ Cảnh báo</h2>
+            <p id="error-modal-message"></p>
+            <button onclick="closeErrorModal()" class="error-modal-btn">OK</button>
+        </div>
+    </div>
+
     <!-- Step 1: Input Pallet ID -->
     <div id="step-1" class="bg-white p-2 rounded-lg shadow-md text-center">
         <h3 class="text-lg font-bold mb-2 text-gray-800">Nhập mã Pallet</h3>
@@ -25,8 +115,8 @@
     <!-- Step 2: Input Items -->
     <div id="step-2" class="bg-white p-3 sm:p-4 rounded-lg shadow-md hidden">
         <div class="flex justify-between items-center mb-3">
-            <h3 class="text-base sm:text-lg font-bold text-gray-800">Pallet: <span id="display-pallet" class="text-orange-600"></span></h3>
-            <button onclick="resetImport()" class="text-gray-500 text-xs sm:text-sm underline">Đổi</button>
+            <h3 class="text-base sm:text-lg font-bold text-gray-800">Pallet ID: <span id="display-pallet" class="text-orange-600"></span></h3>
+            <button onclick="resetImport()" class="text-gray-500 text-xs sm:text-sm underline">Đóng</button>
         </div>
 
         <div class="mb-2 inline-flex rounded-lg border border-gray-300 overflow-hidden self-start">
@@ -36,17 +126,17 @@
 
         <div class="grid grid-cols-12 gap-2 mb-2">
             <div class="relative col-span-8">
-                <input type="text" id="product_id" name="product_id" placeholder="Product ID" class="w-full px-3 py-2 pr-10 border rounded uppercase font-mono text-sm">
-                <button type="button" onclick="openQRScannerModal('product_id', 'Mã Sản Phẩm')" class="absolute right-2 top-1/2 -translate-y-1/2 text-orange-600 hover:text-orange-800">
+                <input type="text" id="product_id" name="product_id" placeholder="QR thùng hàng" class="w-full px-3 py-2 pr-10 border rounded uppercase font-mono text-sm">
+                <button type="button" onclick="openQRScannerModal('product_id', 'QR thùng hàng')" class="absolute right-2 top-1/2 -translate-y-1/2 text-orange-600 hover:text-orange-800">
                     <i class="fas fa-qrcode"></i>
                 </button>
                 <p id="product-error" class="absolute -bottom-4 left-0 text-[10px] text-red-600 hidden"></p>
             </div>
-            <input type="number" id="qty-input" placeholder="Qty" class="col-span-4 px-3 py-2 border rounded text-sm text-center font-semibold" min="1">
+            <input type="number" id="qty-input" placeholder="SL" class="col-span-4 px-3 py-2 border rounded text-sm text-center font-semibold" min="1">
         </div>
 
         <div id="import-live-summary" class="mb-2 grid grid-cols-2 gap-2 text-xs sm:text-sm">
-            <div class="rounded border border-blue-200 bg-blue-50 px-2 py-1 font-semibold text-blue-700">Lượt quét: <span id="scan-count">0</span></div>
+            <div class="rounded border border-blue-200 bg-blue-50 px-2 py-1 font-semibold text-blue-700">Số thùng: <span id="scan-count">0</span></div>
             <div class="rounded border border-emerald-200 bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">Tổng SL: <span id="total-qty">0</span></div>
         </div>
 
@@ -56,7 +146,7 @@
         <table class="w-full">
             <thead class="sticky top-0 bg-gray-100">
                 <tr class="bg-gray-100">
-                    <th class="p-2 text-left text-xs sm:text-sm">Product</th>
+                    <th class="p-2 text-left text-xs sm:text-sm">QR thùng hàng</th>
                     <th class="p-2 text-right text-xs sm:text-sm">SL</th>
                     <th class="p-2"></th>
                 </tr>
@@ -67,11 +157,11 @@
         </table>
         </div>
 
-        <button id="btn-submit-import" onclick="submitImport()" class="w-full bg-orange-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-orange-700 shadow-lg">✓ Hoàn Tất Nhận Hàng</button>
+        <button id="btn-submit-import" onclick="submitImport()" class="w-full bg-orange-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-orange-700 shadow-lg">✓ Hoàn tất Pallet</button>
 
         <!-- Danh sách hàng hiện có trên Pallet này (Giống inbound) -->
         <div id="current-pallet-content" class="mt-8 p-4 bg-orange-50 rounded-lg hidden border-t-2 border-orange-200">
-            <h4 class="text-sm font-bold text-orange-800 mb-2 uppercase">Hàng đã nhận trên Pallet này:</h4>
+            <h4 class="text-sm font-bold text-orange-800 mb-2 uppercase">Hàng đã có trên Pallet này:</h4>
             <div id="pallet-items-list" class="text-xs space-y-1">
                 <!-- Danh sách hàng trong import_temp -->
             </div>
@@ -103,7 +193,7 @@ function updateImportScanModeUI() {
     } else {
         continuousBtn.removeClass('bg-orange-600 text-white').addClass('bg-white text-gray-700 hover:bg-gray-100');
         interruptBtn.removeClass('bg-white text-gray-700 hover:bg-gray-100').addClass('bg-orange-600 text-white');
-        $('#scan-mode-label').text('Gián đoạn: dừng để xác nhận số lượng');
+        $('#scan-mode-label').text('Gián đoạn: dừng lại để xác nhận số lượng');
     }
 }
 
@@ -115,9 +205,35 @@ function normalizeImportQRRaw(rawValue) {
         .trim();
 }
 
-function showProductError(message) {
-    $('#product-error').text(message).removeClass('hidden');
-    $('#product_id').addClass('border-red-500').removeClass('border-green-500');
+function showModal(message, type = 'error', title = null) {
+    const titles = {
+        error: '❌ Lỗi',
+        success: '✅ Thành công',
+        warning: '⚠️ Cảnh báo'
+    };
+
+    $('#error-modal-title').text(title || titles[type]);
+    $('#error-modal-message').text(message);
+    $('#error-modal-content').removeClass('error success warning').addClass(type);
+    $('#error-modal').css('display', 'flex');
+}
+
+function showErrorModal(message) {
+    showModal(message, 'error');
+}
+
+function closeErrorModal() {
+    const modalContent = $('#error-modal-content');
+    const isSuccess = modalContent.hasClass('success');
+
+    $('#error-modal').css('display', 'none');
+
+    if (isSuccess) {
+        resetImport();
+    } else {
+        $('#product_id').val('').focus();
+        clearProductError();
+    }
 }
 
 function clearProductError() {
@@ -169,7 +285,7 @@ function validateProduct(productId, onSuccess, onFail) {
             $('#product_id').addClass('border-green-500');
             if (typeof onSuccess === 'function') onSuccess();
         } else {
-            showProductError('❌ Mã sản phẩm không tồn tại!');
+            showErrorModal('Mã sản phẩm không tồn tại!\n\nVui lòng kiểm tra lại QR mã thùng hàng.');
             if (typeof onFail === 'function') onFail();
         }
     });
@@ -331,11 +447,11 @@ function removeItem(index) {
 
 async function submitImport() {
     if (isSubmitting) {
-        alert('Đang xử lý, vui lòng chờ...');
+        showModal('Đang xử lý, vui lòng chờ...', 'warning');
         return;
     }
 
-    if (importItems.length === 0) return alert('Danh sách hàng trống!');
+    if (importItems.length === 0) return showModal('Danh sách hàng trống!', 'warning');
 
     const palletId = $('#display-pallet').text();
     const submitBtn = $('#btn-submit-import');
@@ -354,11 +470,11 @@ async function submitImport() {
             });
             if (!res.success) throw new Error(res.message);
         }
-        alert('Đã lưu dữ liệu pallet thành công!');
+        showModal('Đã lưu dữ liệu pallet thành công!', 'success');
         importItems = [];
         checkPallet(); // Tải lại danh sách hiện có bên dưới
     } catch (e) {
-        alert(`Lỗi: ${e.message}`);
+        showModal(e.message, 'error');
     } finally {
         isSubmitting = false;
         submitBtn.prop('disabled', false).css('opacity', '1').html(originalText);
@@ -368,5 +484,14 @@ async function submitImport() {
 $(document).ready(function() {
     updateImportScanModeUI();
     updateImportCounters();
+
+    $(document).on('keydown', function(e) {
+        if (e.key === 'Escape' && $('#error-modal').css('display') !== 'none') {
+            closeErrorModal();
+        }
+        if (e.key === 'Enter' && $('#error-modal').css('display') !== 'none') {
+            closeErrorModal();
+        }
+    });
 });
 </script>

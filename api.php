@@ -1381,6 +1381,66 @@ switch ($action) {
         ]);
         break;
 
+    case 'pickup_submit':
+        // New pickup flow: Verify matched pallet QR + shipping mark QR, then record pickup
+        require_role(['Admin','Leader','Manager','Staff']);
+        ensure_export_temp_schema($pdo);
+        ensure_export_log_schema($pdo);
+
+        $command = strtoupper(trim($_POST['command'] ?? ''));
+        $caseNo = strtoupper(trim($_POST['case_no'] ?? ''));
+
+        if ($command === '' || $caseNo === '') {
+            echo json_encode(['success' => false, 'message' => 'Thiếu command hoặc case_no']);
+            break;
+        }
+
+        // Verify case_no belongs to command
+        $stmt = $pdo->prepare(
+            "SELECT COUNT(DISTINCT product_id) as distinct_products
+             FROM export_temp
+             WHERE command = ? AND case_no = ?"
+        );
+        $stmt->execute([$command, $caseNo]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$result || $result['distinct_products'] <= 0) {
+            echo json_encode(['success' => false, 'message' => 'Kiện không thuộc invoice']);
+            break;
+        }
+
+        try {
+            $pdo->beginTransaction();
+
+            $user = current_user();
+            $createdBy = $user['username'] ?? 'system';
+
+            // Insert pickup records for all products in this case
+            $stmt = $pdo->prepare(
+                "INSERT INTO export_log (command, case_no, product_id, quantity, created_by, status, created_at)
+                 SELECT DISTINCT e.command, e.case_no, e.product_id, 1, ?, 'pickup', NOW()
+                 FROM export_temp e
+                 WHERE e.command = ? AND e.case_no = ?
+                 ON DUPLICATE KEY UPDATE quantity = quantity + 1, created_at = NOW()"
+            );
+            $stmt->execute([$createdBy, $command, $caseNo]);
+            $insertedRows = (int)$stmt->rowCount();
+
+            $pdo->commit();
+
+            echo json_encode([
+                'success' => true,
+                'command' => $command,
+                'case_no' => $caseNo,
+                'inserted_rows' => $insertedRows,
+                'message' => "Đã ghi nhận pickup cho kiện $caseNo của invoice $command"
+            ]);
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        break;
+
     case 'pickup_scan_case':
         require_role(['Admin','Leader','Manager','Staff']);
         ensure_export_temp_schema($pdo);
@@ -1643,6 +1703,135 @@ switch ($action) {
             'success' => true,
             'command' => $command,
             'cases' => $cases,
+        ]);
+        break;
+
+    case 'get_monitor_board':
+        // Public board for the TV monitor - no login required (Guest role in readme).
+        // Picking: count(distinct product_id) mà picking_qty >= required_qty
+        // Packing: count(distinct case_no) mà mỗi product_id trong case đó đều đủ packing
+        // Pickup: count(distinct case_no) có status='pickup'
+        ensure_export_temp_schema($pdo);
+        ensure_export_log_schema($pdo);
+
+        $dateRaw = trim($_GET['date'] ?? '');
+        $dateObj = DateTime::createFromFormat('Y-m-d', $dateRaw ?: date('Y-m-d'));
+        $date = $dateObj ? $dateObj->format('Y-m-d') : date('Y-m-d');
+
+        $stmt = $pdo->prepare(
+            "SELECT cmd.command,
+                    cmd.total_items,
+                    cmd.picking_items,
+                    COALESCE(pc.packing_items, 0) AS packing_items,
+                    cs.total_cases,
+                    cs.transport_type,
+                    cs.for_product,
+                    cs.export_date,
+                    COALESCE(pu.picked_cases, 0) AS picked_cases,
+                    pu.last_pickup_at,
+                    cmd.first_created_at
+             FROM (
+                 SELECT r.command,
+                        COUNT(DISTINCT r.product_id) AS total_items,
+                        COUNT(DISTINCT CASE WHEN COALESCE(l.picking_qty, 0) >= r.required_qty THEN r.product_id ELSE NULL END) AS picking_items,
+                        MIN(r.first_created_at) AS first_created_at
+                 FROM (
+                     SELECT command,
+                            product_id,
+                            SUM(total_qty) AS required_qty,
+                            MIN(created_at) AS first_created_at
+                     FROM export_temp
+                     WHERE DATE(created_at) = ?
+                     GROUP BY command, product_id
+                 ) r
+                 LEFT JOIN (
+                     SELECT command,
+                            product_id,
+                            SUM(CASE WHEN status = 'picking' THEN quantity ELSE 0 END) AS picking_qty
+                     FROM export_log
+                     GROUP BY command, product_id
+                 ) l ON l.command = r.command AND l.product_id = r.product_id
+                 GROUP BY r.command
+             ) cmd
+             INNER JOIN (
+                 SELECT command,
+                        COUNT(DISTINCT case_no) AS total_cases,
+                        MAX(transport_type) AS transport_type,
+                        MAX(for_product) AS for_product,
+                        DATE(MIN(created_at)) AS export_date
+                 FROM export_temp
+                 WHERE DATE(created_at) = ?
+                 GROUP BY command
+             ) cs ON cs.command = cmd.command
+             LEFT JOIN (
+                 SELECT cr.command,
+                        COUNT(DISTINCT cr.case_no) AS packing_items
+                 FROM (
+                     SELECT DISTINCT cp.command, cp.case_no
+                     FROM (
+                         SELECT command, case_no, product_id
+                         FROM export_temp
+                         WHERE DATE(created_at) = ?
+                     ) cp
+                     LEFT JOIN (
+                         SELECT command, product_id, SUM(total_qty) AS required_qty
+                         FROM export_temp
+                         WHERE DATE(created_at) = ?
+                         GROUP BY command, product_id
+                     ) rq ON rq.command = cp.command AND rq.product_id = cp.product_id
+                     LEFT JOIN (
+                         SELECT command, product_id, SUM(CASE WHEN status = 'packing' THEN quantity ELSE 0 END) AS packing_qty
+                         FROM export_log
+                         GROUP BY command, product_id
+                     ) pk ON pk.command = cp.command AND pk.product_id = cp.product_id
+                     WHERE COALESCE(pk.packing_qty, 0) >= COALESCE(rq.required_qty, 0)
+                     GROUP BY cp.command, cp.case_no
+                     HAVING COUNT(DISTINCT cp.product_id) = (
+                         SELECT COUNT(DISTINCT product_id)
+                         FROM export_temp et
+                         WHERE et.command = cp.command AND et.case_no = cp.case_no AND DATE(et.created_at) = ?
+                     )
+                 ) cr
+                 GROUP BY cr.command
+             ) pc ON pc.command = cmd.command
+             LEFT JOIN (
+                 SELECT command,
+                        COUNT(DISTINCT case_no) AS picked_cases,
+                        MAX(created_at) AS last_pickup_at
+                 FROM export_log
+                 WHERE status = 'pickup'
+                 GROUP BY command
+             ) pu ON pu.command = cmd.command
+             ORDER BY cmd.first_created_at ASC, cmd.command ASC"
+        );
+        $stmt->execute([$date, $date, $date, $date, $date]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($rows as &$row) {
+            $row['command'] = strtoupper(trim((string)($row['command'] ?? '')));
+            $row['transport_type'] = strtoupper(trim((string)($row['transport_type'] ?? ''))) ?: 'SEA';
+            $row['for_product'] = trim((string)($row['for_product'] ?? ''));
+            $row['export_date'] = (string)($row['export_date'] ?? $date);
+            // Items: picking, packing (now by distinct product_id and case_no)
+            $row['total_items'] = (int)($row['total_items'] ?? 0);
+            $row['picking_items'] = (int)($row['picking_items'] ?? 0);
+            $row['packing_items'] = (int)($row['packing_items'] ?? 0);
+            $row['picking_wait_items'] = max(0, $row['total_items'] - $row['picking_items']);
+            $row['packing_wait_items'] = max(0, $row['total_items'] - $row['packing_items']);
+            // Cases: pickup
+            $row['total_cases'] = (int)($row['total_cases'] ?? 0);
+            $row['picked_cases'] = (int)($row['picked_cases'] ?? 0);
+            $row['pickup_wait_cases'] = max(0, $row['total_cases'] - $row['picked_cases']);
+            $row['pickup_done'] = $row['total_cases'] > 0 && $row['picked_cases'] >= $row['total_cases'];
+        }
+        unset($row);
+
+        echo json_encode([
+            'success' => true,
+            'date' => $date,
+            'server_time' => date('c'),
+            'count' => count($rows),
+            'rows' => $rows,
         ]);
         break;
 

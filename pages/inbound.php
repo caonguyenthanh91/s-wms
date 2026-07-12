@@ -6,7 +6,97 @@
                 overflow-y: auto;
             }
         }
+        .error-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .error-modal-content {
+            background-color: white;
+            border-radius: 12px;
+            padding: 32px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            animation: slideUp 0.3s ease-out;
+        }
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .error-modal-content h2 {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 16px;
+        }
+        .error-modal-content.error h2 {
+            color: #dc2626;
+        }
+        .error-modal-content.success h2 {
+            color: #059669;
+        }
+        .error-modal-content.warning h2 {
+            color: #d97706;
+        }
+        .error-modal-content p {
+            font-size: 16px;
+            color: #374151;
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+        .error-modal-btn {
+            color: white;
+            padding: 12px 32px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.2s;
+        }
+        .error-modal-content.error .error-modal-btn {
+            background-color: #dc2626;
+        }
+        .error-modal-content.error .error-modal-btn:hover {
+            background-color: #b91c1c;
+        }
+        .error-modal-content.success .error-modal-btn {
+            background-color: #059669;
+        }
+        .error-modal-content.success .error-modal-btn:hover {
+            background-color: #047857;
+        }
+        .error-modal-content.warning .error-modal-btn {
+            background-color: #d97706;
+        }
+        .error-modal-content.warning .error-modal-btn:hover {
+            background-color: #b45309;
+        }
     </style>
+
+    <!-- Universal Modal -->
+    <div id="error-modal" class="error-modal-overlay" style="display: none;">
+        <div id="error-modal-content" class="error-modal-content error">
+            <h2 id="error-modal-title">⚠️ Cảnh báo</h2>
+            <p id="error-modal-message"></p>
+            <button onclick="closeErrorModal()" class="error-modal-btn">OK</button>
+        </div>
+    </div>
+
     <!-- Step 1: Scan Shelf -->
     <div id="step-1" class="bg-white p-2 rounded-lg shadow-md text-center">
         <h3 class="text-lg font-bold mb-2 text-gray-800">Nhập mã Kệ</h3>
@@ -114,9 +204,42 @@ function normalizeInboundQRRaw(rawValue) {
         .trim();
 }
 
-function showProductError(message) {
-    $('#product-error').text(message).removeClass('hidden');
-    $('#product_id').addClass('border-red-500').removeClass('border-green-500');
+function showModal(message, type = 'error', title = null) {
+    const titles = {
+        error: '❌ Lỗi',
+        success: '✅ Thành công',
+        warning: '⚠️ Cảnh báo'
+    };
+
+    $('#error-modal-title').text(title || titles[type]);
+    $('#error-modal-message').text(message);
+    $('#error-modal-content').removeClass('error success warning').addClass(type);
+    $('#error-modal').css('display', 'flex');
+}
+
+function showErrorModal(message) {
+    showModal(message, 'error');
+}
+
+function closeErrorModal() {
+    const modalContent = $('#error-modal-content');
+    const isSuccess = modalContent.hasClass('success');
+
+    $('#error-modal').css('display', 'none');
+
+    if (isSuccess) {
+        resetInbound();
+    } else {
+        // Nếu ở step 1 (Nhập kệ), focus vào shelf-input; nếu ở step 2, focus vào product_id
+        if ($('#step-1').hasClass('hidden')) {
+            // Step 2 is visible
+            $('#product_id').val('').focus();
+            clearProductError();
+        } else {
+            // Step 1 is visible
+            $('#shelf-input').val('').focus();
+        }
+    }
 }
 
 function clearProductError() {
@@ -168,7 +291,7 @@ function validateProduct(productId, onSuccess, onFail) {
             $('#product_id').addClass('border-green-500');
             if (typeof onSuccess === 'function') onSuccess();
         } else {
-            showProductError('❌ Mã sản phẩm không tồn tại!');
+            showErrorModal('Mã sản phẩm không tồn tại!\n\nVui lòng kiểm tra lại QR mã sản phẩm.');
             if (typeof onFail === 'function') onFail();
         }
     });
@@ -231,7 +354,7 @@ function checkShelf() {
                 }
             });
         } else {
-            $('#shelf-error').text('Mã kệ không tồn tại!').removeClass('hidden');
+            showErrorModal('Mã kệ không tồn tại!\n\nVui lòng kiểm tra lại mã kệ.');
         }
     }, 'json');
 }
@@ -333,7 +456,7 @@ function removeItem(index) {
 
 async function submitInbound() {
     if (inboundItems.length === 0) {
-        alert('Danh sách hàng trống!');
+        showModal('Danh sách hàng trống!', 'warning');
         return;
     }
 
@@ -347,14 +470,14 @@ async function submitInbound() {
                 product_id: item.product_id,
                 quantity: item.quantity
             });
-            
+
             if (!res.success) {
-                alert(`Lỗi khi nhập SP ${item.product_id}: ${res.message}`);
+                showModal(`Lỗi khi nhập SP ${item.product_id}: ${res.message}`, 'error');
                 hasError = true;
                 break;
             }
         } catch (e) {
-            alert('Lỗi kết nối máy chủ!');
+            showModal('Lỗi kết nối máy chủ!', 'error');
             hasError = true;
             break;
         }
@@ -371,12 +494,13 @@ async function submitInbound() {
             });
         }
 
-        alert('Nhập kho hoàn tất thành công!');
-        resetInbound();
-        
-        // Nếu đến từ trang transfer, quay lại trang transfer
+        showModal('Nhập kho hoàn tất thành công!', 'success');
+
+        // Nếu đến từ trang transfer, quay lại trang transfer sau khi modal đóng
         if (palletId) {
-            window.location.href = 'index.php?page=transfer';
+            setTimeout(() => {
+                window.location.href = 'index.php?page=transfer';
+            }, 500);
         }
     }
 }
@@ -384,6 +508,15 @@ async function submitInbound() {
 $(document).ready(function() {
     setInboundScanMode(false);
     updateInboundCounters();
+
+    $(document).on('keydown', function(e) {
+        if (e.key === 'Escape' && $('#error-modal').css('display') !== 'none') {
+            closeErrorModal();
+        }
+        if (e.key === 'Enter' && $('#error-modal').css('display') !== 'none') {
+            closeErrorModal();
+        }
+    });
 
     // Tự động kiểm tra kệ nếu có tham số từ Dashboard truyền sang
     const urlParams = new URLSearchParams(window.location.search);
@@ -398,9 +531,9 @@ $(document).ready(function() {
     if (palletIdFromUrl) {
         $.getJSON('api.php?action=get_import_temp_by_pallet', { pallet_id: palletIdFromUrl }, function(items) {
             if (items && items.length > 0) {
-                inboundItems = items.map(i => ({ 
-                    product_id: i.product_id, 
-                    quantity: parseInt(i.quantity) 
+                inboundItems = items.map(i => ({
+                    product_id: i.product_id,
+                    quantity: parseInt(i.quantity)
                 }));
                 renderItemList();
                 updateInboundCounters();
