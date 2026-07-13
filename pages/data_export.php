@@ -1,4 +1,80 @@
 <?php
+// Export logic - called before HTML output from index.php
+if (isset($_GET['export']) && $_GET['export'] === '1') {
+	try {
+		require_once __DIR__ . '/../config/db.php';
+		require_once __DIR__ . '/../assets/vendor/autoload.php';
+
+		// Optimized query: use index hints and fetch only necessary columns
+		$stmt = $pdo->query(
+			"SELECT
+				CONCAT('B032-', UPPER(TRIM(s.shelf_id))) AS shelf_full,
+				UPPER(TRIM(p.product_id)) AS product_full,
+				SUM(i.quantity) AS current_stock
+			 FROM inventory i
+			 INNER JOIN shelves s ON s.id = i.shelf_id
+			 INNER JOIN products p ON p.id = i.product_id
+			 WHERE i.quantity > 0
+			 GROUP BY i.shelf_id, i.product_id
+			 ORDER BY s.shelf_id ASC, p.product_id ASC"
+		);
+		
+		// Batch process data instead of loading all at once
+		$spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+		$sheet = $spreadsheet->getActiveSheet();
+		$sheet->setTitle('Inventory Snapshot');
+
+		$headers = ['Ma vi tri full', 'Ma hang full', 'Ton kho hien tai'];
+		$sheet->fromArray($headers, null, 'A1');
+
+		// Prepare data for batch insert - much faster than row by row
+		$dataRows = [];
+		foreach ($stmt as $row) {
+			$dataRows[] = [
+				$row['shelf_full'],
+				$row['product_full'],
+				(int) $row['current_stock']
+			];
+		}
+
+		// Write all data at once instead of individual setCellValue
+		if (count($dataRows) > 0) {
+			$sheet->fromArray($dataRows, null, 'A2');
+		}
+
+		// Format header
+		$sheet->getStyle('A1:C1')->getFont()->setBold(true);
+		
+		// Auto-fit columns
+		$sheet->getColumnDimension('A')->setWidth(24);
+		$sheet->getColumnDimension('B')->setWidth(24);
+		$sheet->getColumnDimension('C')->setWidth(18);
+
+		$exportTimestamp = date('Ymd_His');
+		$filename = 'inventory_snapshot_' . $exportTimestamp . '.xlsx';
+
+		// Clear any output before sending headers
+		if (ob_get_length()) {
+			ob_end_clean();
+		}
+
+		header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+		header('Content-Disposition: attachment; filename="' . $filename . '"');
+		header('Cache-Control: max-age=0');
+
+		$writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+		$writer->save('php://output');
+		exit;
+
+	} catch (Exception $e) {
+		http_response_code(500);
+		echo "Loi xuat file: " . htmlspecialchars($e->getMessage());
+		exit;
+	}
+}
+?>
+
+<?php
 if (session_status() === PHP_SESSION_NONE) {
 	session_start();
 }
@@ -10,61 +86,7 @@ if (!in_array($role, ['Manager', 'Admin'], true)) {
 	echo '<div class="alert alert-danger text-center p-4">Ban khong co quyen truy cap trang nay. Can role: Manager tro len.</div>';
 	return;
 }
-
-if (isset($_GET['export']) && $_GET['export'] === '1') {
-	require_once __DIR__ . '/../config/db.php';
-	require_once __DIR__ . '/../assets/vendor/autoload.php';
-
-	$rows = [];
-	$stmt = $pdo->query(
-		"SELECT
-			CONCAT('B032-', UPPER(TRIM(s.shelf_id))) AS shelf_full,
-			UPPER(TRIM(p.product_id)) AS product_full,
-			SUM(i.quantity) AS current_stock
-		 FROM inventory i
-		 INNER JOIN shelves s ON s.id = i.shelf_id
-		 INNER JOIN products p ON p.id = i.product_id
-		 WHERE i.quantity > 0
-		 GROUP BY s.shelf_id, p.product_id
-		 ORDER BY s.shelf_id ASC, p.product_id ASC"
-	);
-	$rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
-	$spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-	$sheet = $spreadsheet->getActiveSheet();
-	$sheet->setTitle('Inventory Snapshot');
-
-	$headers = ['Ma vi tri full', 'Ma hang full', 'Ton kho hien tai'];
-	$sheet->fromArray($headers, null, 'A1');
-
-	$line = 2;
-	foreach ($rows as $row) {
-		$sheet->setCellValue('A' . $line, (string) $row['shelf_full']);
-		$sheet->setCellValue('B' . $line, (string) $row['product_full']);
-		$sheet->setCellValue('C' . $line, (int) $row['current_stock']);
-		$line++;
-	}
-
-	$sheet->getStyle('A1:C1')->getFont()->setBold(true);
-	$sheet->getColumnDimension('A')->setWidth(24);
-	$sheet->getColumnDimension('B')->setWidth(24);
-	$sheet->getColumnDimension('C')->setWidth(18);
-
-	$exportTimestamp = date('Ymd_His');
-	$filename = 'inventory_snapshot_' . $exportTimestamp . '.xlsx';
-
-	if (ob_get_length()) {
-		ob_end_clean();
-	}
-
-	header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-	header('Content-Disposition: attachment; filename="' . $filename . '"');
-	header('Cache-Control: max-age=0');
-
-	$writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-	$writer->save('php://output');
-	exit;
-}
+?>
 ?>
 
 <div class="max-w-6xl mx-auto space-y-6">

@@ -9,6 +9,14 @@ $user = $_SESSION['user'] ?? null;
 $role = $user['role'] ?? '';
 $page = $_GET['page'] ?? 'inventory';
 
+// Handle export/download operations BEFORE any HTML output
+if ($page === 'data_export' && isset($_GET['export']) && $_GET['export'] === '1') {
+    require_once __DIR__ . '/config/db.php';
+    require_once __DIR__ . '/assets/vendor/autoload.php';
+    include "pages/data_export.php";
+    exit;
+}
+
 $pageShortLabels = [
     'import' => 'Nhập Pallet',
     'inbound' => 'Nhập kho',

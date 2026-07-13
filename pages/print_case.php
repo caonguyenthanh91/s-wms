@@ -478,7 +478,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
             const qrDataUrl = generateQRCodeDataUrl(qrContent);
 
             const ticketHtml = `
-                <div class="packing-label" style="width: 115mm; height: 80mm; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid #000; font-family: Arial, sans-serif; box-sizing: border-box;">
+                <div class="packing-label" style="width: 100mm; height: 80mm; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid #000; font-family: Arial, sans-serif; box-sizing: border-box;">
 
                     <!-- Top 55mm Section -->
                     <div style="height: 55mm; display: flex; gap: 2mm; padding: 2mm; box-sizing: border-box; border-bottom: 1px dashed #999;">
@@ -494,7 +494,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
                             <div style="font-size: 24px; font-weight: bold; text-align: center; width: 100%;">${escapeHtml(command)}${escapeHtml(caseNo)}</div>
 
                             <!-- Customer Label and Transport Type Label -->
-                            <div style="font-weight: bold; font-size: 9px; color: #666; text-align: left;">CUSTOMER<br>TRANSPORT TYPE:</div>
+                            <div style="font-weight: bold; font-size: 9px; color: #666; text-align: left;">CUSTOMER<br>TRANSPORT:</div>
                             <div style="font-size: 20px; text-align: center; width: 100%;">${escapeHtml(forProduct)} / ${escapeHtml(transportType)}</div>
 
                             <!-- Item Count Label -->
