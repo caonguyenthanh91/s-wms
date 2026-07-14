@@ -1,4 +1,7 @@
 <?php 
+// Start output buffering to allow header redirects
+ob_start();
+
 require_once 'config/db.php'; 
 if (session_status() === PHP_SESSION_NONE) {
     ini_set('session.gc_maxlifetime', 28800);
@@ -8,14 +11,6 @@ if (session_status() === PHP_SESSION_NONE) {
 $user = $_SESSION['user'] ?? null;
 $role = $user['role'] ?? '';
 $page = $_GET['page'] ?? 'inventory';
-
-// Handle export/download operations BEFORE any HTML output
-if ($page === 'data_export' && isset($_GET['export']) && $_GET['export'] === '1') {
-    require_once __DIR__ . '/config/db.php';
-    require_once __DIR__ . '/assets/vendor/autoload.php';
-    include "pages/data_export.php";
-    exit;
-}
 
 $pageShortLabels = [
     'import' => 'Nhập Pallet',
@@ -35,6 +30,7 @@ $pageShortLabels = [
     'shelves' => 'ĐK Kệ',
     'products' => 'ĐK SP',
     'data_export' => 'Xuất file',
+    'system_check' => 'Kiểm tra Hệ Thống',
     'admin' => 'Quản trị',
 ];
 
@@ -166,11 +162,7 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                 <a href="?page=outbound" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'outbound' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
                     <span class="sidebar-nav-icon">📤</span>
                     <span class="ml-3 sidebar-nav-text">Xuất Kho</span>
-                </a>
-                <a href="?page=inventory" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'inventory' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">📦</span>
-                    <span class="ml-3 sidebar-nav-text">Tồn Kho</span>
-                </a>               
+                </a>              
                 
                 <?php endif; ?>
 
@@ -194,10 +186,6 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                 <a href="?page=print_pallet" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'print_pallet' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
                     <span class="sidebar-nav-icon">📮</span>
                     <span class="ml-3 sidebar-nav-text">In tem [Pallet]</span>
-                </a>
-                <a href="?page=dashboard" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'dashboard' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">🛫</span>
-                    <span class="ml-3 sidebar-nav-text">Dashboard</span>
                 </a>
                 <?php endif; ?>
 
@@ -258,11 +246,11 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                     }
 
                     if (in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
-                        $allowed_pages = array_merge($allowed_pages, ['import', 'inbound', 'outbound', 'inventory', 'packing', 'pickup', 'picking']);
+                        $allowed_pages = array_merge($allowed_pages, ['import', 'inbound', 'outbound', 'packing', 'pickup', 'picking']);
                     }
 
                     if (in_array($role, ['Leader', 'Manager', 'Admin'])) {
-                        $allowed_pages = array_merge($allowed_pages, ['transfer', 'change', 'print', 'print_case', 'print_pallet', 'dashboard']);
+                        $allowed_pages = array_merge($allowed_pages, ['transfer', 'change', 'print', 'print_case', 'print_pallet']);
                     }
 
                     if (in_array($role, ['Manager', 'Admin'])) {
@@ -689,5 +677,6 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
             }
         });
     </script>
+<?php ob_end_flush(); ?>
 </body>
 </html>

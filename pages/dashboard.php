@@ -1,17 +1,3 @@
-<?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-$user = $_SESSION['user'] ?? null;
-$role = $user['role'] ?? ($role ?? '');
-
-if (!in_array($role, ['Leader', 'Manager', 'Admin'])) {
-    echo '<div class="alert alert-danger text-center p-4">Bạn không có quyền truy cập trang này. Cần role: Leader trở lên.</div>';
-    return;
-}
-?>
-
 <div class="flight-board-wrap pb-4">
     <div class="flight-board-card p-4 md:p-5">
         <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
