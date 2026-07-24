@@ -111,12 +111,80 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
     </div>
 </div>
 
+<style>
+    .error-modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+    }
+    .error-modal-content {
+        background-color: white;
+        border-radius: 12px;
+        padding: 24px;
+        max-width: 520px;
+        width: 92%;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        text-align: center;
+    }
+    .error-modal-content h2 {
+        font-size: 22px;
+        font-weight: bold;
+        margin-bottom: 14px;
+        color: #dc2626;
+    }
+    .error-modal-content p {
+        font-size: 15px;
+        color: #374151;
+        margin-bottom: 20px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+    }
+    .error-modal-btn {
+        color: white;
+        background-color: #dc2626;
+        padding: 10px 26px;
+        border-radius: 8px;
+        font-weight: bold;
+        font-size: 15px;
+        cursor: pointer;
+        border: none;
+    }
+    .error-modal-btn:hover {
+        background-color: #b91c1c;
+    }
+</style>
+
+<div id="error-modal" class="error-modal-overlay" style="display: none;">
+    <div class="error-modal-content">
+        <h2 id="error-modal-title">❌ Lỗi</h2>
+        <p id="error-modal-message"></p>
+        <button onclick="closeErrorModal()" class="error-modal-btn">OK</button>
+    </div>
+</div>
+
 <script>
 let pickupSession = {
     palletQR: null,  // {command, case_no, for_product, distinct_products, transport_type, created_at}
     sessionHistory: [],  // [{command, case_no, customer, timestamp}]
     busy: false
 };
+
+function showModal(message, title = '❌ Lỗi') {
+    $('#error-modal-title').text(title);
+    $('#error-modal-message').text(message || 'Có lỗi xảy ra');
+    $('#error-modal').css('display', 'flex');
+}
+
+function closeErrorModal() {
+    $('#error-modal').css('display', 'none');
+}
 
 function normalizeQrText(text) {
     return (text || '')
@@ -214,6 +282,8 @@ function displayPalletQRInfo(qr) {
 }
 
 function handlePalletQrScan() {
+    if (pickupSession.busy) return;
+
     const raw = $('#pallet-qr-input').val();
     if (!raw) {
         showPalletError('Vui lòng quét QR tem kiện');
@@ -227,19 +297,64 @@ function handlePalletQrScan() {
         return;
     }
 
+    pickupSession.busy = true;
     hidePalletError();
-    pickupSession.palletQR = parsed;
-    updateSummary();
-    displayPalletQRInfo(parsed);
+    setWorkflowStatus('Đang kiểm tra trạng thái packing...', 'text-sky-700');
 
-    setWorkflowStatus('Đã quét tem kiện, quét phiếu shipping mark tiếp', 'text-green-700');
+    $.getJSON('api.php?action=get_export_invoice_detail', {
+        command: parsed.command,
+        case_no: parsed.case_no
+    }, function(res) {
+        pickupSession.busy = false;
 
-    // Show step 2
-    $('#shipping-mark-section').show();
-    $('#shipping-qr-input').val('').focus();
-    hideShippingError();
-    showShippingInfo('');
-    $('#shipping-match-box').addClass('hidden');
+        if (!res.success) {
+            showPalletError(res.message || 'Không tìm thấy dữ liệu invoice/case_no');
+            setWorkflowStatus('Không tìm thấy dữ liệu case', 'text-red-700');
+            $('#shipping-mark-section').hide();
+            return;
+        }
+
+        if (!res.is_packed_done) {
+            const packedDone = parseInt(res.packing_done_products || 0, 10) || 0;
+            const totalProducts = parseInt(res.total_products || 0, 10) || 0;
+            const packedQty = parseInt((res.status_totals || {}).packing || 0, 10) || 0;
+            const requiredQty = parseInt(res.required_total || 0, 10) || 0;
+
+            showModal(
+                `Kiện ${parsed.command}/${parsed.case_no} chưa packing đủ.\n\n` +
+                `Mã hàng đã pack đủ: ${packedDone}/${totalProducts}\n` +
+                `Tổng số lượng đã pack: ${packedQty}/${requiredQty}\n\n` +
+                `Vui lòng hoàn thành packing trước khi pickup.`
+            );
+
+            showPalletError(`Case ${parsed.command}/${parsed.case_no} chưa packing đủ.`);
+            setWorkflowStatus('Chưa đủ điều kiện pickup', 'text-red-700');
+            pickupSession.palletQR = null;
+            updateSummary();
+            $('#shipping-mark-section').hide();
+            $('#shipping-qr-input').val('');
+            $('#shipping-match-box').addClass('hidden');
+            return;
+        }
+
+        pickupSession.palletQR = parsed;
+        updateSummary();
+        displayPalletQRInfo(parsed);
+
+        setWorkflowStatus('Đã quét tem kiện, quét phiếu shipping mark tiếp', 'text-green-700');
+
+        // Show step 2
+        $('#shipping-mark-section').show();
+        $('#shipping-qr-input').val('').focus();
+        hideShippingError();
+        showShippingInfo('');
+        $('#shipping-match-box').addClass('hidden');
+    }).fail(function() {
+        pickupSession.busy = false;
+        showPalletError('Lỗi kết nối khi kiểm tra trạng thái packing');
+        setWorkflowStatus('Lỗi kết nối', 'text-red-700');
+        $('#shipping-mark-section').hide();
+    });
 }
 
 function handleShippingMarkQrScan() {
@@ -385,5 +500,11 @@ $('#shipping-qr-input').on('keydown', function(e) {
 $(document).ready(function() {
     renderSessionHistory();
     $('#pallet-qr-input').focus();
+
+    $(document).on('keydown', function(e) {
+        if ((e.key === 'Escape' || e.key === 'Enter') && $('#error-modal').css('display') !== 'none') {
+            closeErrorModal();
+        }
+    });
 });
 </script>

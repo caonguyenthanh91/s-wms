@@ -176,6 +176,11 @@ let outboundQrScanTimer = null;
 let outboundLastHandledQRRaw = '';
 let isContinuousOutboundScan = false;
 
+function isInventorySourceItem(item) {
+    const source = (item && item.source ? String(item.source) : 'INVENTORY').toUpperCase();
+    return source === 'INVENTORY';
+}
+
 function setOutboundScanMode(isContinuous) {
     isContinuousOutboundScan = !!isContinuous;
     updateOutboundScanModeUI();
@@ -340,6 +345,58 @@ function updateOutboundCounters() {
     updateOutboundSubmitButton();
 }
 
+function getOutboundAllocatedQty(productId) {
+    const normalizedProductId = (productId || '').trim().toUpperCase();
+    if (!normalizedProductId) return 0;
+
+    return outboundItems.reduce((sum, item) => {
+        if ((item.product_id || '').toUpperCase() !== normalizedProductId) return sum;
+        return sum + (parseInt(item.quantity, 10) || 0);
+    }, 0);
+}
+
+function buildOutboundTotalsByProduct(items) {
+    const totals = {};
+    (items || []).forEach(item => {
+        const productId = ((item && item.product_id) || '').toUpperCase();
+        const qty = parseInt(item && item.quantity, 10) || 0;
+        if (!productId || qty <= 0) return;
+        totals[productId] = (totals[productId] || 0) + qty;
+    });
+    return totals;
+}
+
+function parseRealtimeInventoryRows(items) {
+    const realtime = {};
+    (items || []).forEach(item => {
+        if (!isInventorySourceItem(item)) return;
+        const productId = ((item && item.product_id) || '').toUpperCase();
+        const qty = parseInt(item && item.quantity, 10) || 0;
+        if (!productId || qty <= 0) return;
+        realtime[productId] = (realtime[productId] || 0) + qty;
+    });
+    return realtime;
+}
+
+function updateShelfInventoryMap(items) {
+    shelfInventory = parseRealtimeInventoryRows(items);
+}
+
+function buildOutboundSubmitErrorMessage(response) {
+    const fallbackMessage = 'Không thể xuất kho. Vui lòng kiểm tra lại.';
+    const baseMessage = (response && response.message) ? response.message : fallbackMessage;
+
+    if (!response || !response.debug) {
+        return baseMessage;
+    }
+
+    return `${baseMessage}\n\nDEBUG CONTEXT:\n${JSON.stringify(response.debug, null, 2)}`;
+}
+
+function fetchCurrentInventoryByShelf(shelfId) {
+    return $.getJSON('api.php?action=get_inventory_current_by_shelf', { shelf_id: shelfId });
+}
+
 function checkShelfOutbound() {
     const shelfId = $('#shelf-input').val().toUpperCase();
     $.post('api.php?action=check_shelf', { shelf_id: shelfId }, function(res) {
@@ -354,7 +411,6 @@ function checkShelfOutbound() {
             $.getJSON('api.php?action=get_inventory_by_shelf', { shelf_id: shelfId }, function(items) {
                 const list = $('#shelf-stock-list');
                 list.empty();
-                shelfInventory = {};
                 clearOutboundProductError();
                 $('#product_id').removeClass('border-green-500').val('');
                 $('#qty-input').val('');
@@ -363,17 +419,29 @@ function checkShelfOutbound() {
                 if (items && items.length > 0) {
                     items.forEach(item => {
                         const normalizedProductId = (item.product_id || '').toUpperCase();
-                        shelfInventory[normalizedProductId] = item.quantity;
+                        const sourceLabel = isInventorySourceItem(item) ? 'INVENTORY' : String(item.source || 'OTHER');
+                        const sourceBadgeClass = isInventorySourceItem(item)
+                            ? 'text-emerald-700 bg-emerald-100'
+                            : 'text-amber-700 bg-amber-100';
+
                         list.append(`<div class="flex justify-between border-b pb-1">
-                            <span>${item.product_id} - ${item.product_name}</span>
+                            <span>${item.product_id} - ${item.product_name} <span class="ml-1 px-1 py-0.5 rounded text-[10px] font-semibold ${sourceBadgeClass}">${sourceLabel}</span></span>
                             <span class="font-bold">Tồn: ${item.quantity}</span>
                         </div>`);
                     });
                 } else {
                     list.append('<p class="text-red-500 italic">Kệ này hiện không có hàng hóa.</p>');
                 }
-                updateOutboundCounters();
-                $('#product_id').focus();
+
+                fetchCurrentInventoryByShelf(shelfId).done(function(currentItems) {
+                    updateShelfInventoryMap(currentItems);
+                    updateOutboundCounters();
+                    $('#product_id').focus();
+                }).fail(function() {
+                    shelfInventory = {};
+                    updateOutboundCounters();
+                    showModal('Không thể tải tồn kho thực tế (inventory). Vui lòng thử lại.', 'error');
+                });
             });
         } else {
             showErrorModal('Mã kệ không tồn tại!\n\nVui lòng kiểm tra lại mã kệ.');
@@ -398,7 +466,7 @@ function resetOutbound() {
 function addItemOutbound() {
     const sku = ($('#product_id').val() || '').trim().toUpperCase();
     const qty = parseInt($('#qty-input').val());
-    const maxQty = shelfInventory[sku] || 0;
+    const maxQty = parseInt(shelfInventory[sku], 10) || 0;
 
     if (!sku || isNaN(qty) || qty <= 0) {
         showModal('Vui lòng quét/nhập mã sản phẩm và nhập số lượng.', 'warning');
@@ -411,8 +479,11 @@ function addItemOutbound() {
         return;
     }
 
-    if (qty > maxQty) {
-        showModal(`Không đủ tồn kho! Số lượng tối đa có thể xuất là ${maxQty}`, 'error');
+    const allocatedQty = getOutboundAllocatedQty(sku);
+    const remainingQty = Math.max(0, maxQty - allocatedQty);
+
+    if (qty > remainingQty) {
+        showModal(`Không đủ tồn kho! Còn lại tối đa có thể xuất cho mã ${sku} là ${remainingQty}`, 'error');
         return;
     }
 
@@ -444,14 +515,47 @@ async function submitOutbound() {
     if (outboundItems.length === 0) return showModal('Danh sách xuất trống!', 'warning');
     const shelfId = $('#display-shelf').text();
 
-    for (const item of outboundItems) {
-        const res = await $.post('api.php?action=outbound_submit', {
+    let latestStockRows = [];
+    try {
+        latestStockRows = await fetchCurrentInventoryByShelf(shelfId);
+    } catch (e) {
+        showModal('Không thể kiểm tra tồn kho realtime. Vui lòng thử lại.', 'error');
+        return;
+    }
+
+    updateShelfInventoryMap(latestStockRows);
+
+    const requestedTotals = buildOutboundTotalsByProduct(outboundItems);
+    const insufficient = [];
+    Object.keys(requestedTotals).forEach(productId => {
+        const requestedQty = requestedTotals[productId] || 0;
+        const availableQty = shelfInventory[productId] || 0;
+        if (requestedQty > availableQty) {
+            insufficient.push({ productId, requestedQty, availableQty });
+        }
+    });
+
+    if (insufficient.length > 0) {
+        const details = insufficient
+            .map(item => `${item.productId}: cần ${item.requestedQty}, còn ${item.availableQty}`)
+            .join('\n');
+        showModal(`Không đủ số lượng xuất tại thời điểm xác nhận:\n\n${details}\n\nVui lòng kiểm tra lại danh sách.`, 'error');
+        return;
+    }
+
+    const submitItems = Object.keys(requestedTotals).map(productId => ({
+        product_id: productId,
+        quantity: requestedTotals[productId]
+    }));
+
+    for (const item of submitItems) {
+        const res = await $.post('api.php?action=outbound_basic_submit', {
             shelf_id: shelfId,
             product_id: item.product_id,
             quantity: item.quantity
         });
         if (!res.success) {
-            showModal(res.message, 'error');
+            showModal(buildOutboundSubmitErrorMessage(res), 'error');
             return;
         }
     }

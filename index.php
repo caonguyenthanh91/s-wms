@@ -18,6 +18,7 @@ $pageShortLabels = [
     'outbound' => 'Xuất kho',
     'packing' => 'Packing',
     'pickup' => 'Pickup',
+    'check_box' => 'Check Box',
     'inventory' => 'Tra tồn',
     'picking' => 'Picking',
     'transfer' => 'Pallet >>> Kệ',
@@ -30,9 +31,58 @@ $pageShortLabels = [
     'shelves' => 'ĐK Kệ',
     'products' => 'ĐK SP',
     'data_export' => 'Xuất file',
+    'data_import' => 'Nhập file',
+    'wms_import' => 'WMS Import',
     'system_check' => 'Kiểm tra Hệ Thống',
     'admin' => 'Quản trị',
 ];
+
+$normalizedRole = $role === '' ? 'Guest' : $role;
+$roleHierarchy = [
+    'Guest' => 1,
+    'Staff' => 2,
+    'Leader' => 3,
+    'Manager' => 4,
+    'Admin' => 5,
+];
+$currentRoleRank = $roleHierarchy[$normalizedRole] ?? $roleHierarchy['Guest'];
+
+$sidebarMenuItems = [
+    ['page' => 'inventory', 'label' => 'Tra tồn', 'icon' => '📦', 'min_role' => 'Guest'],
+    ['page' => 'dashboard', 'label' => 'Dashboard', 'icon' => '🛫', 'min_role' => 'Guest'],
+    ['page' => 'import', 'label' => 'Nhận hàng (Pallet)', 'icon' => '🚚', 'min_role' => 'Staff'],
+    ['page' => 'picking', 'label' => 'Picking', 'icon' => '🧭', 'min_role' => 'Staff'],
+    ['page' => 'packing', 'label' => 'Packing', 'icon' => '📫', 'min_role' => 'Staff'],
+    ['page' => 'pickup', 'label' => 'Pickup', 'icon' => '🚛', 'min_role' => 'Staff'],
+    ['page' => 'check_box', 'label' => 'Check Box', 'icon' => '✅', 'min_role' => 'Staff'],
+    ['page' => 'transfer', 'label' => 'Pallet >>> Kệ', 'icon' => '🔄', 'min_role' => 'Leader'],
+    ['page' => 'inbound', 'label' => 'Nhập Kho', 'icon' => '📥', 'min_role' => 'Leader'],
+    ['page' => 'outbound', 'label' => 'Xuất Kho', 'icon' => '📤', 'min_role' => 'Leader'],
+    ['page' => 'change', 'label' => 'Đổi kệ', 'icon' => '↔️', 'min_role' => 'Leader'],
+    ['page' => 'print', 'label' => 'In phiếu [Picking]', 'icon' => '🖨️', 'min_role' => 'Leader'],
+    ['page' => 'print_case', 'label' => 'In tem [Packing]', 'icon' => '📦', 'min_role' => 'Leader'],
+    ['page' => 'print_pallet', 'label' => 'In tem [Pallet]', 'icon' => '📮', 'min_role' => 'Leader'],
+    ['page' => 'layout', 'label' => 'Layout', 'icon' => '📅', 'min_role' => 'Manager'],
+    ['page' => 'shelves', 'label' => 'Kệ hàng', 'icon' => '🛒', 'min_role' => 'Manager'],
+    ['page' => 'products', 'label' => 'Sản phẩm', 'icon' => '🏷️', 'min_role' => 'Manager'],
+    ['page' => 'data_export', 'label' => 'Data Export', 'icon' => '📄', 'min_role' => 'Manager'],
+    ['page' => 'wms_import', 'label' => 'WMS Import', 'icon' => '📥', 'min_role' => 'Manager'],
+    ['page' => 'data_import', 'label' => 'Data Import', 'icon' => '📥', 'min_role' => 'Admin'],
+    ['page' => 'admin', 'label' => 'Quản trị', 'icon' => '🔧', 'min_role' => 'Manager'],
+];
+
+$allowedPages = [];
+foreach ($sidebarMenuItems as $menuItem) {
+    if ($currentRoleRank >= ($roleHierarchy[$menuItem['min_role']] ?? PHP_INT_MAX)) {
+        $allowedPages[] = $menuItem['page'];
+    }
+}
+
+if ($currentRoleRank >= $roleHierarchy['Admin']) {
+    $allowedPages[] = 'system_check';
+}
+
+$allowedPages = array_values(array_unique($allowedPages));
 
 $mobileHeaderLabel = 'S-WMS';
 if (isset($pageShortLabels[$page])) {
@@ -127,93 +177,14 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                 <span class="sidebar-title-collapsed hidden"><small>S-WMS</small></span>
             </div>
             <nav id="sidebar-nav" class="hidden md:block p-4 space-y-2">
-                <?php if ($role === '' || $role === 'Guest'): ?>
-                <a href="?page=inventory" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'inventory' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">📦</span>
-                    <span class="ml-3 sidebar-nav-text">Tra tồn</span>
-                </a>
-                <a href="?page=dashboard" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'dashboard' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">🛫</span>
-                    <span class="ml-3 sidebar-nav-text">Dashboard</span>
+                <?php foreach ($sidebarMenuItems as $menuItem): ?>
+                <?php if ($currentRoleRank >= ($roleHierarchy[$menuItem['min_role']] ?? PHP_INT_MAX)): ?>
+                <a href="?page=<?php echo urlencode($menuItem['page']); ?>" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page === $menuItem['page'] ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
+                    <span class="sidebar-nav-icon"><?php echo $menuItem['icon']; ?></span>
+                    <span class="ml-3 sidebar-nav-text"><?php echo htmlspecialchars($menuItem['label'], ENT_QUOTES, 'UTF-8'); ?></span>
                 </a>
                 <?php endif; ?>
-
-                <?php if (in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])): ?>
-                <a href="?page=import" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'import' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">🚚</span>
-                    <span class="ml-3 sidebar-nav-text">Nhận hàng (Pallet)</span>
-                </a>
-                <a href="?page=picking" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'picking' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">🧭</span>
-                    <span class="ml-3 sidebar-nav-text">Picking</span>
-                </a>
-                <a href="?page=packing" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'packing' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">📫</span>
-                    <span class="ml-3 sidebar-nav-text">Packing</span>
-                </a>
-                <a href="?page=pickup" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'pickup' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">🚛</span>
-                    <span class="ml-3 sidebar-nav-text">Pickup</span>
-                </a>
-                <a href="?page=inbound" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'inbound' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">📥</span>
-                    <span class="ml-3 sidebar-nav-text">Nhập Kho</span>
-                </a>
-                <a href="?page=outbound" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'outbound' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">📤</span>
-                    <span class="ml-3 sidebar-nav-text">Xuất Kho</span>
-                </a>              
-                
-                <?php endif; ?>
-
-                <?php if (in_array($role, ['Leader', 'Manager', 'Admin'])): ?>
-                <a href="?page=transfer" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'transfer' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">🔄</span>
-                    <span class="ml-3 sidebar-nav-text">Pallet >>> Kệ</span>
-                </a>
-                <a href="?page=change" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'change' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">↔️</span>
-                    <span class="ml-3 sidebar-nav-text">Đổi kệ</span>
-                </a>
-                <a href="?page=print" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'print' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">🖨️</span>
-                    <span class="ml-3 sidebar-nav-text">In phiếu [Picking]</span>
-                </a>
-                <a href="?page=print_case" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'print_case' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">📦</span>
-                    <span class="ml-3 sidebar-nav-text">In tem [Packing]</span>
-                </a>
-                <a href="?page=print_pallet" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'print_pallet' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">📮</span>
-                    <span class="ml-3 sidebar-nav-text">In tem [Pallet]</span>
-                </a>
-                <?php endif; ?>
-
-                <?php if (in_array($role, ['Manager', 'Admin'])): ?>
-                <a href="?page=layout" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'layout' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">📅</span>
-                    <span class="ml-3 sidebar-nav-text">Layout</span>
-                </a>
-                <a href="?page=shelves" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'shelves' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">🛒</span>
-                    <span class="ml-3 sidebar-nav-text">Kệ hàng</span>
-                </a>
-                <a href="?page=products" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'products' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">🏷️</span>
-                    <span class="ml-3 sidebar-nav-text">Sản Phẩm</span>
-                </a>
-                <a href="?page=data_export" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'data_export' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">📄</span>
-                    <span class="ml-3 sidebar-nav-text">Data Export</span>
-                </a>
-                <?php endif; ?>
-
-                <?php if ($role === 'Admin'): ?>
-                <a href="?page=admin" class="sidebar-nav-link block p-3 hover:bg-slate-700 rounded transition <?php echo $page == 'admin' ? 'bg-blue-600' : ''; ?> flex items-center justify-start">
-                    <span class="sidebar-nav-icon">🔧</span>
-                    <span class="ml-3 sidebar-nav-text">Quản trị</span>
-                </a>
-                <?php endif; ?>
+                <?php endforeach; ?>
             </nav>
         </aside>
         <!-- Main Content -->
@@ -237,31 +208,7 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
 
             <div id="main-content" class="p-6">
                 <?php
-                    // Cấu hình quyền truy cập trang (Access Control List)
-                    $allowed_pages = [];
-
-                    // Guest: Chỉ xem inventory và dashboard
-                    if ($role === '' || $role === 'Guest') {
-                        $allowed_pages = array_merge($allowed_pages, ['inventory', 'dashboard']);
-                    }
-
-                    if (in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
-                        $allowed_pages = array_merge($allowed_pages, ['import', 'inbound', 'outbound', 'packing', 'pickup', 'picking']);
-                    }
-
-                    if (in_array($role, ['Leader', 'Manager', 'Admin'])) {
-                        $allowed_pages = array_merge($allowed_pages, ['transfer', 'change', 'print', 'print_case', 'print_pallet']);
-                    }
-
-                    if (in_array($role, ['Manager', 'Admin'])) {
-                        $allowed_pages = array_merge($allowed_pages, ['layout', 'shelves', 'products', 'data_export']);
-                    }
-
-                    if ($role === 'Admin') {
-                        $allowed_pages[] = 'admin';
-                    }
-
-                    if (in_array($page, $allowed_pages)) {
+                    if (in_array($page, $allowedPages, true)) {
                         include "pages/$page.php";
                     } else {
                         include "pages/inventory.php";
@@ -298,7 +245,7 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
         let currentAuthUser = null;
 
         function pdaOptimizedPages() {
-            return ['import', 'inbound', 'outbound', 'transfer', 'change', 'inventory', 'packing', 'pickup'];
+            return ['import', 'inbound', 'outbound', 'transfer', 'change', 'inventory', 'packing', 'pickup', 'check_box'];
         }
 
         function isPdaCompactMode() {
@@ -598,24 +545,7 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
 
         function getCurrentMobileLabelFromPage() {
             const pageKey = '<?php echo addslashes($page); ?>';
-            const labels = {
-                import: 'Nhập Pallet',
-                inbound: 'Nhập kho',
-                outbound: 'Xuất kho',
-                packing: 'Packing',
-                pickup: 'Pickup',
-                inventory: 'Tra tồn',
-                picking: 'Picking',
-                transfer: 'Pallet >>> Kệ',
-                change: 'Đổi kệ',
-                print: 'In phiếu',
-                layout: 'Layout',
-                dashboard: 'Dashboard',
-                shelves: 'ĐK Kệ',
-                products: 'ĐK SP',
-                data_export: 'Xuất file',
-                admin: 'Quản trị'
-            };
+            const labels = <?php echo json_encode($pageShortLabels, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
 
             if (!labels[pageKey]) {
                 return 'S-WMS';

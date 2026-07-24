@@ -63,7 +63,12 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
     <div id="step-2" class="pda-step pda-card p-3 mb-3">
         <div class="pda-subtitle">Bước 2</div>
         <div class="pda-title mt-1">Chọn đúng vị trí và quét QR kệ</div>
-        <div class="text-xs text-slate-500 mt-1">Chỉ cho phép chọn vị trí đầu tiên trong danh sách (tồn thấp nhất).</div>
+        <div class="text-xs text-slate-500 mt-1">Mặc định chỉ chọn vị trí đầu danh sách. Có thể bật chế độ chọn bất kỳ vị trí nếu cần.</div>
+
+        <div class="mt-2 inline-flex rounded-lg border border-gray-300 overflow-hidden">
+            <button type="button" id="shelf-mode-top" onclick="setShelfPickMode(false)" class="px-3 py-2 text-xs font-semibold bg-amber-600 text-white">Chỉ vị trí đầu</button>
+            <button type="button" id="shelf-mode-any" onclick="setShelfPickMode(true)" class="px-3 py-2 text-xs font-semibold bg-white text-gray-700 hover:bg-gray-100">Chọn bất kỳ vị trí</button>
+        </div>
 
         <div class="mt-3 pda-shelf-list" id="shelf-list"></div>
 
@@ -277,6 +282,7 @@ let pickingState = {
 let boxQrScanTimer = null;
 let isContinuousPickScan = false;
 let pickBoxList = [];
+let allowPickAnyShelf = false;
 
 function showModal(message, type = 'error', title = null) {
     const titles = {
@@ -353,6 +359,31 @@ function updatePickScanModeUI() {
     } else {
         continuousBtn.removeClass('bg-green-600 text-white').addClass('bg-white text-gray-700 hover:bg-gray-100');
         interruptBtn.removeClass('bg-white text-gray-700 hover:bg-gray-100').addClass('bg-green-600 text-white');
+    }
+}
+
+function setShelfPickMode(allowAny) {
+    allowPickAnyShelf = !!allowAny;
+    updateShelfPickModeUI();
+    renderShelfList();
+
+    if (allowPickAnyShelf) {
+        setWorkflowStatus('Đang bật chọn bất kỳ vị trí. Chọn vị trí rồi quét QR kệ.', 'text-amber-700');
+    } else {
+        setWorkflowStatus('Đang bật chế độ chỉ vị trí đầu danh sách.', 'text-amber-700');
+    }
+}
+
+function updateShelfPickModeUI() {
+    const topBtn = $('#shelf-mode-top');
+    const anyBtn = $('#shelf-mode-any');
+
+    if (allowPickAnyShelf) {
+        topBtn.removeClass('bg-amber-600 text-white').addClass('bg-white text-gray-700 hover:bg-gray-100');
+        anyBtn.removeClass('bg-white text-gray-700 hover:bg-gray-100').addClass('bg-amber-600 text-white');
+    } else {
+        anyBtn.removeClass('bg-amber-600 text-white').addClass('bg-white text-gray-700 hover:bg-gray-100');
+        topBtn.removeClass('bg-white text-gray-700 hover:bg-gray-100').addClass('bg-amber-600 text-white');
     }
 }
 
@@ -474,14 +505,15 @@ function renderShelfList() {
 
     pickingState.shelves.forEach(function(shelf) {
         const isTop = shelf.shelf_id === topShelfId;
+        const canSelect = allowPickAnyShelf || isTop;
         const isSelected = pickingState.selectedShelf && pickingState.selectedShelf.shelf_id === shelf.shelf_id;
         const cls = [
             'pda-shelf-item',
             isSelected ? 'selected' : '',
-            !isTop ? 'locked' : ''
+            !canSelect ? 'locked' : ''
         ].join(' ').trim();
 
-        const btnLabel = isTop ? 'Chọn vị trí này' : 'Chỉ chọn khi lên đầu danh sách';
+        const btnLabel = canSelect ? 'Chọn vị trí này' : 'Chỉ chọn khi lên đầu danh sách';
         const shelfName = shelf.shelf_name && shelf.shelf_name !== shelf.shelf_id ? ` - ${shelf.shelf_name}` : '';
 
         list.append(`
@@ -496,7 +528,7 @@ function renderShelfList() {
                         <div class="text-xl font-black text-slate-900">${shelf.qty}</div>
                     </div>
                 </div>
-                <div class="text-xs mt-1 ${isTop ? 'text-sky-700' : 'text-slate-500'}">${btnLabel}</div>
+                <div class="text-xs mt-1 ${canSelect ? 'text-sky-700' : 'text-slate-500'}">${btnLabel}</div>
             </button>
         `);
     });
@@ -530,17 +562,25 @@ function selectShelf(shelfId) {
 
     const target = normalizeQrText(shelfId);
     const topShelf = pickingState.shelves[0];
+    const selected = pickingState.shelves.find(function(shelf) {
+        return shelf.shelf_id === target;
+    });
 
-    if (!topShelf || target !== topShelf.shelf_id) {
+    if (!selected) {
+        showError('#step2-error', 'Vị trí không tồn tại trong danh sách hiện tại.');
+        return;
+    }
+
+    if (!allowPickAnyShelf && (!topShelf || target !== topShelf.shelf_id)) {
         showError('#step2-error', 'Chỉ được chọn vị trí đầu tiên (tồn thấp nhất).');
         return;
     }
 
-    pickingState.selectedShelf = { ...topShelf };
+    pickingState.selectedShelf = { ...selected };
     $('#shelf-qr-input').prop('disabled', false).focus();
     $('#btn-confirm-shelf').prop('disabled', false);
     hideError('#step2-error');
-    setWorkflowStatus('Đã chọn vị trí đầu danh sách, quét QR kệ để xác nhận.', 'text-amber-700');
+    setWorkflowStatus(`Đã chọn vị trí ${selected.shelf_id}, quét QR kệ để xác nhận.`, 'text-amber-700');
 
     resetStep2And3Inputs();
     renderShelfList();
@@ -723,6 +763,9 @@ function handleStep1OrderScan() {
                 // Hiển thị thông báo nếu có lịch sử picking
                 let statusMsg = 'Chọn vị trí đầu danh sách và quét QR kệ.';
                 let infoMsg = '';
+                if (allowPickAnyShelf) {
+                    statusMsg = 'Chọn vị trí bất kỳ trong danh sách và quét QR kệ.';
+                }
                 if (parsedOrder.command && stockRes.required_qty > 0) {
                     infoMsg = `📋 Yêu cầu: ${stockRes.required_qty} | Đã picking: ${stockRes.picked_qty} | Còn lại: ${stockRes.remaining_qty}`;
                     if (stockRes.picked_qty > 0) {
@@ -750,7 +793,7 @@ function handleStep1OrderScan() {
 
 function confirmShelfQr() {
     if (!pickingState.selectedShelf) {
-        showError('#step2-error', 'Hãy chọn vị trí đầu tiên trong danh sách trước.');
+        showError('#step2-error', 'Hãy chọn vị trí trong danh sách trước.');
         return;
     }
 
@@ -760,7 +803,7 @@ function confirmShelfQr() {
 
 function processShelfQrScan(scanned, fromScanner) {
     if (!pickingState.selectedShelf) {
-        showError('#step2-error', 'Hãy chọn vị trí đầu tiên trong danh sách trước.');
+        showError('#step2-error', 'Hãy chọn vị trí trong danh sách trước.');
         if (fromScanner && typeof window.resetQRScannerModalState === 'function') {
             window.resetQRScannerModalState();
         }
@@ -1068,7 +1111,11 @@ function moveToNextShelfIfNeeded() {
             updatePickBoxListDisplay();
             updatePickBoxListCounter();
 
-            setWorkflowStatus('Vị trí đã hết tồn. Quay lại bước 2 để chọn vị trí đầu danh sách tiếp theo.', 'text-amber-700');
+            if (allowPickAnyShelf) {
+                setWorkflowStatus('Vị trí đã hết tồn. Quay lại bước 2 để chọn vị trí tiếp theo.', 'text-amber-700');
+            } else {
+                setWorkflowStatus('Vị trí đã hết tồn. Quay lại bước 2 để chọn vị trí đầu danh sách tiếp theo.', 'text-amber-700');
+            }
         }
     } else {
         const maxAllowed = getMaxPickAllowedNow();
@@ -1344,6 +1391,7 @@ $(document).ready(function() {
     resetPickingJob(false);
     renderHistory();
     setPickScanMode(false); // Initialize scan mode buttons
+    updateShelfPickModeUI();
     updatePickBoxListDisplay();
 
     $(document).on('keydown', function(e) {

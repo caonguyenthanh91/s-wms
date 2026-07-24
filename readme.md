@@ -35,10 +35,10 @@ Giao diện chức năng tập trung vào các khu vực nhập liệu, nút nh�
 * Các hàm chức năng chuẩn được lưu trữ trong `api.php` để gọi nhiều lần, có thể thông qua Ajax.
 * **Phân quyền truy cập (Role)** (Tham chiếu bảng `log_users`):
   - **Guest**: Xem thông tin Dashboard, tra cứu Tồn kho.
-  - **Staff**: Thực thi luồng Nhận Pallet, Nhập kho, Xuất kho, Picking, Packing, Pickup, Tồn kho.
-  - **Leader**: Gồm quyền Staff + Đổi kệ, Chuyển Pallet >>> kệ, in ấn phiếu, tem.
-  - **Manager**: Gồm quyền Leader + Cập nhật Master Data, Quản trị User, xuất dữ liệu.
-  - **Admin**: Full quyền, bao gồm Quản trị User.
+  - **Staff**: Gồm quyền Guest + Nhận Pallet, Picking, Packing, Pickup.
+  - **Leader**: Gồm quyền Staff + Chuyển Pallet >>> kệ, Nhập kho, Xuất kho, Đổi kệ, In phiếu picking, In tem Case, In tem Pallet.
+  - **Manager**: Gồm quyền Leader + Đăng ký Kệ hàng, Sản phẩm, Quản trị User, Xuất dữ liệu, Layout.
+  - **Admin**: Full quyền.
 
 ### 1. Sản phẩm (product.php)
 * **Mục tiêu:** Đăng ký mã hàng vào bảng `products`.

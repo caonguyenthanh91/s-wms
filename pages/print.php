@@ -11,21 +11,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
 <div class="container-main">
     <div class="panel">
         <h3><i class="fas fa-list"></i> In phiếu picking</h3>
-        <div class="form-group import-box">
-            <label>Import dữ liệu từ Excel:</label>
-            <div class="import-note"><a href="../s-wms/assets/packing_list.xlsx">Tải file Excel mẫu tại đây.</a></div>
-            <div class="import-actions">
-                <input type="file" id="export-file" class="form-control" accept=".xlsx,.csv">
-                <button type="button" class="btn btn-primary import-btn" id="import-export-btn" onclick="importExportTemp()">
-                    <i class="fas fa-file-import"></i> Import Excel
-                </button>
-            </div>
-            <!-- <label class="inline-checkbox">
-                <input type="checkbox" id="clear-existing-export" checked>
-                Xóa dữ liệu export_temp cũ trước khi import
-            </label> -->
-            <div id="import-result" class="import-result"></div>
-        </div>
+        <div class="text-muted" style="margin-bottom: 10px; font-size: 13px;">Dữ liệu Excel được quản trị tại trang Data Import.</div>
         <div class="form-group">
             <label>Chọn ngày:</label>
             <div class="flight-filter-row" style="display: flex; gap: 8px; flex-wrap: wrap;">
@@ -335,54 +321,6 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
         $('#pages-preview').html('<div class="preview-placeholder">Chọn một invoice để xem trước phiếu in</div>');
         $('#print-pages').empty();
         $('#print-btn').hide();
-    }
-
-    async function importExportTemp() {
-        const input = document.getElementById('export-file');
-        const file = input?.files?.[0];
-        if (!file) {
-            showModal('Vui lòng chọn file Excel để import', 'error');
-            return;
-        }
-
-        const button = $('#import-export-btn');
-        const result = $('#import-result');
-        const formData = new FormData();
-        formData.append('excel_file', file);
-        formData.append('clear_existing', $('#clear-existing-export').is(':checked') ? '1' : '0');
-
-        button.prop('disabled', true).text('Đang import...');
-        result.removeClass('error success').text('Đang tải và xử lý file...');
-
-        try {
-            const res = await $.ajax({
-                type: 'POST',
-                url: `${printApiBase}?action=import_export_temp`,
-                data: formData,
-                dataType: 'json',
-                processData: false,
-                contentType: false
-            });
-
-            if (!res.success) {
-                const errors = Array.isArray(res.errors) && res.errors.length
-                    ? ` ${res.errors.slice(0, 3).join(' | ')}`
-                    : '';
-                throw new Error((res.message || 'Import thất bại') + errors);
-            }
-
-            const warningText = res.warning_count
-                ? ` Có ${res.warning_count} dòng bỏ qua.`
-                : '';
-            result.removeClass('error').addClass('success').text(`Import thành công ${res.imported_count} dòng.${warningText}`);
-            input.value = '';
-            resetPreview();
-            loadInvoicesByDate(currentDate);
-        } catch (error) {
-            result.removeClass('success').addClass('error').text(error.message || 'Import thất bại');
-        } finally {
-            button.prop('disabled', false).html('<i class="fas fa-file-import"></i> Import Excel');
-        }
     }
 
     function syncPrintModeToggles(changedId) {

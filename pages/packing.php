@@ -108,6 +108,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
                     <tr>
                         <th>Mã hàng</th>
                         <th class="num">Tổng xuất</th>
+                        <th class="num">Đã picking</th>
                         <th class="num">Đã đóng gói</th>
                         <th class="num">Còn lại</th>
                     </tr>
@@ -295,30 +296,32 @@ function setStepState(currentStep) {
 
 function updateTopSummary() {
     $('#summary-invoice').text(packingState.invoiceCode || '-');
-    $('#summary-packing').text(`${packingState.statusTotals.packing || 0} / ${packingState.requiredTotal || 0}`);
+    const packingDone = packingState.packingDoneProducts || 0;
+    const caseNoTotalProducts = packingState.totalProducts || 0;
+    $('#summary-packing').text(`${packingDone} / ${caseNoTotalProducts}`);
     $('#summary-scan-count').text(packingState.scanCount || 0);
 }
 
 function updateStatusCards() {
-    // Picking: từ toàn bộ invoice (command) vì picking gộp mã hàng
+    // Picking: chỉ trong đúng case_no hiện tại
     const pickingDone = packingState.pickingDoneProducts || 0;
-    const invoiceTotalProducts = packingState.invoiceTotalProducts || 0;
+    const caseNoTotalProducts = packingState.caseTotalProducts || 0;
 
     // Packing: từ case_no này
     const packingDone = packingState.packingDoneProducts || 0;
-    const caseNoTotalProducts = packingState.totalProducts || 0;
+    const packingTotalProducts = packingState.totalProducts || 0;
 
     // Pickup: từ case_no này
     const pickupTotal = packingState.pickupCaseTotal || 0;
 
     // Hiển thị theo dashboard.php format
-    $('#state-picking-value').text(`${pickingDone} / ${invoiceTotalProducts}`);
-    $('#state-packing-value').text(`${packingDone} / ${caseNoTotalProducts}`);
+    $('#state-picking-value').text(`${pickingDone} / ${caseNoTotalProducts}`);
+    $('#state-packing-value').text(`${packingDone} / ${packingTotalProducts}`);
     $('#state-pickup-value').text(`${pickupTotal > 0 ? 'Có' : 'Chưa'}`);
 
     // Đánh dấu hoàn tất khi đủ
-    $('#state-picking').toggleClass('done', invoiceTotalProducts > 0 && pickingDone >= invoiceTotalProducts);
-    $('#state-packing').toggleClass('done', caseNoTotalProducts > 0 && packingDone >= caseNoTotalProducts);
+    $('#state-picking').toggleClass('done', caseNoTotalProducts > 0 && pickingDone >= caseNoTotalProducts);
+    $('#state-packing').toggleClass('done', packingTotalProducts > 0 && packingDone >= packingTotalProducts);
     $('#state-pickup').toggleClass('done', pickupTotal > 0);
 }
 
@@ -327,7 +330,7 @@ function renderPackingLines() {
     body.empty();
 
     if (!packingState.items.length) {
-        body.append('<tr><td colspan="4" class="text-center text-slate-500">Chưa có dữ liệu invoice.</td></tr>');
+        body.append('<tr><td colspan="5" class="text-center text-slate-500">Chưa có dữ liệu invoice.</td></tr>');
         return;
     }
 
@@ -337,6 +340,7 @@ function renderPackingLines() {
             <tr class="${rowClass}">
                 <td>${item.product_id}</td>
                 <td class="num">${item.required_qty}</td>
+                <td class="num">${item.picked_qty || 0}</td>
                 <td class="num">${item.packed_qty}</td>
                 <td class="num">${item.remain_qty}</td>
             </tr>
@@ -455,10 +459,9 @@ function applyInvoiceDetail(res) {
         pickup: parseInt((res.status_totals || {}).pickup || 0, 10) || 0
     };
 
-    // Thống kê theo dashboard.php format
-    // Picking: từ toàn bộ invoice (command) vì picking gộp mã hàng
+    // Thống kê theo case_no hiện tại
     packingState.pickingDoneProducts = parseInt(res.picking_done_products || 0, 10) || 0;
-    packingState.invoiceTotalProducts = parseInt(res.invoice_total_products || 0, 10) || 0;
+    packingState.caseTotalProducts = parseInt(res.case_total_products || 0, 10) || 0;
 
     // Packing: từ case_no này
     packingState.packingDoneProducts = parseInt(res.packing_done_products || 0, 10) || 0;
@@ -469,10 +472,12 @@ function applyInvoiceDetail(res) {
 
     packingState.items = (res.items || []).map(function(item) {
         const requiredQty = parseInt(item.required_qty || 0, 10) || 0;
+        const pickedQty = parseInt(item.picked_qty || 0, 10) || 0;
         const packedQty = parseInt(item.packed_qty || 0, 10) || 0;
         return {
             product_id: normalizeQrText(item.product_id),
             required_qty: requiredQty,
+            picked_qty: pickedQty,
             packed_qty: packedQty,
             remain_qty: Math.max(0, requiredQty - packedQty)
         };

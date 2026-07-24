@@ -11,7 +11,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
 <div class="container-main">
     <div class="panel">
         <h3><i class="fas fa-list"></i> In tem packing</h3>
-        <div class="form-group import-box">
+        <!-- <div class="form-group import-box">
             <label>Import dữ liệu từ Excel:</label>
             <div class="import-note"><a href="../s-wms/assets/packing_list.xlsx">Tải file Excel mẫu tại đây.</a></div>
             <div class="import-actions">
@@ -21,7 +21,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
                 </button>
             </div>
             <div id="import-result" class="import-result"></div>
-        </div>
+        </div> -->
 
         <div class="form-group">
             <label>Chọn ngày:</label>
@@ -503,7 +503,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
                             <div style="font-size: 20px; text-align: center; width: 100%;">${itemCount} items</div>
 
                             <!-- Created At Label -->
-                            <div style="font-weight: bold; font-size: 9px; color: #666; text-align: left;">PICKING DATE:</div>
+                            <div style="font-weight: bold; font-size: 9px; color: #666; text-align: left;">PICKUP DATE:</div>
                             <!-- Created At Value -->
                             <div style="font-size: 20px; text-align: center; width: 100%;">${caseItem.created_at}</div>
                         </div>
