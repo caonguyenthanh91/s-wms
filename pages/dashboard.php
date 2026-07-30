@@ -57,6 +57,30 @@
     </div>
 </div>
 
+<!-- Modal for incomplete cases -->
+<div id="incomplete-cases-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+        <div class="p-4 border-b flex justify-between items-center">
+            <div>
+                <h4 class="text-lg font-bold text-gray-800">Các kiện chưa hoàn thành</h4>
+                <p class="text-sm text-gray-600">Invoice: <span id="modal-invoice-id" class="font-bold"></span></p>
+            </div>
+            <button onclick="closeIncompleteCasesModal()" class="text-gray-500 hover:text-gray-700 text-2xl leading-none">&times;</button>
+        </div>
+        <div id="modal-body" class="p-4 overflow-y-auto">
+            <p id="modal-loading-text" class="text-center text-gray-500">Đang tải dữ liệu...</p>
+            <div id="modal-cases-list" class="space-y-3">
+                <!-- Case details will be loaded here -->
+            </div>
+        </div>
+        <div class="p-3 bg-gray-50 border-t flex justify-end">
+            <button onclick="closeIncompleteCasesModal()" class="px-5 py-2 bg-gray-200 text-gray-700 font-medium rounded-md hover:bg-gray-300 transition">
+                Đóng
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
 let flightBoardRows = [];
 
@@ -69,8 +93,8 @@ function toYmd(dateObj) {
 }
 
 function escHtml(text) {
-    return String(text || '')
-        .replace(/&/g, '&amp;')
+    // Sử dụng ?? để đảm bảo số 0 không bị chuyển thành chuỗi rỗng
+    return String(text ?? '')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
@@ -174,7 +198,7 @@ function renderFlightRows(rows) {
         const pickupTime = fmtPickupTime(row.last_pickup_at);
 
         body.append(
-            '<tr>' +
+            '<tr class="cursor-pointer" onclick="showIncompleteCases(\'' + escHtml(row.command) + '\')">' +
                 '<td class="flight-col-command">' + escHtml(row.command) +
                     (cust ? '<div style="font-size:0.7rem; color:#94a3b8; margin-top:0.25rem;"><i class="fa-solid fa-user-tag"></i> ' + escHtml(cust) + '</div>' : '') +
                 '</td>' +
@@ -266,5 +290,74 @@ $(document).ready(function() {
     $('#btn-refresh-flight').on('click', function() {
         loadCommandFlightBoard();
     });
+
+    // Close modal on clicking outside
+    $('#incomplete-cases-modal').on('click', function(e) {
+        if (e.target === this) {
+            closeIncompleteCasesModal();
+        }
+    });
 });
+
+function showIncompleteCases(command) {
+    $('#modal-invoice-id').text(command);
+    $('#modal-cases-list').empty();
+    $('#modal-loading-text').show();
+    $('#incomplete-cases-modal').removeClass('hidden');
+
+    $.getJSON('api.php?action=get_incomplete_cases_by_command', { command: command }, function(res) {
+        $('#modal-loading-text').hide();
+        const listDiv = $('#modal-cases-list');
+        let html = '';
+        
+        const hasIncompletePacking = res.success && res.incomplete_packing_cases && res.incomplete_packing_cases.length > 0;
+        const hasIncompletePickup = res.success && res.incomplete_pickup_cases && res.incomplete_pickup_cases.length > 0;
+
+        if (!res.success || (!hasIncompletePacking && !hasIncompletePickup)) {
+            listDiv.html('<div class="p-4 text-center text-gray-600 bg-green-50 rounded-lg">Tuyệt vời! Tất cả các kiện của invoice này đã được packing và pickup đầy đủ.</div>');
+            return;
+        }
+
+        if (hasIncompletePacking) {
+            html += '<h5 class="text-md font-bold text-red-700 mb-2">Kiện chưa hoàn thành Packing</h5>';
+            res.incomplete_packing_cases.forEach(caseItem => {
+                html += `
+                    <div class="p-3 border rounded-lg bg-red-50 mb-3">
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold text-gray-800">Kiện: ${escHtml(caseItem.case_no)}</span>
+                            <span class="text-sm font-semibold text-red-600">Còn thiếu ${escHtml(caseItem.incomplete_items_count)} mã SP</span>
+                        </div>
+                        <ul class="mt-2 pl-5 list-disc text-sm text-gray-700 space-y-1">`;
+                
+                caseItem.items.forEach(item => {
+                    html += `<li><strong>${escHtml(item.product_id)}:</strong> Đã pack ${escHtml(item.packed_qty)} / ${escHtml(item.required_qty)}</li>`;
+                });
+
+                html += `   </ul>
+                    </div>
+                `;
+            });
+        }
+
+        if (hasIncompletePickup) {
+            html += '<h5 class="text-md font-bold text-amber-700 mt-4 mb-2">Kiện chưa thực hiện Pickup</h5>';
+            html += '<div class="p-3 border rounded-lg bg-amber-50">';
+            html += '<ul class="pl-5 list-disc text-sm text-gray-700 space-y-1">';
+            res.incomplete_pickup_cases.forEach(caseNo => {
+                html += `<li>Kiện: <strong>${escHtml(caseNo)}</strong></li>`;
+            });
+            html += '</ul></div>';
+        }
+
+        listDiv.html(html);
+
+    }).fail(function() {
+        $('#modal-loading-text').hide();
+        $('#modal-cases-list').html('<p class="text-center text-red-500">Lỗi khi tải dữ liệu chi tiết.</p>');
+    });
+}
+
+function closeIncompleteCasesModal() {
+    $('#incomplete-cases-modal').addClass('hidden');
+}
 </script>

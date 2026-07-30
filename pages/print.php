@@ -294,6 +294,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
                         product_name: item.product_name,
                         unit: item.unit,
                         for_product: item.for_product,
+                        case_no: item.case_no,
                         total_qty: item.total_qty,
                         created_at: item.created_at
                     };
@@ -401,6 +402,18 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
             const qrDataUrl = generateQRCodeDataUrl(currentCommand + '$' + item.product_id + '$' + item.total_qty);
             const createdAt = item.created_at ? new Date(String(item.created_at).replace(' ', 'T')).toLocaleDateString('vi-VN') : '-';
             const totalPages = selectedItems.length;
+            const caseNoList = (Array.isArray(item.case_no) ? item.case_no : String(item.case_no || '').split(/[\n,;|]+/))
+                .map(function(value) {
+                    return String(value || '').trim();
+                })
+                .filter(function(value, index, arr) {
+                    return value && arr.indexOf(value) === index;
+                });
+            const caseNoHtml = caseNoList.length
+                ? caseNoList.map(function(value) {
+                    return escapeHtml(value);
+                }).join(' / ')
+                : '-';
 
             const ticketHtml = `
                 <div class="picking-ticket" style="width: 80mm; padding: 4mm;">
@@ -439,10 +452,16 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
                         </div>
                     </div>
 
-                    <!-- Row 4: Product Code | Product Name -->
-                    <div style="margin-bottom: 3mm;">
-                        <div style="font-weight: bold; font-size: 16px;">${escapeHtml(item.product_id)}</div>
-                        <div style="font-size: 8px;">${escapeHtml(item.product_name || '-')}</div>
+                    <!-- Row 4: Product info (left) | Case_no (right) -->
+                    <div style="margin-bottom: 3mm; display: flex; justify-content: space-between; align-items: flex-start; gap: 2mm;">
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="font-weight: bold; font-size: 16px;">${escapeHtml(item.product_id)}</div>
+                            <div style="font-size: 8px;">${escapeHtml(item.product_name || '-')}</div>
+                        </div>
+                        <div style="text-align: right; max-width: 34mm; line-height: 1.2;">
+                            <div style="font-weight: bold; font-size: 8px;">Case No</div>
+                            <div style="font-weight: bold; font-size: 16px;">${caseNoHtml}</div>
+                        </div>
                     </div>
 
                     <!-- Row 5: Signature Line (20mm height) -->

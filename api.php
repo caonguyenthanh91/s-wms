@@ -378,16 +378,16 @@ function wms_inventory_find_header_map(array $row): ?array {
 
     foreach ($row as $index => $value) {
         $label = wms_inventory_normalize_header_label((string)$value);
-        if ($label === 'mã thùng') {
-            $map['box_code'] = $index;
-        } elseif ($label === 'mã sản phẩm') {
+        if ($label === 'mã sản phẩm') {
             $map['product_id'] = $index;
+        } elseif ($label === 'mã thùng') {
+            $map['box_code'] = $index;
         } elseif ($label === 'sl đvt chính') {
             $map['quantity'] = $index;
         }
     }
 
-    return isset($map['box_code'], $map['product_id'], $map['quantity']) ? $map : null;
+    return isset($map['box_code'], $map['product_id']) ? $map : null;
 }
 
 function wms_inventory_parse_quantity($value) {
@@ -426,18 +426,21 @@ function wms_inventory_build_records(array $rows): array {
             }
 
             $headerMap = [
-                'product_id' => 1,
-                'box_code' => 5,
-                'quantity' => 9,
+                'product_id' => 0,
+                'box_code' => 1,
             ];
         }
 
         $boxCode = strtoupper(trim((string)($values[$headerMap['box_code']] ?? '')));
         $productId = strtoupper(trim((string)($values[$headerMap['product_id']] ?? '')));
-        $quantity = wms_inventory_parse_quantity($values[$headerMap['quantity']] ?? '');
+        $quantity = 0;
+        if (isset($headerMap['quantity'])) {
+            $parsedQty = wms_inventory_parse_quantity($values[$headerMap['quantity']] ?? '');
+            $quantity = $parsedQty === null ? 0 : $parsedQty;
+        }
 
-        if ($boxCode === '' || $productId === '' || $quantity === null) {
-            $errors[] = 'Dòng ' . ($rowIndex + 1) . ' thiếu Mã thùng/Mã sản phẩm/SL ĐVT chính hợp lệ';
+        if ($boxCode === '' || $productId === '') {
+            $errors[] = 'Dòng ' . ($rowIndex + 1) . ' thiếu Mã sản phẩm hoặc Mã thùng hợp lệ';
             continue;
         }
 
@@ -2679,6 +2682,7 @@ switch ($action) {
                     COALESCE(p.product_name, '') AS product_name,
                     COALESCE(p.unit, 'pcs') AS unit,
                     MAX(e.for_product) AS for_product,
+                    GROUP_CONCAT(DISTINCT UPPER(TRIM(e.case_no)) ORDER BY UPPER(TRIM(e.case_no)) SEPARATOR ',') AS case_no,
                     SUM(e.total_qty) AS total_qty,
                     MAX(e.created_at) AS created_at
              FROM export_temp e
@@ -2692,6 +2696,7 @@ switch ($action) {
 
         foreach ($items as &$item) {
             $item['total_qty'] = (int)$item['total_qty'];
+            $item['case_no'] = (string)($item['case_no'] ?? '');
         }
 
         echo json_encode([
@@ -2873,6 +2878,89 @@ switch ($action) {
         } catch (Throwable $e) {
             echo json_encode(['success' => false, 'message' => $e->getMessage()]);
         }
+        break;
+
+    case 'get_incomplete_cases_by_command':
+        require_role(['Admin','Leader','Manager','Staff']);
+        ensure_export_temp_schema($pdo);
+        ensure_export_log_schema($pdo);
+
+        $command = strtoupper(trim($_GET['command'] ?? ''));
+        if ($command === '') {
+            echo json_encode(['success' => false, 'message' => 'Thiếu command']);
+            break;
+        }
+
+        $stmt = $pdo->prepare(
+            "SELECT
+                required.case_no,
+                required.product_id,
+                required.required_qty,
+                COALESCE(packed.packed_qty, 0) AS packed_qty
+            FROM
+                (
+                    SELECT
+                        command,
+                        case_no,
+                        product_id,
+                        SUM(total_qty) as required_qty
+                    FROM export_temp
+                    WHERE command = ?
+                    GROUP BY command, case_no, product_id
+                ) AS required
+            LEFT JOIN
+                (SELECT command, case_no, product_id, SUM(quantity) as packed_qty FROM export_log WHERE command = ? AND status = 'packing' GROUP BY command, case_no, product_id) AS packed
+            ON required.command = packed.command AND required.case_no = packed.case_no AND required.product_id = packed.product_id
+            WHERE required.required_qty > COALESCE(packed.packed_qty, 0)
+            ORDER BY required.case_no, required.product_id"
+        );
+        $stmt->execute([$command, $command]);
+        $incompleteItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($incompleteItems)) {
+            echo json_encode(['success' => true, 'cases' => []]);
+            break;
+        }
+
+        $result = [];
+        foreach ($incompleteItems as $item) {
+            $caseNo = $item['case_no'];
+            if (!isset($result[$caseNo])) {
+                $result[$caseNo] = [
+                    'case_no' => $caseNo,
+                    'incomplete_items_count' => 0,
+                    'items' => []
+                ];
+            }
+            $result[$caseNo]['items'][] = [
+                'product_id' => $item['product_id'],
+                'required_qty' => (int)$item['required_qty'],
+                'packed_qty' => (int)$item['packed_qty']
+            ];
+            $result[$caseNo]['incomplete_items_count']++;
+        }
+
+        // Lấy danh sách các case_no chưa được pickup
+        $stmt = $pdo->prepare(
+            "SELECT DISTINCT e.case_no
+             FROM export_temp e
+             LEFT JOIN (
+                 SELECT DISTINCT case_no
+                 FROM export_log
+                 WHERE command = ? AND status = 'pickup'
+             ) p ON e.case_no = p.case_no
+             WHERE e.command = ? AND p.case_no IS NULL
+             ORDER BY e.case_no ASC"
+        );
+        $stmt->execute([$command, $command]);
+        $unpickedCases = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+
+        echo json_encode([
+            'success' => true,
+            'command' => $command,
+            'incomplete_packing_cases' => array_values($result),
+            'incomplete_pickup_cases' => $unpickedCases
+        ]);
         break;
 
     default:
