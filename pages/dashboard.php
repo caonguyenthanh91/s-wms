@@ -50,7 +50,7 @@
                     </tr>
                 </thead>
                 <tbody id="flight-board-body">
-                    <tr><td colspan="6" class="flight-empty">Đang tải dữ liệu...</td></tr>
+                    <tr><td colspan="7" class="flight-empty">Đang tải dữ liệu...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -62,7 +62,7 @@
     <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
         <div class="p-4 border-b flex justify-between items-center">
             <div>
-                <h4 class="text-lg font-bold text-gray-800">Các kiện chưa hoàn thành</h4>
+                <h4 id="modal-title" class="text-lg font-bold text-gray-800">Chi tiết chưa hoàn thành</h4>
                 <p class="text-sm text-gray-600">Invoice: <span id="modal-invoice-id" class="font-bold"></span></p>
             </div>
             <button onclick="closeIncompleteCasesModal()" class="text-gray-500 hover:text-gray-700 text-2xl leading-none">&times;</button>
@@ -198,7 +198,7 @@ function renderFlightRows(rows) {
         const pickupTime = fmtPickupTime(row.last_pickup_at);
 
         body.append(
-            '<tr class="cursor-pointer" onclick="showIncompleteCases(\'' + escHtml(row.command) + '\')">' +
+            '<tr>' +
                 '<td class="flight-col-command">' + escHtml(row.command) +
                     (cust ? '<div style="font-size:0.7rem; color:#94a3b8; margin-top:0.25rem;"><i class="fa-solid fa-user-tag"></i> ' + escHtml(cust) + '</div>' : '') +
                 '</td>' +
@@ -207,9 +207,9 @@ function renderFlightRows(rows) {
                 (chipCls === 'chip-air' ? 'rgba(99,102,241,0.18)' : 'rgba(56,189,248,0.16)') + '; color:' +
                 (chipCls === 'chip-air' ? '#818cf8' : '#38bdf8') + ';">' +
                 '<i class="fa-solid ' + chipIcon + '"></i> ' + escHtml(type) + '</span></td>' +
-                '<td>' + progCell(pickItems, totalItems, 'SP') + '</td>' +
-                '<td>' + progCell(packItems, totalCases, 'kiện') + '</td>' +
-                '<td>' + progCell(pickedCases, totalCases, 'kiện') + '</td>' +
+                '<td class="cursor-pointer hover:opacity-70 transition" onclick="showIncompleteCases(\'' + escHtml(row.command) + '\', \'picking\')" style="position:relative;">' + progCell(pickItems, totalItems, 'SP') + '</td>' +
+                '<td class="cursor-pointer hover:opacity-70 transition" onclick="showIncompleteCases(\'' + escHtml(row.command) + '\', \'packing\')" style="position:relative;">' + progCell(packItems, totalCases, 'kiện') + '</td>' +
+                '<td class="cursor-pointer hover:opacity-70 transition" onclick="showIncompleteCases(\'' + escHtml(row.command) + '\', \'pickup\')" style="position:relative;">' + progCell(pickedCases, totalCases, 'kiện') + '</td>' +
                 '<td style="text-align:center; font-size:0.9rem; font-weight:700; color:' +
                 (pickupDone ? '#10b981' : '#94a3b8') + ';">' + escHtml(pickupTime) + '</td>' +
             '</tr>'
@@ -222,19 +222,44 @@ function renderFlightKpi(rows) {
     let pickingComplete = 0;
     let packingComplete = 0;
     let pickupComplete = 0;
+    let totalCasesInDay = 0;
+    let pickingCompleteCases = 0;
+    let packingCompleteCases = 0;
+    let pickupCompleteCases = 0;
 
     rows.forEach(function(row) {
         const ti = parseInt(row.total_items, 10) || 0;
         const tc = parseInt(row.total_cases, 10) || 0;
-        if (ti > 0 && (parseInt(row.picking_items, 10) || 0) >= ti) pickingComplete++;        // picking: product_id vs product_id
-        if (tc > 0 && (parseInt(row.packing_items, 10) || 0) >= tc) packingComplete++;        // packing: case_no vs case_no
-        if (tc > 0 && (parseInt(row.picked_cases, 10) || 0) >= tc) pickupComplete++;         // pickup: case_no vs case_no
+        const pickingItems = parseInt(row.picking_items, 10) || 0;
+        const packingItems = parseInt(row.packing_items, 10) || 0;
+        const pickedCases = parseInt(row.picked_cases, 10) || 0;
+
+        // Tính tổng số kiện phải xuất trong ngày
+        totalCasesInDay += tc;
+
+        // Picking: nếu tất cả sản phẩm đã pick xong
+        if (ti > 0 && pickingItems >= ti) {
+            pickingComplete++;
+            pickingCompleteCases += tc;
+        }
+
+        // Packing: nếu tất cả kiện đã pack xong
+        if (tc > 0 && packingItems >= tc) {
+            packingComplete++;
+            packingCompleteCases += tc;
+        }
+
+        // Pickup: nếu tất cả kiện đã pickup xong
+        if (tc > 0 && pickedCases >= tc) {
+            pickupComplete++;
+            pickupCompleteCases += tc;
+        }
     });
 
-    $('#kpi-commands').text(totalCommands);
-    $('#kpi-picking').text(pickingComplete + ' / ' + totalCommands);
-    $('#kpi-packing').text(packingComplete + ' / ' + totalCommands);
-    $('#kpi-pickup').text(pickupComplete + ' / ' + totalCommands);
+    $('#kpi-commands').text(totalCommands + ' (' + totalCasesInDay + ' case)');
+    $('#kpi-picking').text(pickingComplete + ' / ' + totalCommands + ' (' + pickingCompleteCases + ' case done)');
+    $('#kpi-packing').text(packingComplete + ' / ' + totalCommands + ' (' + packingCompleteCases + ' case done)');
+    $('#kpi-pickup').text(pickupComplete + ' / ' + totalCommands + ' (' + pickupCompleteCases + ' case done)');
 }
 
 function loadCommandFlightBoard() {
@@ -299,61 +324,103 @@ $(document).ready(function() {
     });
 });
 
-function showIncompleteCases(command) {
+function showIncompleteCases(command, type) {
+    type = type || 'all';
+
+    const titleMap = {
+        'picking': 'SP chưa hoàn thành Picking',
+        'packing': 'Kiện chưa hoàn thành Packing',
+        'pickup': 'Kiện chưa thực hiện Pickup'
+    };
+
+    $('#modal-title').text(titleMap[type] || 'Chi tiết chưa hoàn thành');
     $('#modal-invoice-id').text(command);
     $('#modal-cases-list').empty();
     $('#modal-loading-text').show();
     $('#incomplete-cases-modal').removeClass('hidden');
 
-    $.getJSON('api.php?action=get_incomplete_cases_by_command', { command: command }, function(res) {
+    $.getJSON('api.php?action=get_incomplete_cases_by_command', { command: command, type: type }, function(res) {
+        // console.log('API Response:', res);
+        // console.log('Command:', command, 'Type:', type);
+        // console.log('res.success:', res.success);
+        // console.log('res.message:', res.message);
+        // console.log('res.data:', res.data);
+        // console.log('res.data length:', res.data ? res.data.length : 'undefined');
+
         $('#modal-loading-text').hide();
         const listDiv = $('#modal-cases-list');
         let html = '';
-        
-        const hasIncompletePacking = res.success && res.incomplete_packing_cases && res.incomplete_packing_cases.length > 0;
-        const hasIncompletePickup = res.success && res.incomplete_pickup_cases && res.incomplete_pickup_cases.length > 0;
 
-        if (!res.success || (!hasIncompletePacking && !hasIncompletePickup)) {
-            listDiv.html('<div class="p-4 text-center text-gray-600 bg-green-50 rounded-lg">Tuyệt vời! Tất cả các kiện của invoice này đã được packing và pickup đầy đủ.</div>');
+        if (!res.success) {
+            listDiv.html(`<div class="p-4 text-center text-red-600 bg-red-50 rounded-lg"><strong>Lỗi:</strong> ${escHtml(res.message || 'Lỗi không xác định từ API')}</div>`);
             return;
         }
 
-        if (hasIncompletePacking) {
-            html += '<h5 class="text-md font-bold text-red-700 mb-2">Kiện chưa hoàn thành Packing</h5>';
-            res.incomplete_packing_cases.forEach(caseItem => {
+        if (!res.data || res.data.length === 0) {
+            const completeMsg = {
+                'picking': 'Tuyệt vời! Tất cả sản phẩm của invoice này đã được picking đầy đủ.',
+                'packing': 'Tuyệt vời! Tất cả kiện của invoice này đã được packing đầy đủ.',
+                'pickup': 'Tuyệt vời! Tất cả kiện của invoice này đã được pickup đầy đủ.'
+            };
+            listDiv.html(`<div class="p-4 text-center text-gray-600 bg-green-50 rounded-lg">${escHtml(completeMsg[type] || 'Dữ liệu đầy đủ')}</div>`);
+            return;
+        }
+
+        if (type === 'picking') {
+            // console.log('Rendering picking type, data count:', res.data.length);
+            html += '';
+            html += `
+                <div class="p-3 border rounded-lg bg-red-50 mb-3">
+                    <ul class="mt-2 pl-5 list-disc text-sm text-gray-700 space-y-1">`;
+                    res.data.forEach(item => {
+                        // console.log('Picking item:', item);
+                        html += `
+                            <li><strong>${escHtml(item.product_id)}</strong> (Mã đơn: ${escHtml(item.order_code || 'N/A')}) - Đã pick ${escHtml(item.picked_qty)} / ${escHtml(item.required_qty)}</li>
+                        `;
+                    });
+            html += `</ul></div>`;
+        } else if (type === 'packing') {
+            console.log('Rendering packing type, data count:', res.data.length);
+            console.log('Full packing data:', res.data);
+            html += '<h5 class="text-md font-bold text-red-700 mb-3">Kiện chưa packing hoàn thành</h5>';
+            res.data.forEach(caseItem => {
+                console.log('Packing item:', caseItem);
+                console.log('Case NO value:', caseItem.case_no);
                 html += `
                     <div class="p-3 border rounded-lg bg-red-50 mb-3">
                         <div class="flex justify-between items-center">
-                            <span class="font-bold text-gray-800">Kiện: ${escHtml(caseItem.case_no)}</span>
+                            <span class="font-bold text-gray-800">Kiện: ${escHtml(caseItem.case_no || 'N/A')}</span>
                             <span class="text-sm font-semibold text-red-600">Còn thiếu ${escHtml(caseItem.incomplete_items_count)} mã SP</span>
                         </div>
                         <ul class="mt-2 pl-5 list-disc text-sm text-gray-700 space-y-1">`;
-                
-                caseItem.items.forEach(item => {
-                    html += `<li><strong>${escHtml(item.product_id)}:</strong> Đã pack ${escHtml(item.packed_qty)} / ${escHtml(item.required_qty)}</li>`;
-                });
 
-                html += `   </ul>
-                    </div>
-                `;
+                if (caseItem.items && Array.isArray(caseItem.items)) {
+                    caseItem.items.forEach(product => {
+                        console.log('Product in case:', product);
+                        html += `<li><strong>${escHtml(product.product_id)}</strong> (Mã đơn: ${escHtml(product.order_code || 'N/A')}) - Đã pack ${escHtml(product.packed_qty)} / ${escHtml(product.required_qty)}</li>`;
+                    });
+                }
+                html += `</ul></div>`;
             });
-        }
-
-        if (hasIncompletePickup) {
-            html += '<h5 class="text-md font-bold text-amber-700 mt-4 mb-2">Kiện chưa thực hiện Pickup</h5>';
-            html += '<div class="p-3 border rounded-lg bg-amber-50">';
-            html += '<ul class="pl-5 list-disc text-sm text-gray-700 space-y-1">';
-            res.incomplete_pickup_cases.forEach(caseNo => {
-                html += `<li>Kiện: <strong>${escHtml(caseNo)}</strong></li>`;
+        } else if (type === 'pickup') {
+            // console.log('Rendering pickup type, data count:', res.data.length);
+            html += '';
+            html += '<div class="space-y-2">';
+            res.data.forEach(caseNo => {
+                // console.log('Pickup case:', caseNo);
+                html += `<div class="p-3 border rounded-lg bg-amber-50"><strong>Kiện:</strong> ${escHtml(caseNo)}</div>`;
             });
-            html += '</ul></div>';
+            html += '</div>';
         }
 
         listDiv.html(html);
 
-    }).fail(function() {
+    }).fail(function(xhr, status, error) {
+        console.error('API Error:', error);
+        console.error('XHR Status:', xhr.status);
+        console.error('Response Text:', xhr.responseText);
         $('#modal-loading-text').hide();
-        $('#modal-cases-list').html('<p class="text-center text-red-500">Lỗi khi tải dữ liệu chi tiết.</p>');
+        $('#modal-cases-list').html('<p class="text-center text-red-500">Lỗi khi tải dữ liệu chi tiết. ' + error + '</p>');
     });
 }
 

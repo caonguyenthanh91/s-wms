@@ -24,6 +24,17 @@ function ensure_export_temp_schema(PDO $pdo) {
     if ($checked) return;
     $checked = true;
     try {
+        $columns = $pdo->query('SHOW COLUMNS FROM export_temp')->fetchAll(PDO::FETCH_ASSOC);
+        $columnNames = [];
+        foreach ($columns as $column) {
+            $columnName = $column['Field'] ?? '';
+            if ($columnName !== '') $columnNames[$columnName] = true;
+        }
+
+        if (!isset($columnNames['order_code'])) {
+            $pdo->exec('ALTER TABLE export_temp ADD COLUMN order_code VARCHAR(120) DEFAULT NULL AFTER created_at');
+        }
+
         $indexes = $pdo->query('SHOW INDEX FROM export_temp')->fetchAll(PDO::FETCH_ASSOC);
         $indexNames = [];
         foreach ($indexes as $index) {
@@ -358,7 +369,9 @@ function export_temp_normalize_datetime($value) {
 
 function export_temp_is_header_row(array $columns) {
     $n = array_map(function($c) { return strtolower(trim((string)$c)); }, $columns);
-    return array_slice($n, 0, 9) === ['id', 'command', 'case_no', 'transport_type', 'for_product', 'product_id', 'total_qty', 'bucket_qty', 'created_at']
+    return array_slice($n, 0, 10) === ['id', 'command', 'case_no', 'transport_type', 'for_product', 'product_id', 'total_qty', 'bucket_qty', 'created_at', 'order_code']
+        || array_slice($n, 0, 9) === ['command', 'case_no', 'transport_type', 'for_product', 'product_id', 'total_qty', 'bucket_qty', 'created_at', 'order_code']
+        || array_slice($n, 0, 9) === ['id', 'command', 'case_no', 'transport_type', 'for_product', 'product_id', 'total_qty', 'bucket_qty', 'created_at']
         || array_slice($n, 0, 8) === ['command', 'case_no', 'transport_type', 'for_product', 'product_id', 'total_qty', 'bucket_qty', 'created_at'];
 }
 
@@ -472,6 +485,7 @@ function export_temp_map_import_fields(array $columns, bool $hasIdColumn) {
             'total_qty'      => $columns[6],
             'bucket_qty'     => $columns[7],
             'created_at'     => $columns[8],
+            'order_code'     => $columns[9],
         ];
     }
 
@@ -484,6 +498,7 @@ function export_temp_map_import_fields(array $columns, bool $hasIdColumn) {
         'total_qty'      => $columns[5],
         'bucket_qty'     => $columns[6],
         'created_at'     => $columns[7],
+        'order_code'     => $columns[8],
     ];
 }
 
@@ -504,7 +519,7 @@ function export_temp_import_row_score(array $fields) {
 
 function export_temp_extract_import_fields(array $row, ?bool $hasIdColumn = null) {
     $c = [];
-    for ($i = 0; $i < 9; $i++) $c[$i] = trim((string)($row[$i] ?? ''));
+    for ($i = 0; $i < 10; $i++) $c[$i] = trim((string)($row[$i] ?? ''));
 
     if ($hasIdColumn !== null) {
         return export_temp_map_import_fields($c, $hasIdColumn);
@@ -557,6 +572,7 @@ function export_temp_build_records(array $rows) {
             'total_qty'      => $totalQty,
             'bucket_qty'     => $bucketQty,
             'created_at'     => export_temp_normalize_datetime($f['created_at']),
+            'order_code'     => strtoupper(trim((string)($f['order_code'] ?? ''))),
         ];
     }
     return [$records, $errors];
@@ -2164,8 +2180,8 @@ switch ($action) {
             $clearExisting = ($_POST['clear_existing'] ?? '1') === '1';
             $pdo->beginTransaction();
             if ($clearExisting) $pdo->exec('DELETE FROM export_temp');
-            $stmt = $pdo->prepare('INSERT INTO export_temp (command, case_no, transport_type, for_product, product_id, total_qty, bucket_qty, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-            foreach ($records as $r) $stmt->execute([$r['command'], $r['case_no'], $r['transport_type'], $r['for_product'], $r['product_id'], $r['total_qty'], $r['bucket_qty'], $r['created_at']]);
+            $stmt = $pdo->prepare('INSERT INTO export_temp (command, case_no, transport_type, for_product, product_id, total_qty, bucket_qty, created_at, order_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            foreach ($records as $r) $stmt->execute([$r['command'], $r['case_no'], $r['transport_type'], $r['for_product'], $r['product_id'], $r['total_qty'], $r['bucket_qty'], $r['created_at'], $r['order_code']]);
             $pdo->commit();
             echo json_encode(['success' => true, 'message' => 'Import thành công', 'imported_count' => count($records), 'warning_count' => count($errors), 'errors' => $errors]);
         } catch (Throwable $e) {
@@ -2886,80 +2902,130 @@ switch ($action) {
         ensure_export_log_schema($pdo);
 
         $command = strtoupper(trim($_GET['command'] ?? ''));
+        $type = strtolower(trim($_GET['type'] ?? 'all'));
+
         if ($command === '') {
             echo json_encode(['success' => false, 'message' => 'Thiếu command']);
             break;
         }
 
-        $stmt = $pdo->prepare(
-            "SELECT
-                required.case_no,
-                required.product_id,
-                required.required_qty,
-                COALESCE(packed.packed_qty, 0) AS packed_qty
-            FROM
-                (
-                    SELECT
-                        command,
-                        case_no,
-                        product_id,
-                        SUM(total_qty) as required_qty
-                    FROM export_temp
-                    WHERE command = ?
-                    GROUP BY command, case_no, product_id
-                ) AS required
-            LEFT JOIN
-                (SELECT command, case_no, product_id, SUM(quantity) as packed_qty FROM export_log WHERE command = ? AND status = 'packing' GROUP BY command, case_no, product_id) AS packed
-            ON required.command = packed.command AND required.case_no = packed.case_no AND required.product_id = packed.product_id
-            WHERE required.required_qty > COALESCE(packed.packed_qty, 0)
-            ORDER BY required.case_no, required.product_id"
-        );
-        $stmt->execute([$command, $command]);
-        $incompleteItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $data = [];
 
-        if (empty($incompleteItems)) {
-            echo json_encode(['success' => true, 'cases' => []]);
-            break;
-        }
+        // Picking: Sản phẩm chưa picking xong (group by command + product_id chỉ)
+        if ($type === 'picking' || $type === 'all') {
+            $stmt = $pdo->prepare(
+                "SELECT
+                    required.product_id,
+                    required.order_code,
+                    required.required_qty,
+                    COALESCE(picked.picked_qty, 0) AS picked_qty,
+                    (required.required_qty - COALESCE(picked.picked_qty, 0)) AS remaining_qty
+                FROM
+                    (
+                        SELECT
+                            command,
+                            product_id,
+                            MAX(order_code) AS order_code,
+                            SUM(total_qty) as required_qty
+                        FROM export_temp
+                        WHERE command = ?
+                        GROUP BY command, product_id
+                    ) AS required
+                LEFT JOIN
+                    (SELECT command, product_id, SUM(quantity) as picked_qty FROM export_log WHERE command = ? AND status = 'picking' GROUP BY command, product_id) AS picked
+                ON required.command = picked.command AND required.product_id = picked.product_id
+                WHERE required.required_qty > COALESCE(picked.picked_qty, 0)
+                ORDER BY required.product_id"
+            );
+            $stmt->execute([$command, $command]);
+            $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $result = [];
-        foreach ($incompleteItems as $item) {
-            $caseNo = $item['case_no'];
-            if (!isset($result[$caseNo])) {
-                $result[$caseNo] = [
-                    'case_no' => $caseNo,
-                    'incomplete_items_count' => 0,
-                    'items' => []
-                ];
+            foreach ($data as &$item) {
+                $item['required_qty'] = (int)$item['required_qty'];
+                $item['picked_qty'] = (int)$item['picked_qty'];
+                $item['remaining_qty'] = (int)$item['remaining_qty'];
             }
-            $result[$caseNo]['items'][] = [
-                'product_id' => $item['product_id'],
-                'required_qty' => (int)$item['required_qty'],
-                'packed_qty' => (int)$item['packed_qty']
-            ];
-            $result[$caseNo]['incomplete_items_count']++;
         }
 
-        // Lấy danh sách các case_no chưa được pickup
-        $stmt = $pdo->prepare(
-            "SELECT DISTINCT e.case_no
-             FROM export_temp e
-             LEFT JOIN (
-                 SELECT DISTINCT case_no
-                 FROM export_log
-                 WHERE command = ? AND status = 'pickup'
-             ) p ON e.case_no = p.case_no
-             WHERE e.command = ? AND p.case_no IS NULL
-             ORDER BY e.case_no ASC"
-        );
-        $stmt->execute([$command, $command]);
-        $unpickedCases = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+        // Packing: Kiện chưa packing xong
+        if ($type === 'packing' || $type === 'all') {
+            $stmt = $pdo->prepare(
+                "SELECT
+                    required.case_no,
+                    required.product_id,
+                    required.order_code,
+                    required.required_qty,
+                    COALESCE(packed.packed_qty, 0) AS packed_qty
+                FROM
+                    (
+                        SELECT
+                            command,
+                            case_no,
+                            product_id,
+                            MAX(order_code) AS order_code,
+                            SUM(total_qty) as required_qty
+                        FROM export_temp
+                        WHERE command = ?
+                        GROUP BY command, case_no, product_id
+                    ) AS required
+                LEFT JOIN
+                    (SELECT command, case_no, product_id, SUM(quantity) as packed_qty FROM export_log WHERE command = ? AND status = 'packing' GROUP BY command, case_no, product_id) AS packed
+                ON required.command = packed.command AND required.case_no = packed.case_no AND required.product_id = packed.product_id
+                WHERE required.required_qty > COALESCE(packed.packed_qty, 0)
+                ORDER BY required.case_no, required.product_id"
+            );
+            $stmt->execute([$command, $command]);
+            $incompleteItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            error_log("DEBUG Packing - Command: $command, Items count: " . count($incompleteItems));
+            error_log("DEBUG Packing - Raw items: " . json_encode($incompleteItems));
+
+            $result = [];
+            foreach ($incompleteItems as $item) {
+                $caseNo = $item['case_no'];
+                error_log("DEBUG Packing - Processing case_no: '$caseNo', type: " . gettype($caseNo));
+                if (!isset($result[$caseNo])) {
+                    $result[$caseNo] = [
+                        'case_no' => $caseNo,
+                        'incomplete_items_count' => 0,
+                        'items' => []
+                    ];
+                }
+                $result[$caseNo]['items'][] = [
+                    'product_id' => $item['product_id'],
+                    'order_code' => $item['order_code'],
+                    'required_qty' => (int)$item['required_qty'],
+                    'packed_qty' => (int)$item['packed_qty']
+                ];
+                $result[$caseNo]['incomplete_items_count']++;
+            }
+            $data = array_values($result);
+            error_log("DEBUG Packing - Final data count: " . count($data));
+            error_log("DEBUG Packing - Final data: " . json_encode($data));
+        }
+
+        // Pickup: Kiện chưa được pickup
+        if ($type === 'pickup' || $type === 'all') {
+            $stmt = $pdo->prepare(
+                "SELECT DISTINCT e.case_no
+                 FROM export_temp e
+                 LEFT JOIN (
+                     SELECT DISTINCT case_no
+                     FROM export_log
+                     WHERE command = ? AND status = 'pickup'
+                 ) p ON e.case_no = p.case_no
+                 WHERE e.command = ? AND p.case_no IS NULL
+                 ORDER BY e.case_no ASC"
+            );
+            $stmt->execute([$command, $command]);
+            $data = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+        }
 
         echo json_encode([
             'success' => true,
             'command' => $command,
-            'incomplete_packing_cases' => array_values($result),
-            'incomplete_pickup_cases' => $unpickedCases
+            'type' => $type,
+            'data' => $data
         ]);
         break;
 

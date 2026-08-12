@@ -191,7 +191,8 @@ let checkState = {
     tem1: null,
     tem2: null,
     history: [],
-    blockedByError: false
+    blockedByError: false,
+    pendingTem1Lookup: false
 };
 
 let checkAutoScanTimer = null;
@@ -238,29 +239,18 @@ function formatQuantity(value) {
 
 function parseTem1(raw) {
     const text = normalizeText(raw);
-    const parts = text.split('$');
-    if (parts.length < 7) return null;
+    const match = text.match(/^B\$\$(.+)$/i);
+    if (!match || match[1] === undefined) return null;
 
-    const product = normalizeProductId(parts[0]);
-    // Format Tem 1:
-    // trim([ma hang])$  $527802$17$17_1$$int([so luong])$ $ $ $
-    // => So luong nam ngay sau dau "$$"
-    let qty = parseQuantity(parts[6]);
-
-    if (qty === null) {
-        const afterDoubleDollar = text.match(/\$\$([^$]*)\$/);
-        if (afterDoubleDollar && afterDoubleDollar[1] !== undefined) {
-            qty = parseQuantity(afterDoubleDollar[1]);
-        }
-    }
-
-    if (!product || qty === null) return null;
+    const boxCode = normalizeProductId(match[1]);
+    if (!boxCode) return null;
 
     return {
         type: 'tem1',
         raw: text,
-        product: product,
-        qty: qty
+        boxCode: boxCode,
+        product: null,
+        qty: null
     };
 }
 
@@ -314,9 +304,19 @@ function hideScanError() {
 }
 
 function updateCaptureView() {
-    $('#tem1-raw').text(checkState.tem1 ? checkState.tem1.raw : '-');
-    $('#tem1-product').text(checkState.tem1 ? checkState.tem1.product : '-');
-    $('#tem1-qty').text(checkState.tem1 ? formatQuantity(checkState.tem1.qty) : '-');
+    const tem1RawText = checkState.tem1
+        ? (checkState.tem1.boxCode ? checkState.tem1.raw + ' [' + checkState.tem1.boxCode + ']' : checkState.tem1.raw)
+        : '-';
+    const tem1ProductText = checkState.tem1
+        ? (checkState.tem1.product || (checkState.pendingTem1Lookup ? 'Đang tải...' : '-'))
+        : '-';
+    const tem1QtyText = checkState.tem1
+        ? (checkState.tem1.qty !== null && checkState.tem1.qty !== undefined ? formatQuantity(checkState.tem1.qty) : (checkState.pendingTem1Lookup ? '...' : '-'))
+        : '-';
+
+    $('#tem1-raw').text(tem1RawText);
+    $('#tem1-product').text(tem1ProductText);
+    $('#tem1-qty').text(tem1QtyText);
 
     $('#tem2-raw').text(checkState.tem2 ? checkState.tem2.raw : '-');
     $('#tem2-product').text(checkState.tem2 ? checkState.tem2.product : '-');
@@ -364,6 +364,7 @@ function resetScanCycle(showNotice) {
     checkState.tem1 = null;
     checkState.tem2 = null;
     checkState.blockedByError = false;
+    checkState.pendingTem1Lookup = false;
 
     hideScanError();
     hideResultCard();
@@ -442,7 +443,7 @@ function logCheckResult(resultCode, resultMessage, productMatch, qtyMatch) {
 }
 
 function evaluateCurrentPair() {
-    if (!checkState.tem1 || !checkState.tem2) return;
+    if (!checkState.tem1 || !checkState.tem2 || checkState.pendingTem1Lookup) return;
 
     const productMatch = normalizeProductId(checkState.tem1.product) === normalizeProductId(checkState.tem2.product);
     const qtyMatch = Number(checkState.tem1.qty) === Number(checkState.tem2.qty);
@@ -472,6 +473,51 @@ function evaluateCurrentPair() {
     showErrorModal(modalMessage);
 }
 
+function resolveTem1Inventory(parsedTem1) {
+    checkState.pendingTem1Lookup = true;
+    updateCaptureView();
+    setWorkflowStatus('Đang tra mã thùng Tem 1', 'text-amber-700');
+
+    $.getJSON('api.php?action=get_check_box_tem1_inventory', { box_code: parsedTem1.boxCode })
+        .done(function(res) {
+            checkState.pendingTem1Lookup = false;
+
+            if (!res || !res.success) {
+                checkState.tem1 = null;
+                showScanError((res && res.message) ? res.message : 'Không tra được dữ liệu Tem 1 từ wms_inventory');
+                setWorkflowStatus('Tem 1 không hợp lệ', 'text-red-700');
+                updateCaptureView();
+                queueFocusScanInput();
+                return;
+            }
+
+            checkState.tem1 = {
+                type: 'tem1',
+                raw: parsedTem1.raw,
+                boxCode: parsedTem1.boxCode,
+                product: normalizeProductId(res.product_id),
+                qty: parseQuantity(res.quantity)
+            };
+
+            updateCaptureView();
+
+            if (checkState.tem2) {
+                evaluateCurrentPair();
+            } else {
+                setWorkflowStatus('Đã nhận Tem 1, quét Tem 2', 'text-sky-700');
+                queueFocusScanInput();
+            }
+        })
+        .fail(function() {
+            checkState.pendingTem1Lookup = false;
+            checkState.tem1 = null;
+            showScanError('Không kết nối được API tra mã thùng Tem 1');
+            setWorkflowStatus('Lỗi tra cứu Tem 1', 'text-red-700');
+            updateCaptureView();
+            queueFocusScanInput();
+        });
+}
+
 function handleScanSubmit(scannedRaw) {
     if (checkState.blockedByError || $('#check-error-modal').css('display') !== 'none') {
         return;
@@ -498,9 +544,19 @@ function handleScanSubmit(scannedRaw) {
         return;
     }
 
+    if (checkState.pendingTem1Lookup && parsed.type !== 'tem2') {
+        showScanError('Đang tra dữ liệu Tem 1, vui lòng quét Tem 2 hoặc chờ trong giây lát');
+        $('#check-scan-input').val('');
+        queueFocusScanInput();
+        return;
+    }
+
     if (parsed.type === 'tem1') {
         checkState.tem1 = parsed;
-        setWorkflowStatus('Đã nhận Tem 1, quét Tem 2', 'text-sky-700');
+        $('#check-scan-input').val('');
+        updateCaptureView();
+        resolveTem1Inventory(parsed);
+        return;
     } else {
         checkState.tem2 = parsed;
         setWorkflowStatus('Đã nhận Tem 2, quét Tem 1', 'text-sky-700');

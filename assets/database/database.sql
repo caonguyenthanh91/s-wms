@@ -125,6 +125,7 @@ CREATE TABLE `export_temp` (
   `total_qty` int(11) NOT NULL,
   `bucket_qty` int(11) NOT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `order_code` varchar(120) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_export_temp_command` (`command`),
   KEY `idx_export_temp_product_id` (`product_id`),

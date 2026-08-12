@@ -440,8 +440,7 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
             const currentPage = '<?php echo addslashes($page); ?>';
 
             if (appContainer && isMobileSidebarMode()) {
-                // PDA portrait: mac dinh thu gon menu, mo bang cach cham header S-WMS.
-                appContainer.classList.remove('mobile-sidebar-open');
+                // PDA portrait: giu nguyen trang thai mo/doi cua menu, khong tu dong dong khi viewport thay doi.
                 appContainer.classList.remove('sidebar-collapsed');
                 return;
             }
@@ -602,8 +601,6 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
             if (window.innerWidth >= 768) {
                 const nav = document.getElementById('sidebar-nav');
                 if (nav) nav.classList.remove('hidden');
-            } else {
-                closeMobileSidebarMenu();
             }
         });
     </script>
