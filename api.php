@@ -65,6 +65,7 @@ function ensure_export_log_schema(PDO $pdo) {
             quantity INT(11) NOT NULL,
             created_by VARCHAR(50) NOT NULL,
             status ENUM('picking','packing','pickup') NOT NULL,
+            idempotency_key VARCHAR(255) NULL UNIQUE,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY idx_export_log_command_case (command, case_no),
@@ -73,8 +74,22 @@ function ensure_export_log_schema(PDO $pdo) {
             KEY idx_export_log_created_by (created_by),
             KEY idx_export_log_created_at (created_at),
             KEY idx_export_log_command_case_status (command, case_no, status),
-            KEY idx_export_log_command_case_product_status (command, case_no, product_id, status)
+            KEY idx_export_log_command_case_product_status (command, case_no, product_id, status),
+            UNIQUE KEY idx_export_log_idempotency (idempotency_key)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    } catch (Throwable $e) {}
+
+    // Add idempotency_key column if it doesn't exist
+    try {
+        $columns = $pdo->query('SHOW COLUMNS FROM export_log')->fetchAll(PDO::FETCH_ASSOC);
+        $columnNames = [];
+        foreach ($columns as $column) {
+            $columnName = $column['Field'] ?? '';
+            if ($columnName !== '') $columnNames[$columnName] = true;
+        }
+        if (!isset($columnNames['idempotency_key'])) {
+            $pdo->exec('ALTER TABLE export_log ADD COLUMN idempotency_key VARCHAR(255) NULL UNIQUE');
+        }
     } catch (Throwable $e) {}
 }
 
@@ -126,6 +141,38 @@ function ensure_wms_inventory_schema(PDO $pdo) {
             KEY idx_wms_inventory_box_code (box_code),
             KEY idx_wms_inventory_product_id (product_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    } catch (Throwable $e) {}
+}
+
+function ensure_inventory_schema(PDO $pdo) {
+    static $checked = false;
+    if ($checked) return;
+    $checked = true;
+
+    // Gộp các dòng bị trùng shelf_id+product_id (phát sinh trước khi có UNIQUE KEY)
+    // trước khi thêm ràng buộc, nếu không ALTER TABLE bên dưới sẽ báo lỗi duplicate entry.
+    try {
+        $dupStmt = $pdo->query(
+            "SELECT shelf_id, product_id, MIN(id) AS keep_id, SUM(quantity) AS total_qty
+             FROM inventory
+             WHERE shelf_id IS NOT NULL AND product_id IS NOT NULL
+             GROUP BY shelf_id, product_id
+             HAVING COUNT(*) > 1"
+        );
+        $dupGroups = $dupStmt ? $dupStmt->fetchAll(PDO::FETCH_ASSOC) : [];
+        foreach ($dupGroups as $group) {
+            $pdo->prepare("UPDATE inventory SET quantity = ? WHERE id = ?")
+                ->execute([$group['total_qty'], $group['keep_id']]);
+            $pdo->prepare("DELETE FROM inventory WHERE shelf_id = ? AND product_id = ? AND id <> ?")
+                ->execute([$group['shelf_id'], $group['product_id'], $group['keep_id']]);
+        }
+    } catch (Throwable $e) {}
+
+    try {
+        $indexes = $pdo->query("SHOW INDEX FROM inventory WHERE Key_name = 'uk_inventory_shelf_product'")->fetchAll();
+        if (!$indexes) {
+            $pdo->exec("ALTER TABLE inventory ADD UNIQUE KEY uk_inventory_shelf_product (shelf_id, product_id)");
+        }
     } catch (Throwable $e) {}
 }
 
@@ -1025,6 +1072,7 @@ switch ($action) {
         }
 
         try {
+            ensure_inventory_schema($pdo);
             $pdo->beginTransaction();
             $user = current_user();
             $created_by = $user['username'] ?? 'system'; // Use username for transaction logging
@@ -1089,18 +1137,12 @@ switch ($action) {
                 $stmt = $pdo->prepare("INSERT INTO transactions (product_id, shelf_id, quantity, type, created_by, created_at) VALUES (?, ?, ?, 'OUT', ?, NOW())");
                 $stmt->execute([$p_pk, $current_shelf_pk, $qty_to_transfer, $created_by]);
 
-                // Increment/Insert quantity on new shelf
-                $stmt = $pdo->prepare("SELECT id FROM inventory WHERE shelf_id = ? AND product_id = ?");
-                $stmt->execute([$new_shelf_pk, $p_pk]);
-                $inv_on_new_shelf = $stmt->fetch(PDO::FETCH_ASSOC);
-
-                if ($inv_on_new_shelf) {
-                    $stmt = $pdo->prepare("UPDATE inventory SET quantity = quantity + ? WHERE id = ?");
-                    $stmt->execute([$qty_to_transfer, $inv_on_new_shelf['id']]);
-                } else {
-                    $stmt = $pdo->prepare("INSERT INTO inventory (shelf_id, product_id, quantity) VALUES (?, ?, ?)");
-                    $stmt->execute([$new_shelf_pk, $p_pk, $qty_to_transfer]);
-                }
+                // Increment/Insert quantity on new shelf (atomic, tránh sinh dòng trùng)
+                $stmt = $pdo->prepare(
+                    "INSERT INTO inventory (shelf_id, product_id, quantity) VALUES (?, ?, ?)
+                     ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)"
+                );
+                $stmt->execute([$new_shelf_pk, $p_pk, $qty_to_transfer]);
 
                 // Update new shelf usage
                 $stmt = $pdo->prepare("UPDATE shelves SET current_usage = current_usage + ? WHERE id = ?");
@@ -1137,6 +1179,46 @@ switch ($action) {
             } else {
                 echo json_encode(['success' => false, 'message' => 'Lỗi khi thêm sản phẩm: ' . $e->getMessage()]);
             }
+        }
+        break;
+
+    case 'verify_export_log':
+        require_role(['Admin','Leader','Manager','Staff']);
+        $command = strtoupper($_GET['command'] ?? '');
+        $product_id = strtoupper($_GET['product_id'] ?? '');
+        $batch_id = $_GET['batch_id'] ?? '';
+
+        if (!$command || !$product_id) {
+            echo json_encode(['success' => false, 'message' => 'Thiếu thông tin command hoặc product_id']);
+            exit;
+        }
+
+        try {
+            ensure_export_log_schema($pdo);
+
+            // Kiểm tra export_log có được ghi không
+            if ($batch_id) {
+                $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM export_log WHERE idempotency_key LIKE ? AND status = 'picking'");
+                $stmt->execute([$batch_id . '%']);
+            } else {
+                $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM export_log WHERE command = ? AND product_id = ? AND status = 'picking' ORDER BY created_at DESC LIMIT 5");
+                $stmt->execute([$command, $product_id]);
+            }
+
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            $logCount = (int)($result['count'] ?? 0);
+
+            echo json_encode([
+                'success' => true,
+                'log_recorded' => $logCount > 0,
+                'log_count' => $logCount,
+                'message' => $logCount > 0 ? 'Export log đã được ghi' : 'Export log chưa được tìm thấy'
+            ]);
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false,
+                'message' => $e->getMessage()
+            ]);
         }
         break;
 
@@ -1209,6 +1291,7 @@ switch ($action) {
         $product_id = strtoupper($_POST['product_id']);
         $qty = (int)$_POST['quantity'];
         try {
+            ensure_inventory_schema($pdo);
             $pdo->beginTransaction();
             $stmt = $pdo->prepare("SELECT id FROM shelves WHERE shelf_id = ? AND (status != 'Deactive' OR status IS NULL)");
             $stmt->execute([$shelf_id]);
@@ -1222,16 +1305,13 @@ switch ($action) {
             if (!$product) throw new Exception("Mã sản phẩm $product_id không tồn tại trong hệ thống!");
             $p_pk = $product['id'];
 
-            $stmt = $pdo->prepare("SELECT id FROM inventory WHERE shelf_id = ? AND product_id = ?");
-            $stmt->execute([$s_pk, $p_pk]);
-            $inv = $stmt->fetch();
-            if ($inv) {
-                $stmt = $pdo->prepare("UPDATE inventory SET quantity = quantity + ? WHERE id = ?");
-                $stmt->execute([$qty, $inv['id']]);
-            } else {
-                $stmt = $pdo->prepare("INSERT INTO inventory (shelf_id, product_id, quantity) VALUES (?, ?, ?)");
-                $stmt->execute([$s_pk, $p_pk, $qty]);
-            }
+            // INSERT ... ON DUPLICATE KEY UPDATE để thao tác atomic, tránh race condition
+            // sinh ra 2 dòng inventory trùng shelf_id+product_id khi có request đồng thời.
+            $stmt = $pdo->prepare(
+                "INSERT INTO inventory (shelf_id, product_id, quantity) VALUES (?, ?, ?)
+                 ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)"
+            );
+            $stmt->execute([$s_pk, $p_pk, $qty]);
 
             $stmt = $pdo->prepare("UPDATE shelves SET current_usage = current_usage + ? WHERE id = ?");
             $stmt->execute([$qty, $s_pk]);
@@ -1390,10 +1470,31 @@ switch ($action) {
         $command = strtoupper(trim($_POST['command'] ?? ''));
         $case_no = strtoupper(trim($_POST['case_no'] ?? '001'));
         $is_picking = (int)($_POST['is_picking'] ?? 0);
+        $idempotency_key = $_POST['idempotency_key'] ?? null;
 
         // Đảm bảo bảng export_log tồn tại TRƯỚC transaction
         if ($is_picking && $command) {
             ensure_export_log_schema($pdo);
+        }
+        ensure_inventory_schema($pdo);
+
+        // Kiểm tra nếu request này đã được xử lý trước đó (idempotency check)
+        if ($idempotency_key && $is_picking && $command) {
+            $stmt = $pdo->prepare("SELECT id FROM export_log WHERE idempotency_key = ?");
+            $stmt->execute([$idempotency_key]);
+            $existingLog = $stmt->fetch();
+            if ($existingLog) {
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Request đã được xử lý (idempotent)',
+                    'transaction_time' => date('Y-m-d H:i:s'),
+                    'shelf_id' => $shelf_id,
+                    'product_id' => $product_id,
+                    'quantity' => $qty,
+                    'is_duplicate' => true,
+                ]);
+                exit;
+            }
         }
 
         $debug_context = [
@@ -1467,8 +1568,8 @@ switch ($action) {
             $stmt->execute([$p_pk, $s_pk, $qty, $created_by]);
 
             if ($is_picking && $command) {
-                $stmt = $pdo->prepare("INSERT INTO export_log (command, case_no, product_id, quantity, created_by, status, created_at) VALUES (?, ?, ?, ?, ?, 'picking', NOW())");
-                $stmt->execute([$command, $case_no, $product_id, $qty, $created_by]);
+                $stmt = $pdo->prepare("INSERT INTO export_log (command, case_no, product_id, quantity, created_by, status, idempotency_key, created_at) VALUES (?, ?, ?, ?, ?, 'picking', ?, NOW())");
+                $stmt->execute([$command, $case_no, $product_id, $qty, $created_by, $idempotency_key]);
             }
 
             $transactionTime = date('Y-m-d H:i:s');
@@ -1572,8 +1673,9 @@ switch ($action) {
         }
 
         try {
+            ensure_inventory_schema($pdo);
             $pdo->beginTransaction();
-            
+
             // Lấy ID thực của kệ và sản phẩm
             $stmt = $pdo->prepare("SELECT id FROM shelves WHERE shelf_id = ?");
             $stmt->execute([$shelf_id_code]);
@@ -1588,20 +1690,18 @@ switch ($action) {
             $s_pk = $shelf['id'];
             $p_pk = $product['id'];
 
-            // Kiểm tra tồn kho hiện tại để tính toán chênh lệch (diff)
-            $stmt = $pdo->prepare("SELECT id, quantity FROM inventory WHERE shelf_id = ? AND product_id = ?");
+            // Kiểm tra tồn kho hiện tại để tính toán chênh lệch (diff); khóa dòng để tránh race.
+            $stmt = $pdo->prepare("SELECT id, quantity FROM inventory WHERE shelf_id = ? AND product_id = ? FOR UPDATE");
             $stmt->execute([$s_pk, $p_pk]);
             $inv = $stmt->fetch();
             $old_qty = $inv ? (int)$inv['quantity'] : 0;
             $diff = $new_qty - $old_qty;
 
-            if ($inv) {
-                $stmt = $pdo->prepare("UPDATE inventory SET quantity = ? WHERE id = ?");
-                $stmt->execute([$new_qty, $inv['id']]);
-            } else {
-                $stmt = $pdo->prepare("INSERT INTO inventory (shelf_id, product_id, quantity) VALUES (?, ?, ?)");
-                $stmt->execute([$s_pk, $p_pk, $new_qty]);
-            }
+            $stmt = $pdo->prepare(
+                "INSERT INTO inventory (shelf_id, product_id, quantity) VALUES (?, ?, ?)
+                 ON DUPLICATE KEY UPDATE quantity = VALUES(quantity)"
+            );
+            $stmt->execute([$s_pk, $p_pk, $new_qty]);
 
             // Cập nhật current_usage của kệ dựa trên chênh lệch
             $stmt = $pdo->prepare("UPDATE shelves SET current_usage = current_usage + ? WHERE id = ?");
@@ -2913,8 +3013,10 @@ switch ($action) {
 
         // Picking: Sản phẩm chưa picking xong (group by command + product_id chỉ)
         if ($type === 'picking' || $type === 'all') {
+            // Tính required_qty từ export_temp (lệnh picking gốc)
             $stmt = $pdo->prepare(
                 "SELECT
+                    required.command,
                     required.product_id,
                     required.order_code,
                     required.required_qty,
@@ -2932,10 +3034,15 @@ switch ($action) {
                         GROUP BY command, product_id
                     ) AS required
                 LEFT JOIN
-                    (SELECT command, product_id, SUM(quantity) as picked_qty FROM export_log WHERE command = ? AND status = 'picking' GROUP BY command, product_id) AS picked
+                    (
+                        SELECT command, product_id, SUM(quantity) as picked_qty
+                        FROM export_log
+                        WHERE command = ? AND status = 'picking'
+                        GROUP BY command, product_id
+                    ) AS picked
                 ON required.command = picked.command AND required.product_id = picked.product_id
                 WHERE required.required_qty > COALESCE(picked.picked_qty, 0)
-                ORDER BY required.product_id"
+                ORDER BY required.product_id ASC"
             );
             $stmt->execute([$command, $command]);
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
