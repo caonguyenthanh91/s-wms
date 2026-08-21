@@ -1,11 +1,84 @@
 <?php
 require_once 'config/db.php';
-ini_set('session.gc_maxlifetime', 28800);
-session_set_cookie_params(28800);
-session_start();
+require_once 'config/session_init.php';
+
+const AUTH_COOKIE_NAME = 'wms_auth';
+
 header('Content-Type: application/json');
 
 $action = $_GET['action'] ?? '';
+
+function ensure_user_token_schema(PDO $pdo) {
+    static $checked = false;
+    if ($checked) return;
+    $checked = true;
+    try {
+        $columns = $pdo->query('SHOW COLUMNS FROM log_users')->fetchAll(PDO::FETCH_ASSOC);
+        $columnNames = [];
+        foreach ($columns as $column) {
+            $columnName = $column['Field'] ?? '';
+            if ($columnName !== '') $columnNames[$columnName] = true;
+        }
+        if (!isset($columnNames['remember_token']))
+            $pdo->exec('ALTER TABLE log_users ADD COLUMN remember_token VARCHAR(64) DEFAULT NULL AFTER status');
+        if (!isset($columnNames['remember_token_expires']))
+            $pdo->exec('ALTER TABLE log_users ADD COLUMN remember_token_expires DATETIME DEFAULT NULL AFTER remember_token');
+    } catch (Throwable $e) {}
+}
+
+function issue_auth_cookie(PDO $pdo, array $user) {
+    ensure_user_token_schema($pdo);
+    $token = bin2hex(random_bytes(32));
+    $expires = date('Y-m-d H:i:s', time() + AUTH_SESSION_LIFETIME);
+    $stmt = $pdo->prepare('UPDATE log_users SET remember_token = ?, remember_token_expires = ? WHERE id = ?');
+    $stmt->execute([hash('sha256', $token), $expires, $user['id']]);
+
+    $authCookieSecure = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+    setcookie(AUTH_COOKIE_NAME, $user['id'] . ':' . $token, [
+        'expires'  => time() + AUTH_SESSION_LIFETIME,
+        'path'     => '/',
+        'secure'   => $authCookieSecure,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+}
+
+function clear_auth_cookie(PDO $pdo) {
+    if (isset($_SESSION['user']['id'])) {
+        ensure_user_token_schema($pdo);
+        $stmt = $pdo->prepare('UPDATE log_users SET remember_token = NULL, remember_token_expires = NULL WHERE id = ?');
+        $stmt->execute([$_SESSION['user']['id']]);
+    }
+    $authCookieSecure = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+    setcookie(AUTH_COOKIE_NAME, '', [
+        'expires'  => time() - 3600,
+        'path'     => '/',
+        'secure'   => $authCookieSecure,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+}
+
+function restore_session_from_cookie(PDO $pdo) {
+    if (isset($_SESSION['user']) || empty($_COOKIE[AUTH_COOKIE_NAME])) return;
+    $parts = explode(':', $_COOKIE[AUTH_COOKIE_NAME], 2);
+    if (count($parts) !== 2) return;
+    [$userId, $token] = $parts;
+    if (!ctype_digit($userId) || $token === '') return;
+
+    ensure_user_token_schema($pdo);
+    $stmt = $pdo->prepare('SELECT id, username, full_name, role, status, remember_token, remember_token_expires FROM log_users WHERE id = ? LIMIT 1');
+    $stmt->execute([$userId]);
+    $u = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$u || !$u['status'] || !$u['remember_token'] || !$u['remember_token_expires']) return;
+    if (strtotime($u['remember_token_expires']) < time()) return;
+    if (!hash_equals($u['remember_token'], hash('sha256', $token))) return;
+
+    $_SESSION['user'] = ['id'=>$u['id'],'username'=>$u['username'],'full_name'=>$u['full_name'],'role'=>$u['role']];
+    issue_auth_cookie($pdo, $_SESSION['user']); // rolling 8h expiry
+}
+
+restore_session_from_cookie($pdo);
 
 function current_user() {
     return isset($_SESSION['user']) ? $_SESSION['user'] : null;
@@ -645,10 +718,12 @@ switch ($action) {
         $_SESSION['user'] = ['id'=>$u['id'],'username'=>$u['username'],'full_name'=>$u['full_name'],'role'=>$u['role']];
         $stmt = $pdo->prepare('UPDATE log_users SET last_login = NOW() WHERE id = ?');
         $stmt->execute([$u['id']]);
+        issue_auth_cookie($pdo, $_SESSION['user']);
         echo json_encode(['success'=>true,'user'=>$_SESSION['user']]);
         break;
 
     case 'logout':
+        clear_auth_cookie($pdo);
         session_unset(); session_destroy();
         echo json_encode(['success'=>true]);
         break;
@@ -914,12 +989,33 @@ switch ($action) {
 
     case 'get_pending_pallets':
         require_role(['Admin','Leader','Manager','Staff']);
-        $stmt = $pdo->query("SELECT pallet_id, MAX(created_at) as created_at, MAX(created_by) as created_by, COUNT(*) as sku_count 
-                            FROM import_temp 
-                            WHERE status IS NULL OR status = ''
-                            GROUP BY pallet_id 
-                            ORDER BY created_at DESC");
-        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+        $keyword = strtoupper(trim($_GET['keyword'] ?? ''));
+        $like = '%' . $keyword . '%';
+
+        $stmt = $pdo->prepare("SELECT it.pallet_id,
+                                       MAX(it.created_at) AS created_at,
+                                       MAX(it.created_by) AS created_by,
+                                       COUNT(DISTINCT it.id) AS sku_count,
+                                       CASE
+                                           WHEN MAX(il.status = 'IMPORTED') = 1 THEN 'IMPORTED'
+                                           WHEN MAX(il.status = 'RECEIVED') = 1 THEN 'RECEIVED'
+                                           ELSE 'PENDING'
+                                       END AS pallet_status
+                                FROM import_temp it
+                                LEFT JOIN import_log il ON il.pallet_id = it.pallet_id
+                                WHERE (it.status IS NULL OR it.status = '')
+                                    AND (? = '' OR UPPER(it.pallet_id) LIKE ?)
+                                GROUP BY it.pallet_id
+                                HAVING pallet_status IN ('PENDING', 'RECEIVED')
+                                ORDER BY (MAX(il.status = 'RECEIVED') = 1) DESC, created_at DESC");
+        $stmt->execute([$keyword, $like]);
+        $pallets = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($pallets as &$p) {
+            $p['status'] = $p['pallet_status'];
+            unset($p['pallet_status']);
+        }
+        unset($p);
+        echo json_encode($pallets);
         break;
 
     case 'get_pallet_transfer_summary':
@@ -928,17 +1024,21 @@ switch ($action) {
         $like = '%' . $keyword . '%';
 
         $sql = "SELECT
-                    COUNT(*) AS total_pallets,
-                    SUM(CASE WHEN x.is_transferred = 1 THEN 1 ELSE 0 END) AS transferred_pallets,
-                    SUM(CASE WHEN x.is_transferred = 0 THEN 1 ELSE 0 END) AS pending_pallets
+                    SUM(x.current_status = 'PENDING') AS pending_pallets,
+                    SUM(x.current_status = 'RECEIVED') AS received_pallets
                 FROM (
                     SELECT
-                        pallet_id,
-                        CASE WHEN MAX(CASE WHEN status IS NOT NULL AND TRIM(status) <> '' THEN 1 ELSE 0 END) = 1 THEN 1 ELSE 0 END AS is_transferred
-                    FROM import_temp
-                    WHERE (? = '' OR UPPER(pallet_id) LIKE ?)
-                    GROUP BY pallet_id
-                ) x";
+                        il.pallet_id,
+                        CASE
+                            WHEN MAX(il.status = 'IMPORTED') = 1 THEN 'IMPORTED'
+                            WHEN MAX(il.status = 'RECEIVED') = 1 THEN 'RECEIVED'
+                            ELSE 'PENDING'
+                        END AS current_status
+                    FROM import_log il
+                    WHERE (? = '' OR UPPER(il.pallet_id) LIKE ?)
+                    GROUP BY il.pallet_id
+                ) x
+                WHERE x.current_status IN ('PENDING', 'RECEIVED')";
 
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$keyword, $like]);
@@ -946,9 +1046,8 @@ switch ($action) {
 
         echo json_encode([
             'success' => true,
-            'total_pallets' => (int)($summary['total_pallets'] ?? 0),
-            'transferred_pallets' => (int)($summary['transferred_pallets'] ?? 0),
             'pending_pallets' => (int)($summary['pending_pallets'] ?? 0),
+            'received_pallets' => (int)($summary['received_pallets'] ?? 0),
             'keyword' => $keyword,
         ]);
         break;
@@ -962,8 +1061,29 @@ switch ($action) {
             break;
         }
 
+        // Chỉ cho phép lên kệ khi pallet đã được xác nhận nhận hàng (RECEIVED) tại kho tổng
+        $stmt = $pdo->prepare("SELECT status FROM import_log WHERE pallet_id = ?");
+        $stmt->execute([$pallet_id]);
+        $logStatuses = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        if (in_array('IMPORTED', $logStatuses, true)) {
+            echo json_encode(['success' => false, 'message' => "Pallet $pallet_id đã lên kệ trước đó"]);
+            break;
+        }
+        if (!in_array('RECEIVED', $logStatuses, true)) {
+            echo json_encode(['success' => false, 'message' => "Pallet $pallet_id chưa được xác nhận nhận hàng (RECEIVED), không thể lên kệ"]);
+            break;
+        }
+
+        $user = current_user();
+        $created_by = $user['username'] ?? 'system';
+
         $stmt = $pdo->prepare("UPDATE import_temp SET status = ? WHERE pallet_id = ? AND (status IS NULL OR status = '')");
         $stmt->execute([$shelf_id, $pallet_id]);
+
+        // Ghi nhận dòng thứ 3: pallet_id + status = IMPORTED kèm thời gian
+        $stmt = $pdo->prepare("INSERT INTO import_log (pallet_id, status, created_by) VALUES (?, 'IMPORTED', ?)");
+        $stmt->execute([$pallet_id, $created_by]);
+
         echo json_encode(['success' => true]);
         break;
 
@@ -997,6 +1117,14 @@ switch ($action) {
         }
 
         try {
+            // Pallet đã được nhận tại kho tổng hoặc đã lên kệ thì không cho nhập thêm nữa
+            $stmt = $pdo->prepare("SELECT status FROM import_log WHERE pallet_id = ?");
+            $stmt->execute([$pallet_id]);
+            $logStatuses = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            if (in_array('IMPORTED', $logStatuses, true) || in_array('RECEIVED', $logStatuses, true)) {
+                throw new Exception("Pallet $pallet_id đã được nhận tại kho tổng, không thể nhập thêm hàng");
+            }
+
             // Kiểm tra sản phẩm tồn tại một lần nữa ở server side
             $stmt = $pdo->prepare("SELECT id FROM products WHERE product_id = ?");
             $stmt->execute([$part_no]);
@@ -1007,10 +1135,131 @@ switch ($action) {
 
             $stmt = $pdo->prepare("INSERT INTO import_temp (pallet_id, part_no, qty, created_by) VALUES (?, ?, ?, ?)");
             $stmt->execute([$pallet_id, $part_no, $qty, $created_by]);
+
+            // Ghi nhận trạng thái PENDING cho pallet (chỉ 1 dòng duy nhất theo pallet_id + status)
+            // Nếu đã có dòng PENDING thì chỉ cập nhật lại thời gian mới nhất.
+            $stmt = $pdo->prepare("INSERT INTO import_log (pallet_id, status, created_by) VALUES (?, 'PENDING', ?)
+                                    ON DUPLICATE KEY UPDATE created_by = VALUES(created_by), created_at = CURRENT_TIMESTAMP");
+            $stmt->execute([$pallet_id, $created_by]);
+
             echo json_encode(['success' => true]);
         } catch (Exception $e) {
             echo json_encode(['success' => false, 'message' => $e->getMessage()]);
         }
+        break;
+
+    case 'check_pallet_import_status':
+        require_role(['Admin','Leader','Manager','Staff']);
+        $pallet_id = strtoupper(trim($_GET['pallet_id'] ?? ''));
+        if ($pallet_id === '') {
+            echo json_encode(['success' => false, 'message' => 'Thiếu mã pallet']);
+            break;
+        }
+
+        $stmt = $pdo->prepare("SELECT status FROM import_log WHERE pallet_id = ?");
+        $stmt->execute([$pallet_id]);
+        $statuses = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+        if (in_array('IMPORTED', $statuses, true)) {
+            echo json_encode(['success' => false, 'status' => 'IMPORTED', 'message' => "Pallet $pallet_id đã được nhận tại kho tổng, không thể sử dụng lại"]);
+            break;
+        }
+        if (in_array('RECEIVED', $statuses, true)) {
+            echo json_encode(['success' => false, 'status' => 'RECEIVED', 'message' => "Pallet $pallet_id đã được nhận tại kho tổng, không thể sử dụng lại"]);
+            break;
+        }
+
+        echo json_encode(['success' => true, 'status' => in_array('PENDING', $statuses, true) ? 'PENDING' : null]);
+        break;
+
+    case 'pallet_receive_lookup':
+        require_role(['Admin','Leader','Manager','Staff']);
+        $pallet_id = strtoupper(trim($_GET['pallet_id'] ?? ''));
+        if ($pallet_id === '') {
+            echo json_encode(['success' => false, 'message' => 'Thiếu mã pallet']);
+            break;
+        }
+
+        $stmt = $pdo->prepare("SELECT status FROM import_log WHERE pallet_id = ?");
+        $stmt->execute([$pallet_id]);
+        $statuses = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+        if (in_array('IMPORTED', $statuses, true)) {
+            echo json_encode(['success' => false, 'status' => 'IMPORTED', 'message' => "Pallet $pallet_id đã lên kệ, không thể nhận lại"]);
+            break;
+        }
+
+        if (in_array('RECEIVED', $statuses, true)) {
+            echo json_encode(['success' => false, 'status' => 'RECEIVED', 'message' => "Pallet $pallet_id đã được xác nhận nhận hàng trước đó"]);
+            break;
+        }
+
+        if (!in_array('PENDING', $statuses, true)) {
+            echo json_encode(['success' => false, 'message' => "Pallet $pallet_id chưa được tạo ở bước nhận hàng (Import)"]);
+            break;
+        }
+
+        $sku_stmt = $pdo->prepare("SELECT COUNT(DISTINCT part_no) AS sku_count, SUM(qty) AS total_qty FROM import_temp WHERE pallet_id = ?");
+        $sku_stmt->execute([$pallet_id]);
+        $summary = $sku_stmt->fetch(PDO::FETCH_ASSOC);
+
+        $items_stmt = $pdo->prepare("SELECT it.part_no AS product_id,
+                                             COALESCE(p.product_name, '') AS product_name,
+                                             COUNT(*) AS box_count,
+                                             SUM(it.qty) AS quantity,
+                                             MAX(it.created_at) AS last_import_at
+                                      FROM import_temp it
+                                      LEFT JOIN products p ON p.product_id = it.part_no
+                                      WHERE it.pallet_id = ?
+                                      GROUP BY it.part_no, p.product_name
+                                      ORDER BY it.part_no ASC");
+        $items_stmt->execute([$pallet_id]);
+        $items = $items_stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($items as &$item) {
+            $item['box_count'] = (int)$item['box_count'];
+            $item['quantity'] = (int)$item['quantity'];
+        }
+        unset($item);
+
+        echo json_encode([
+            'success' => true,
+            'status' => 'PENDING',
+            'sku_count' => (int)($summary['sku_count'] ?? 0),
+            'total_qty' => (int)($summary['total_qty'] ?? 0),
+            'items' => $items,
+        ]);
+        break;
+
+    case 'pallet_receive_confirm':
+        require_role(['Admin','Leader','Manager','Staff']);
+        $pallet_id = strtoupper(trim($_POST['pallet_id'] ?? ''));
+        if ($pallet_id === '') {
+            echo json_encode(['success' => false, 'message' => 'Thiếu mã pallet']);
+            break;
+        }
+
+        $user = current_user();
+        $created_by = $user['username'] ?? 'system';
+
+        $stmt = $pdo->prepare("SELECT status FROM import_log WHERE pallet_id = ?");
+        $stmt->execute([$pallet_id]);
+        $statuses = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+        if (in_array('IMPORTED', $statuses, true) || in_array('RECEIVED', $statuses, true)) {
+            echo json_encode(['success' => false, 'message' => "Pallet $pallet_id đã được xác nhận nhận hàng trước đó"]);
+            break;
+        }
+
+        if (!in_array('PENDING', $statuses, true)) {
+            echo json_encode(['success' => false, 'message' => "Pallet $pallet_id chưa được tạo ở bước nhận hàng (Import)"]);
+            break;
+        }
+
+        // Ghi nhận dòng thứ 2: pallet_id + status = RECEIVED kèm thời gian
+        $stmt = $pdo->prepare("INSERT INTO import_log (pallet_id, status, created_by) VALUES (?, 'RECEIVED', ?)");
+        $stmt->execute([$pallet_id, $created_by]);
+
+        echo json_encode(['success' => true]);
         break;
     
         case 'get_products_on_shelf':
@@ -1024,11 +1273,17 @@ switch ($action) {
             break;
         }
 
-        $stmt = $pdo->prepare("SELECT s.id as shelf_pk, p.product_id, p.product_name, i.quantity 
-                              FROM inventory i 
-                              JOIN products p ON i.product_id = p.id 
-                              JOIN shelves s ON i.shelf_id = s.id 
-                              WHERE s.shelf_id = ? AND i.quantity > 0 
+        $stmt = $pdo->prepare("SELECT s.id as shelf_pk, p.product_id, p.product_name, i.quantity,
+                              (SELECT GROUP_CONCAT(DISTINCT s2.shelf_id ORDER BY s2.shelf_id SEPARATOR ', ')
+                                 FROM inventory i2
+                                 JOIN shelves s2 ON i2.shelf_id = s2.id
+                                 WHERE i2.product_id = p.id AND i2.quantity > 0
+                                 AND (s2.shelf_id LIKE '%B01%')
+                              ) as odd_shelves
+                              FROM inventory i
+                              JOIN products p ON i.product_id = p.id
+                              JOIN shelves s ON i.shelf_id = s.id
+                              WHERE s.shelf_id = ? AND i.quantity > 0
                               AND (s.status != 'Deactive' OR s.status IS NULL)");
         $stmt->execute([$shelf_id_code]);
         $products = $stmt->fetchAll(PDO::FETCH_ASSOC);

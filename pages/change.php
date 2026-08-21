@@ -33,7 +33,7 @@
                                     <input type="checkbox" id="select_all_products" class="form-checkbox h-4 w-4 text-blue-600 transition duration-150 ease-in-out">
                                 </th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mã SP</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tên SP</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kệ lẻ</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tồn kho</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Số lượng chuyển</th>
                             </tr>
@@ -74,6 +74,8 @@
 
 <script>
 $(document).ready(function() {
+    attachScanOnlyGuard('#current_shelf_id, #new_shelf_id');
+
     let currentShelfProducts = []; // Stores products from the current shelf
     let newShelfExists = false;
 
@@ -134,7 +136,7 @@ $(document).ready(function() {
                                     <input type="checkbox" class="product-checkbox h-4 w-4 text-blue-600 transition duration-150 ease-in-out" data-product-id="${product.product_id}" data-quantity="${product.quantity}" checked>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${product.product_id}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${product.product_name}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${product.odd_shelves || '-'}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${product.quantity}</td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <input type="number" class="transfer-qty-input w-24 border-gray-300 rounded-md shadow-sm" value="${product.quantity}" min="1" max="${product.quantity}" data-product-id="${product.product_id}">

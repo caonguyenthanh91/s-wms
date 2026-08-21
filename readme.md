@@ -1,169 +1,404 @@
 # Đây là dự án quản lý kho thông minh Smart WMS (S-WMS).
-Dự án này nhằm mục đích cung cấp một giải pháp quản lý kho hiệu quả, giúp doanh nghiệp tối ưu hóa quy trình nhập xuất kho, quản lý tồn kho và phân quyền người dùng. Đồng thời, kiểm soát các luồng nghiệp vụ nhập xuất kho phòng chống nhầm lẫn nhập xuất hàng thông qua việc sử dụng mã QR và các quy trình xác nhận chặt chẽ.
+Dự án này nhằm mục đích cung cấp một giải pháp quản lý kho hiệu quả, giúp doanh nghiệp tối ưu hóa quy trình nhập xuất kho, quản lý tồn kho và phân quyền người dùng. 
+Đồng thời, kiểm soát các luồng nghiệp vụ nhập xuất kho phòng chống nhầm lẫn nhập xuất hàng thông qua việc sử dụng mã QR và các quy trình xác nhận chặt chẽ.
 
 ## Yêu cầu dự án
-Xây dựng bằng ngôn ngữ lập trình website dễ bảo trì: PHP, CSS, JS. Chạy offline cho mạng nội bộ Công ty.
-Giao diện phải tối ưu cho cả màn hình lớn (PC/Laptop/Tablets) và cả màn hình nhỏ (PDA chuyên dụng/Smartphone).
-Giao diện chức năng tập trung vào các khu vực nhập liệu, nút nhấn, con số thay vì các chú thích dài dòng.
-
-### Các chức năng nhập kho (tăng tồn)
-**Pallet >>> kệ (transfer.php)**: Một hình thức nhập kho bằng cách chuyển đổi tất cả các hàng hóa được đăng ký trên pallet lên vị trí kệ chỉ định để bảo quản. Thực hiện tăng tồn, đồng thời ghi nhận lịch sử ai, lúc nào nhập kho (trạng thái IN).
-**Nhập kho (inbound.php)**: Luồng nhập kho cơ bản, thường dùng cho cấp Leader để điều chỉnh tăng tồn, đồng thời lưu lịch sử ai, lúc nào nhập kho (trạng thái IN).
-### Các chức năng xuất kho (giảm tồn)
-**Picking (picking.php)**: Luồng nghiệp vụ picking theo chỉ thị (Invoice), kiểm soát tối đa sai sót thông qua việc xác nhận QR mã vị trí, QR mã hàng chứa định lượng. Picking đúng chỗ, đúng mã hàng, đúng số lượng. Trừ tồn tương tự luồng Nhập kho. Ngoài ghi nhận lịch sử trừ tồn, còn ghi nhận lịch sử picking theo Invoice.
-**Xuất kho (outbound.php)**: Luồng xuất kho cơ bản, thường dùng cho cấp Leader để trừ tồn, đồng thời lưu lịch sử ai, lúc nào xuất kho (trạng thái OUT).
-
-### Các chức năng quản lý (tồn kho, master)
-**Tồn kho (inventory.php)**: Cho phép tra cứu tồn kho theo mã hàng, mã vị trí, mã pallet đầu vào.
-**Đổi kệ (change.php)**: Cho phép đổi toàn bộ mã hàng hoặc một mã hàng trong kệ với số lượng tùy chỉnh sang kệ khác nhanh chóng. Thực hiện 2 lệnh trừ tồn ở vị trí cũ và cộng tồn vào vị trí mới, đồng thời ghi nhận lịch sử ai, lúc nào trừ tồn, cộng tồn.
-**Sản phẩm (product.php)**: Cho phép đăng ký mới Master sản phẩm vào hệ thống.
-**Kệ hàng (shelves.php)**: Cho phép đăng ký mới Master kệ hàng vào hệ thống.
-**Layout (layout.php)**: Thể hiện trực quan các vị trí kệ đang có hay không có hàng hóa hay không thông qua màu sắc. Dùng 2 cấp để biến layout kệ hàng 3D thành các cấp nhỏ 2D.
-**Dashboard (dashboard.php)**: Thể hiện danh sách các Invoice theo ngày và tiến độ picking (theo số items), packing (theo items), pickup (theo số kiện hàng, ngày bốc hàng lên xe).
-**Monitor (monitor.php)**: Bảng giám sát tiến độ xuất hàng theo Invoice (`command`), tiến độ picking theo items (`product_id` duy nhất của invoice), tiến độ packing theo items (`product_id` duy nhất của invoice), tiến độ pickup theo số kiện hàng (`case_no` duy nhất của invoice).
-
-### Các chức năng phụ trợ
-**Nhận Pallet (import.php)**: Nhận các pallet hàng hóa đã được đăng ký thông tin (Mã hàng, số lượng) trên hệ thống từ các Nhà máy tập trung về. Ghi nhận người, thời điểm đăng ký thông tin pallet.
-**Packing (packing.php)**: Phân bổ đơn hàng đã picking theo kiện nhỏ trong mỗi chỉ thị (Invoice), kiểm soát mã QR trên thùng hàng khớp với packing list, hỗ trợ in đúng tem Xuất hàng cho từng thùng hàng, shipping mark. Ghi nhận lịch sử packing theo Invoice.
-**Pickup (pickup.php)**: Xác nhận kiện hàng (số lượng thùng, nơi xuất, số Invoice,...) có trùng với thông tin trên tem do Phòng Xuất nhập khẩu in. Ghi nhận lịch sử pickup.
-**In phiếu picking (print.php)**: Phiếu in nhiệt 80x80mm chứa thông tin mã hàng cần picking theo từng Invoice, picking gộp theo mã hàng.
-**In tem Invoice (print_case.php)**: In tem QR chứa thông tin xác nhận của từng Invoice, từng kiện để tách kiện từ hàng hóa đã picking gộp.
-**In tem Pallet (print_pallet.php)**: In tem dán cho Pallet đầu vào, đảm bảo Tem được tạo ra là duy nhất (chưa từng đăng ký).
-**Nhập dữ liệu (import_data.php)**: Cho phép import các dữ liệu từ nguồn Excel vào hệ thống.
-**Xuất dữ liệu (export_data.php)**: Cho phép xuất các dữ liệu từ hệ thống ra Excel.
-**Quản trị (admin.php)**: Quản trị và phân quyền người dùng được phép truy cập đến mức nào trong hệ thống.
-
-## Chi tiết luồng chức năng chính
-
-### Phân quyền truy cập/ thao tác (Role)
+* Xây dựng bằng ngôn ngữ lập trình website dễ bảo trì: PHP, CSS, JS. Chạy offline cho mạng nội bộ Công ty.
+* Giao diện phải tối ưu cho cả màn hình lớn (PC/Laptop/Tablets) và cả màn hình nhỏ (PDA chuyên dụng/Smartphone). Giao diện chức năng tập trung vào các khu vực nhập liệu, nút nhấn, con số, thẻ cảnh báo thay vì các chú thích dài dòng.
+* Tất cả thao tác từ người dùng đều được ghi nhận vào lịch sử giao dịch, đồng thời có thể xuất ra Excel để kiểm tra, đối chiếu.
 * Các hàm chức năng chuẩn được lưu trữ trong `api.php` để gọi nhiều lần, có thể thông qua Ajax.
-* **Phân quyền truy cập (Role)** (Tham chiếu bảng `log_users`):
-  - **Guest**: Xem thông tin Dashboard, tra cứu Tồn kho.
-  - **Staff**: Gồm quyền Guest + Nhận Pallet, Picking, Packing, Pickup.
-  - **Leader**: Gồm quyền Staff + Chuyển Pallet >>> kệ, Nhập kho, Xuất kho, Đổi kệ, In phiếu picking, In tem Case, In tem Pallet.
-  - **Manager**: Gồm quyền Leader + Đăng ký Kệ hàng, Sản phẩm, Quản trị User, Xuất dữ liệu, Layout.
-  - **Admin**: Full quyền.
+* Phân quyền truy cập bằng ma trận chức năng (CRUD) x quyền. Các quyền được phân theo cấp bậc từ thấp đến cao: Guest, Staff, Leader, Manager, Admin. Mô tả cơ bản như sau:
+  **Guest**: Xem thông tin Dashboard, tra cứu Tồn kho.
+  **Staff**: Gồm quyền Guest + Nhận Pallet, Picking, Packing, Pickup.
+  **Leader**: Gồm quyền Staff + Chuyển Pallet >>> kệ, Nhập kho, Xuất kho, Đổi kệ, In phiếu picking, In tem Case, In tem Pallet.
+  **Manager**: Gồm quyền Leader + Đăng ký Kệ hàng, Sản phẩm, Quản trị User, Xuất dữ liệu, Layout.
+  **Admin**: Full quyền.
 
-### Luồng chức năng nhập kho
+### Giải thích cơ bản các chức năng hệ thống (theo luồng tiêu chuẩn)
 
-**Nhận Pallet (import.php)**
-* Mục tiêu: Đăng ký thông tin hàng hóa của Pallet vào bảng `import_temp` (kho tạm, không cho phép thao tác nhập xuất kho).
+**In tem Pallet (pallet-print.php)**: Tạo và in tem dán cho pallet mới trước khi nhập hàng vào khu vực tạm. Mục tiêu là đảm bảo mỗi pallet có mã định danh duy nhất và không trùng với các pallet đã được đăng ký trong `import_temp`.
+
+**Nhập Pallet (pallet-import.php)**: Đây là bước đăng ký hàng hóa vào pallet trước khi nhập chính thức vào kho S-WMS. Hệ thống nhận mã pallet, quét từng mã hàng và kiểm tra tính hợp lệ của sản phẩm theo master `products`. Nếu SKU không tồn tại, hệ thống dừng thao tác và báo lỗi. Sau khi xác nhận, dữ liệu sẽ được lưu tạm vào `import_temp` để chờ xử lý tiếp theo.
+
+**Nhận Pallet (pallet-receive.php)**: Nhân viên kho xác nhận pallet đã được nhập tạm và sẵn sàng để chuyển sang khu vực xử lý tiếp theo. Hệ thống kiểm tra pallet có tồn tại trong `import_temp` và trạng thái của nó. Nếu hợp lệ, hệ thống ghi nhận ai đã nhận pallet, thời gian nhận và trạng thái tương ứng.
+
+**Pallet >>> kệ (pallet-transfer.php)**: Sau khi pallet ở trạng thái chờ nhận, nhân viên sẽ quét mã kệ và mã pallet để cất hàng vào vị trí lưu trữ. Hệ thống kiểm tra kệ còn chỗ trống hay không. Nếu đủ điều kiện, hệ thống cộng tồn kho vào `inventory`, cập nhật `shelves.current_usage`, ghi lịch sử giao dịch vào `transactions` với `type = 'IN'`, đồng thời cập nhật trạng thái pallet thành đã chuyển xong.
+
+**Import Monitor (import-monitor.php)**: Giám sát tiến độ nhập hàng theo pallet: tiến độ nhập, tiến độ nhận pallet và tiến độ cất lên kệ. Mục đích là theo dõi tình trạng xử lý từ đầu vào đến khi hàng vào kho chính.
+
+**Kế hoạch xuất hàng (export_plan.php)**: Tạo kế hoạch xuất hàng theo từng Invoice. Mỗi đơn xuất phải bao gồm thông tin: số Invoice, ngày xuất, loại hình vận chuyển, mã khách hàng, số lượng cần picking và số kiện cần packing. Dữ liệu này được lưu ở bảng kế hoạch xuất để làm căn cứ cho các bước in phiếu, picking và packing.
+
+**In phiếu picking (picking-print.php)**: Dựa trên kế hoạch xuất hàng, hệ thống nhóm số lượng theo SKU và in phiếu picking cho từng mã hàng. Mỗi phiếu chứa thông tin invoice, mã khách hàng, mã hàng, số lượng cần lấy và QR code để dùng cho bước picking.
+
+**Picking (picking.php)**: Đây là bước lấy hàng từ kệ theo chỉ thị xuất. Hệ thống phải xác nhận đúng vị trí, đúng SKU và đúng số lượng. Nếu vị trí không hợp lệ, hàng không khớp hoặc số lượng vượt quá tồn kho, thao tác bị dừng và cảnh báo. Khi hoàn tất, hệ thống trừ tồn kho `inventory`, ghi `transactions` với `type = 'OUT'` và log trạng thái picking vào `export_log`.
+
+**In phiếu packing (packing-print.php)**: Dựa trên kế hoạch xuất hàng, hệ thống in phiếu packing theo từng kiện (`case_no`). Mỗi kiện có một tem riêng, chứa thông tin invoice, mã khách hàng, số kiện, số lượng và QR code dùng để xác thực ở bước packing.
+
+**Packing (packing.php)**: Tách hàng đã picking theo từng kiện nhỏ trong mỗi Invoice. Nhân viên quét QR trên thùng hàng và đối chiếu với thông tin trong packing list. Nếu sản phẩm hoặc số lượng không khớp, hệ thống báo lỗi. Khi hoàn tất, hệ thống kiểm tra xem từng kiện đã đủ số lượng chưa và ghi trạng thái packing.
+
+**Pickup (pickup.php)**: Xác nhận kiện hàng đã sẵn sàng để bốc lên xe. Hệ thống so khớp thông tin trên tem pallet với thông tin trên shipping mark. Nếu khớp, xác nhận thành công; nếu không khớp, dừng thao tác và báo lỗi.
+
+**Export Monitor (export-monitor.php)**: Theo dõi tiến độ xuất hàng theo Invoice, bao gồm tiến độ picking, packing và pickup. Mục tiêu là giúp quản lý nhìn thấy trạng thái thực tế của từng đơn xuất.
+
+**Dashboard (monitor.php)**: Hiển thị màn hình giám sát tổng quan tiến độ theo ngày ở chế độ fullscreen. Giao diện này chủ yếu phục vụ mục đích trình chiếu, khách quan sát và theo dõi tiến độ vận hành kho.
+
+**Nhập kho (inbound.php)**: Đây là luồng nhập kho cơ bản, dùng khi Leader cần tăng tồn kho trực tiếp mà không qua pallet tạm. Hệ thống kiểm tra kệ còn chỗ, kiểm tra SKU hợp lệ, cập nhật `inventory`, `shelves.current_usage` và ghi vào `transactions` với `type = 'IN'`.
+
+**Xuất kho (outbound.php)**: Đây là luồng xuất kho cơ bản, dùng khi cần trừ tồn kho trực tiếp mà không qua quá trình picking chuẩn. Hệ thống kiểm tra tồn kho thực tế, xác nhận số lượng xuất, cập nhật `inventory` và `shelves.current_usage`, rồi ghi `transactions` với `type = 'OUT'`.
+
+**Tồn kho (inventory.php)**: Cho phép tra cứu tồn kho theo mã hàng, mã vị trí, hoặc thông tin khác như pallet đầu vào. Hệ thống truy vấn dữ liệu từ `inventory` và `import_temp` để hiển thị số lượng và vị trí lưu trữ.
+
+**Đổi kệ (change.php)**: Chuyển hàng từ kệ cũ sang kệ mới với số lượng tùy chọn. Hệ thống phải kiểm tra hàng ở kệ cũ có đủ không và kệ mới còn chỗ không. Nếu hợp lệ, thực hiện trừ tồn ở kệ cũ, cộng tồn ở kệ mới và ghi hai giao dịch `MOVE_OUT` và `MOVE_IN`.
+
+**Kiểm kê (check-stock.php)**: Thực hiện đối chiếu số lượng thực tế trong kho với dữ liệu tồn kho của hệ thống. Nếu sai lệch, hệ thống ghi nhận kết quả kiểm kê vào `check_log` kèm trạng thái khớp/không khớp.
+
+**Sản phẩm (product.php)**: Đăng ký master SKU mới vào hệ thống để phục vụ các nghiệp vụ nhập/xuất/picking/packing. Mỗi `product_id` phải là duy nhất.
+
+**Kệ hàng (shelves.php)**: Đăng ký vị trí lưu hàng mới vào hệ thống, bao gồm mã kệ, tên kệ, cấp vị trí và dung lượng tối đa. Mỗi kệ phải có mã duy nhất và hệ thống tự động khởi tạo mức sử dụng ban đầu bằng 0.
+
+**Layout (layout.php)**: Trình bày trạng thái các vị trí kệ theo hình thức trực quan bằng màu sắc, cho phép người dùng biết kệ nào còn trống, kệ nào đang chứa hàng và mức độ đầy/đã sử dụng.
+
+**Xuất dữ liệu (data-export.php)**: Cho phép xuất dữ liệu cần thiết ra file Excel/CSV như tồn kho, lịch sử nhập-xuất, sản phẩm và dữ liệu kiểm kê theo quyền truy cập tương ứng.
+
+**Quản trị (admin.php)**: Quản lý tài khoản người dùng và phân quyền theo ma trận chức năng từng vai trò: Guest, Staff, Leader, Manager, Admin. Mục tiêu là giới hạn quyền truy cập theo từng chức năng và cấp độ người dùng.
+
+### Trình tự chi tiết các chức năng
+
+#### 1. Sản phẩm (product.php)
+* Mục tiêu: đăng ký master sản phẩm để các luồng nhập/xuất/picking có thể đối chiếu mã hàng.
 * Thao tác:
-  - Bước 1: Tạo và in tem Pallet (`print_pallet.php`), sau đó dán vào Pallet rỗng.
-  - Bước 2: Quét QR mã Pallet (`pallet_id`) đang muốn đăng ký thông tin hàng hóa.
-  - Bước 3: Quét QR từng mã hàng (`product_id`) dạng chuỗi [SMC001]$[`product_id`]$[kani_code]$[`quantity`]$[Lot_no]. Hệ thống đối chiếu bảng master sản phẩm (`products.product_id`) để kiểm tra mã hàng đã được đăng ký chưa. Nếu chưa được đăng ký thì báo lỗi bằng popup màu ĐỎ và dừng thao tác.
-  - Bước 4: Nếu đúng mã hàng (`product_id`) thì tự động nhập số lượng (`quantity`) và thêm dòng vào list tạm (chưa cho phép nhập kho). Tiếp tục quét QR mã hàng, ghi nhận tổng số lượt quét, tổng số lượng ghi nhận tạm.
-  - Bước 5: Nhấn nút nhập kLưu dữ liệu vào `import_temp` với `status = 'received'`, `created_by = [current_user]`.
+  1. Người dùng nhập `product_id`, `product_name`, `unit`, `description`.
+  2. Hệ thống kiểm tra `product_id` có trống không và có tồn tại trong `products` chưa.
+  3. Nếu hợp lệ, thực hiện `INSERT INTO products (product_id, product_name, unit, description)`.
+  4. Nếu trùng khóa `products.product_id` (UNIQUE KEY `sku`), hiển thị popup màu ĐỎ và dừng thủ tục.
+* Bảng tương tác:
+  - `products`: lưu master SKU, tên, đơn vị.
+* Điều kiện bắt buộc:
+  - `product_id` không được rỗng và phải là duy nhất.
+  - `product_name`, `unit`, `description` có thể null theo thiết kế ban đầu.
 
+#### 2. Kệ hàng (shelves.php)
+* Mục tiêu: đăng ký vị trí lưu hàng.
+* Thao tác:
+  1. Người dùng nhập `shelf_id`, `shelf_name`, các cấp `level0_val` đến `level4_val`, `capacity`, `status`.
+  2. Hệ thống kiểm tra `shelf_id` đã tồn tại trong `shelves` chưa.
+  3. Nếu chưa có, thực hiện `INSERT INTO shelves (...)`.
+  4. Mặc định: `current_usage = 0`, `status = 'Active'` nếu không nhập.
+* Bảng tương tác:
+  - `shelves`: lưu thông tin kệ, sức chứa, mức sử dụng hiện tại.
+* Điều kiện bắt buộc:
+  - `shelf_id` là duy nhất (`UNIQUE KEY shelf_code`).
+  - `capacity` mặc định = 100 nếu null.
+  - `current_usage` mặc định = 0 nếu null.
 
-### 1. Sản phẩm (product.php)
-* **Mục tiêu:** Đăng ký mã hàng vào bảng `products`.
-* **Luồng xử lý:**
-  - Bước 1: Nhập `product_id` (Mã hàng), `product_name` (Tên) được phép Null, `unit` (Đơn vị) được phép Null, `description` (Mô tả) được phép Null.
-  - Bước 2: Hệ thống kiểm tra trùng lặp `product_id`. Nếu trùng, báo lỗi.
-  - Bước 3: Nếu hợp lệ, `INSERT INTO products (product_id, product_name, unit, description)`. Có thể kết hợp import từ Excel.
+#### 3. In tem Pallet (pallet-print.php)
+* Mục tiêu: tạo mã pallet độc lập dùng cho bước nhập kho tạm.
+* Thao tác:
+  1. Hệ thống sinh mã pallet duy nhất hoặc lấy ID mới dạng `pallet_id`.
+  2. In tem pallet để dán lên pallet rỗng.
+  3. Sau khi in, người dùng quét mã pallet ở bước nhập hàng.
+* Bảng tương tác:
+  - Không bắt buộc phải ghi vào SQL ngay nếu chưa có bảng `pallet` riêng; dữ liệu chính sẽ được lưu vào `import_temp` sau khi nhập hàng thực tế.
+* Điều kiện bắt buộc:
+  - `pallet_id` phải duy nhất, tránh trùng với pallet đã đăng ký trước đó.
 
-### 2. Kệ hàng (shelves.php)
-* **Mục tiêu:** Đăng ký kệ lưu trữ vào bảng `shelves`.
-* **Luồng xử lý:**
-  - Bước 1: Nhập `shelf_id`, `shelf_name`, phân cấp (level từ 0 đến 4), `capacity` (sức chứa) được phép Null, `current_usage` (Sử dụng hiện tại) được phép Null
-  - Bước 2: Kiểm tra `shelf_id` đã tồn tại chưa.
-  - Bước 3: Nếu chưa, `INSERT INTO shelves`. Mặc định `current_usage = 0`, `status = 'Active'`.
+#### 4. Nhập Pallet (pallet-import.php)
+* Mục tiêu: đăng ký sản phẩm vào pallet tạm trước khi nhập kho chính thức.
+* Thao tác:
+  1. Tạo và in tem Pallet, dán vào pallet rỗng.
+  2. Quét QR mã Pallet (`pallet_id`).
+  3. Quét QR từng mã hàng theo định dạng: `[SMC001]$[product_id]$[kani_code]$[quantity]$[Lot_no]`.
+  4. Hệ thống tách chuỗi và kiểm tra `product_id` có tồn tại trong `products` không.
+  5. Nếu mã hàng không có trong `products`, hiển thị popup màu ĐỎ và dừng thao tác.
+  6. Nếu đúng, hệ thống tự động lấy `quantity`, thêm dòng vào danh sách tạm và cộng tổng số lượng đang quét.
+  7. Người dùng tiếp tục quét các sản phẩm cho đến khi xong.
+  8. Nhấn nút lưu, hệ thống ghi dữ liệu vào `import_temp`.
+* Bảng tương tác:
+  - `import_temp`: lưu từng dòng sản phẩm của pallet với các trường `pallet_id`, `part_no`, `qty`, `status`, `created_by`, `created_at`.
+* Điều kiện bắt buộc:
+  - `pallet_id` không được rỗng.
+  - `part_no` phải khớp `products.product_id`.
+  - `qty` > 0.
+  - Mỗi 1 dòng trong `import_temp` đại diện cho 1 mặt hàng thuộc 1 pallet.
 
+#### 5. Nhận Pallet (pallet-receive.php)
+* Mục tiêu: xác nhận pallet đã được nhập tạm và sẵn sàng cho bước cất kệ.
+* Thao tác:
+  1. Nhân viên quét hoặc chọn `pallet_id` đang ở trạng thái tạm.
+  2. Hệ thống kiểm tra pallet có tồn tại trong `import_temp` không.
+  3. Nếu pallet hợp lệ, xác nhận nhận pallet để chờ chuyển lên kệ.
+  4. Nếu có bảng log nhập kho bổ sung (`import_log`), lưu trạng thái `RECEIVED`; nếu chưa có, có thể quy ước theo `import_temp.status` như `received`.
+* Bảng tương tác:
+  - `import_temp`: kiểm tra `pallet_id` và `status`.
+  - Bảng log bổ sung nếu có: `import_log`.
+* Điều kiện bắt buộc:
+  - Pallet phải nằm trong `import_temp` và đang ở trạng thái phù hợp (`received`/`waiting`/`ready`, tùy quy ước triển khai).
+  - `created_by` phải được ghi nhận người nhận.
 
+#### 6. Pallet >>> Kệ (transfer.php)
+* Mục tiêu: cất pallet từ khu vực tạm lên hệ thống kho chính.
+* Thao tác:
+  1. Quét QR mã kệ (`shelf_id`).
+  2. Hệ thống kiểm tra kệ có tồn tại trong `shelves` không.
+  3. Kiểm tra `capacity > current_usage` để đảm bảo kệ còn chỗ.
+  4. Quét QR mã pallet đang được nhận.
+  5. Hệ thống kiểm tra pallet có trong `import_temp` và `status` phù hợp (`received`/đã nhận).
+  6. Xác nhận cất kệ.
+  7. Thực hiện transaction: lặp qua từng dòng sản phẩm của pallet từ `import_temp`.
+  8. Với mỗi `part_no`/`product_id` trên pallet:
+     - Nếu cặp `(shelf_id, product_id)` đã tồn tại trong `inventory`, thì `UPDATE inventory SET quantity = quantity + qty`.
+     - Nếu chưa có, thì `INSERT INTO inventory (shelf_id, product_id, quantity) VALUES (...)`.
+     - Ghi vào `transactions` với `type='IN'`, `product_id`, `shelf_id`, `quantity`, `created_by`.
+  9. Cập nhật `shelves.current_usage = current_usage + tổng_số_lượng_của_pallet`.
+  10. Cập nhật `import_temp.status = 'transferred'` cho pallet đã xong.
+* Bảng tương tác:
+  - `import_temp`
+  - `inventory`
+  - `transactions`
+  - `shelves`
+* Điều kiện bắt buộc:
+  - Kệ phải tồn tại và còn sức chứa.
+  - Pallet phải đã được nhận và `status` hợp lệ.
+  - Tổng lượng nhập phải không làm `current_usage > capacity`.
 
-### 4. Pallet >>> Kệ (transfer.php)
-* **Mục tiêu:** Cất nguyên Pallet lên kệ nhanh chóng.
-* **Luồng nghiệp vụ:**
-  - Bước 1: Quét QR mã kệ (`shelf_id`). Kiểm tra mã kệ có trong bảng `shelves` và còn sức chứa (`capacity > current_usage`) không. Sai/Đầy thì cảnh báo.
-  - Bước 2: Quét QR mã Pallet. Kiểm tra Pallet có trong `import_temp` và `status = 'received'` không.
-  - Bước 3: Xác nhận cất kệ.
-  - Bước 4: Chạy vòng lặp cập nhật DB (Transaction xử lý đồng thời):
-    - Lấy thông tin các mã hàng trên Pallet từ `import_temp`.
-    - Lấy ID (khóa chính) của kệ và sản phẩm.
-    - Cập nhật tồn kho: Nếu cặp (shelf_id, product_id) đã có trong `inventory` -> `UPDATE quantity`. Chưa có -> `INSERT`.
-    - Ghi lịch sử: `INSERT INTO transactions (product_id, shelf_id, quantity, type='IN', created_by)`.
-    - Đánh dấu hoàn tất: `UPDATE import_temp SET status='transferred' WHERE pallet_id = ...`.
-    - Cộng sức chứa kệ: `UPDATE shelves SET current_usage = current_usage + [Tổng số lượng]`.
+#### 7. Nhập kho cơ bản (inbound.php)
+* Mục tiêu: bổ sung hàng hóa vào kho mà không cần qua pallet tạm.
+* Thao tác:
+  1. Quét QR mã kệ.
+  2. Hệ thống kiểm tra kệ có tồn tại trong `shelves` không.
+  3. Quét QR mã hàng; kiểm tra `products` có chứa mã đó không.
+  4. Nhập số lượng cần tăng tồn.
+  5. Tính toán: `new_usage = current_usage + qty`; nếu `new_usage > capacity`, cảnh báo và dừng.
+  6. Xác nhận nhập kho.
+  7. Cập nhật `inventory` theo `(shelf_id, product_id)`.
+  8. Cập nhật `shelves.current_usage`.
+  9. Ghi lịch sử vào `transactions` với `type = 'IN'`.
+* Bảng tương tác:
+  - `products`
+  - `shelves`
+  - `inventory`
+  - `transactions`
+* Điều kiện bắt buộc:
+  - `product_id` phải tồn tại trong `products`.
+  - `shelf_id` phải tồn tại.
+  - `qty > 0` và `capacity` không vượt quá giới hạn.
 
-### 5. Nhập kho cơ bản (inbound.php)
-* **Mục tiêu:** Nhập thủ công/lẻ hàng hóa lên kệ.
-* **Luồng nghiệp vụ:**
-  - Bước 1: Quét QR mã kệ. Đúng định dạng thì hiển thị tên kệ/sức chứa trống.
-  - Bước 2: Quét QR mã hàng. Kiểm tra tồn tại trong `products`.
-  - Bước 3: Nhập số lượng. Cảnh báo nếu số lượng nhập làm `current_usage > capacity` của kệ.
-  - Bước 4: Xác nhận. Cập nhật bảng `inventory` (+ tồn), `shelves` (+ usage), và ghi `transactions` (type='IN').
+#### 8. Xuất kho cơ bản (outbound.php)
+* Mục tiêu: trừ tồn kho theo đơn điều chỉnh nhanh.
+* Thao tác:
+  1. Quét QR mã kệ.
+  2. Quét QR mã hàng; kiểm tra `(shelf_id, product_id)` có tồn tại trong `inventory` không.
+  3. Nhập số lượng cần xuất.
+  4. Hệ thống kiểm tra `qty <= current inventory quantity`.
+  5. Nếu không đủ, cảnh báo đỏ và dừng.
+  6. Xác nhận xuất kho.
+  7. `UPDATE inventory SET quantity = quantity - qty`.
+  8. `UPDATE shelves SET current_usage = current_usage - qty`.
+  9. Ghi `transactions` với `type='OUT'`.
+* Bảng tương tác:
+  - `inventory`
+  - `shelves`
+  - `transactions`
+* Điều kiện bắt buộc:
+  - `(shelf_id, product_id)` phải tồn tại trong `inventory`.
+  - `qty <= quantity` trong bảng `inventory`.
 
-### 6. Xuất kho cơ bản (outbound.php)
-* **Mục tiêu:** Xuất thủ công/lẻ hàng hóa khỏi kệ (trừ tồn trực tiếp).
-* **Luồng nghiệp vụ:**
-  - Bước 1: Quét QR mã kệ.
-  - Bước 2: Quét QR mã hàng. Hệ thống truy vấn `inventory` kiểm tra (shelf, product) này có tồn tại không. Không có -> cảnh báo.
-  - Bước 3: Nhập số lượng xuất. Hệ thống kiểm tra số lượng xuất <= `quantity` hiện có. Vượt quá -> Cảnh báo.
-  - Bước 4: Xác nhận. Trừ tồn `inventory` (- tồn), `shelves` (- usage) và ghi `transactions` (type='OUT').
+#### 9. Đổi kệ (change.php)
+* Mục tiêu: di chuyển hàng từ kệ cũ sang kệ mới.
+* Thao tác:
+  1. Quét mã kệ cũ.
+  2. Quét mã kệ mới.
+  3. Quét mã hàng cần chuyển.
+  4. Nhập số lượng cần đổi.
+  5. Kiểm tra:
+     - Kệ cũ có đủ tồn kho cho `(shelf_old, product_id)`.
+     - Kệ mới có đủ không gian còn lại để chứa số lượng chuyển.
+  6. Xác nhận.
+  7. Thực hiện 2 bước đồng thời:
+     - Trừ tồn ở kệ cũ: `UPDATE inventory SET quantity = quantity - qty` và `UPDATE shelves SET current_usage = current_usage - qty`.
+     - Cộng tồn ở kệ mới: `INSERT/UPDATE inventory` và `UPDATE shelves SET current_usage = current_usage + qty`.
+  8. Ghi 2 dòng `transactions`: `MOVE_OUT` và `MOVE_IN`.
+* Bảng tương tác:
+  - `inventory`
+  - `shelves`
+  - `transactions`
+* Điều kiện bắt buộc:
+  - Tồn kho trên kệ cũ phải >= qty.
+  - Kệ mới còn sức chứa theo `capacity - current_usage >= qty`.
 
-### 7. Đổi kệ (change.php)
-* **Mục tiêu:** Di chuyển vị trí tồn kho nội bộ.
-* **Luồng nghiệp vụ:**
-  - Bước 1: Quét mã kệ CŨ. 
-  - Bước 2: Quét mã kệ MỚI.
-  - Bước 3: Quét mã hàng cần chuyển.
-  - Bước 4: Nhập số lượng. Kiểm tra kệ CŨ có đủ hàng, kệ MỚI có đủ sức chứa hay không.
-  - Bước 5: Thực thi DB: 
-    - Trừ tồn kệ CŨ (Update `inventory`, `shelves`).
-    - Cộng tồn kệ MỚI (Update/Insert `inventory`, `shelves`).
-    - Ghi 2 dòng vào `transactions`: 1 dòng `type='MOVE_OUT'`, 1 dòng `type='MOVE_IN'`.
+#### 10. Tồn kho (inventory.php)
+* Mục tiêu: tra cứu và rà soát hàng tồn tại trong kho theo vị trí hoặc mã hàng.
+* Thao tác:
+  1. Người dùng nhập mã sản phẩm hoặc mã kệ trên ô tìm kiếm.
+  2. Hệ thống thực hiện truy vấn kết hợp `inventory`, `products`, `shelves`.
+  3. Hiển thị danh sách: `shelf_id`, `product_id`, `product_name`, `quantity`, vị trí, đơn vị.
+* Bảng tương tác:
+  - `inventory`
+  - `products`
+  - `shelves`
+* Điều kiện bắt buộc:
+  - Chỉ hiển thị các dòng có `quantity > 0` hoặc theo lựa chọn filter của người dùng.
+* Ví dụ truy vấn chuẩn:
+  - `SELECT i.*, p.product_id, p.product_name, s.shelf_id FROM inventory i JOIN products p ON p.product_id = i.product_id JOIN shelves s ON s.shelf_id = i.shelf_id WHERE ...;`
 
-### 8. Tồn kho (inventory.php)
-* **Mục tiêu:** Tra cứu số lượng tức thời.
-* **Luồng nghiệp vụ:**
-  - Ô tìm kiếm đa năng: Nhập mã sản phẩm, hoặc mã kệ.
-  - Ajax gọi API: Truy vấn `SELECT i.*, p.product_id, p.product_name, s.shelf_id FROM inventory i JOIN products p ON... JOIN shelves s ON...`.
-  - Trả về bảng danh sách, hiển thị rõ số lượng, đơn vị, vị trí cụ thể.
+#### 11. Kế hoạch xuất hàng và in phiếu picking (export_plan.php / picking-print.php)
+* Mục tiêu: chuẩn bị thông tin xuất theo Invoice, số kiện và số lượng hàng cần picking.
+* Thao tác:
+  1. Người dùng nhập toàn bộ packing list từ Excel vào `export_temp`.
+  2. Hệ thống lọc theo ngày, hiển thị Invoice, `case_no`, `transport_type`, `for_product`, `created_at`.
+  3. Chọn Invoice cần xử lý.
+  4. Hệ thống nhóm theo `product_id` và cộng `total_qty` theo từng mã hàng.
+  5. Hiển thị phiếu picking trước khi in.
+  6. In phiếu: mỗi phiếu chứa `command`, `created_at`, `transport_type`, `for_product`, `product_id`, `quantity`, thời gian in.
+  7. Ghi log `export_log` với `status='print'` (nếu bảng log phụ được triển khai).
+* Bảng tương tác:
+  - `export_temp`
+  - `export_log`
+* Điều kiện bắt buộc:
+  - `command` phải là mã Invoice, `product_id` phải tồn tại trong master sản phẩm.
+  - `total_qty` và `bucket_qty` phải phù hợp từng case / từng hàng.
 
-### 9. In phiếu picking (print.php)
-* **Mục tiêu:** In ra phiếu có đủ thông tin cần thiết để chỉ thị cho nhân viên picking hàng hóa từ kệ theo Invoice, số lượng sẽ được gộp theo mã hàng. Phiếu này có bao gồm QR code để sử dụng cho bước Picking.
-* **Luồng nghiệp vụ:**
-  - Bước 1: Cho phép nhập toàn bộ thông tin của packing list từ file Excel vào export_temp.sql. Ghi nhận `INSERT INTO export_temp`.
-  - Bước 2: Tạo bộ lọc theo ngày (mặc định là today). Danh sách hiển thị toàn bộ các Invoice `command` cần picking trong ngày, đếm số kiện `case_no`, ngày xuất `created_at`. Đương nhiên vẫn sử dụng thanh tìm kiếm nhanh theo Invoice mà không phụ thuộc vào bộ lọc ngày.
-  - Bước 3: Chọn Invoice cần in phiếu picking. Hệ thống sẽ tổng hợp số lượng theo từng mã hàng, hiển thị danh sách các mã hàng cần picking, số lượng gộp cần picking. Xuất ra chế độ Xem trước phiếu picking, mỗi phiếu phải bao gồm thông tin: mã Invoice `command`, ngày xuất `created_at`, loại hình vận chuyển `transport_type`, mã khách hàng `for_product`, mã hàng `product_id` cần picking (mỗi mã 1 phiếu), số lượng gộp cần picking dùng để in trực tiếp, ngày/giờ in ấn. QR code tạo từ chuỗi [product_id]$[quantity], lưu ý quantity là số lượng gộp theo mã hàng cho từng invoice.
-  - Bước 4: Nhấn nút In phiếu picking. Ghi nhận `INSERT INTO export_log (status='print')` theo từng Invoice.
+#### 12. Picking (picking.php)
+* Mục tiêu: lấy hàng từ vị trí kệ theo chỉ thị xuất hàng.
+* Thao tác:
+  1. Quét QR chỉ thị/Invoice và lấy `product_id`, `quantity` cần picking.
+  2. Hệ thống tra `inventory` để tìm các vị trí còn hàng theo `product_id`, sắp xếp theo vị trí có lượng ít nhất trước.
+  3. Người dùng chọn kệ đề xuất; quét mã kệ và đối chiếu với vị trí đã chọn.
+  4. Quét mã hàng trên thùng hàng; phải khớp với `product_id` cần picking.
+  5. Nếu số lượng trên thùng nhỏ hơn số lượng còn lại cần picking, hệ thống ghi nhận phần đã lấy và tiếp tục chọn vị trí khác.
+  6. Nếu số lượng trên thùng lớn hơn lượng còn lại, chỉ lấy phần còn lại cần thiết và dừng để nhân viên xác nhận.
+  7. Nếu vị trí đã hết hàng, popup màu VÀNG: "Vị trí này đã hết hàng, vui lòng chọn vị trí tiếp theo".
+  8. Nếu không còn vị trí phù hợp, popup màu ĐỎ: "Không còn vị trí nào có hàng".
+  9. Khi hoàn thành, ghi log `transactions` với `type='OUT'` và cập nhật `inventory` theo từng vị trí.
+  10. Ghi `export_log` với `status='picking'` khi nhấn Hoàn thành.
+* Bảng tương tác:
+  - `inventory`
+  - `transactions`
+  - `export_log`
+* Điều kiện bắt buộc:
+  - `product_id` tại vị trí phải khớp với chỉ thị picking.
+  - Tổng lượng đã lấy không được vượt quá lượng cần picking.
+  - Mỗi lần trừ tồn phải đảm bảo `inventory.quantity >= 0`.
 
-### 10. Picking (picking.php)
-* **Mục tiêu:** Soạn hàng theo chỉ thị (Invoice), đảm bảo đúng hàng, đúng chỗ, đúng số lượng.
-* **Luồng nghiệp vụ:**
-  - Bước 1: Quét QR Chỉ thị/Invoice (`command`) dạng chuỗi [product_id]$[quantity]. Hệ thống load danh sách các vị trí đang có hàng tương ứng từ `invetory` sắp xếp theo thứ tự vị trí có số lượng ít nhất lên đầu danh sách. Danh sách đề xuất chỉ cần có tổng tồn lớn hơn số lượng cần picking là được. Tuy nhiên dể phòng tránh vị trí đó tồn kho ảo thì đề xuất thêm 1-2 vị trí dự phòng.
-  - Bước 2: Nhân viên chọn vị trí (Ghim vị trí) muốn picking trong danh sách đề xuất.-> Quét mã kệ (vị trí) cần lấy hàng. Không khớp thì báo lỗi bằng poup màu ĐỎ
-  - Bước 3: Quét mã hàng trên thùng hàng dạng chuỗi [TEXT]$[product_id]$[TEXT]$[quantity]$[TEXT]. Không khớp mã hàng cần picking `product_id` thì báo lỗi bằng poup màu ĐỎ.
-  - Bước 3: Nếu khớp mã thì tự động lấy số lượng từ chuỗi `quantity` và trừ tồn hệ thống, ghi log OUT vào `transaction`. Cần ràng buộc nếu số lượng trên thùng vẫn bé hơn số lượng còn lại cần picking thì tự động ghi nhận số lượng, NHƯNG nếu số lượng trên thùng lớn hơn số lượng còn lại cần picking thì chỉ để xuất số lượng còn lại cần picking vào ô nhập số lượng và dừng ở đây để nhân viên picking xác nhận thử công. Nếu số lượng tại vị trí được ghim đã trừ tồn hết nhưng chưa đủ số lượng cần picking thì thông báo Popup màu VÀNG là "Vị trí này đã hết hàng, vui lòng chọn vị trí tiếp theo" rồi sau đó quay lại bước 2 với danh sách mã kệ đề xuất đã được reload lại, số lượng cần picking là số lượng còn lại chưa picking. Nếu không còn vị trí nào trên danh sách đề xuất thì xuất hiện cảnh báo ĐỎ là "Không còn vị trí nào có hàng, vui lòng liên hệ Leader để kiểm tra tồn kho".
-  - Bước 4: Bất cứ khi nào nhân viên nhấn HOÀN THÀNH thì ghi nhận số lượng đã picking vào `export_log` với `status='picking'`.
+#### 13. In tem packing (print_case.php)
+* Mục tiêu: tạo tem cho từng kiện hàng (`case_no`) trong Invoice.
+* Thao tác:
+  1. Chọn Invoice và lọc `export_temp` theo `command`.
+  2. Nhóm theo `case_no` và tính số item trong từng kiện.
+  3. In tem packing cho từng `case_no`.
+  4. Mỗi tem chứa `command`, `case_no`, `for_product`, `transport_type`, `created_at`, số lượng item.
+  5. QR code trong tem được tạo từ `[command]$[case_no]$[for_product]$[count distinct product_id]$[transport_type]$[created_at]`.
+  6. Ghi log `export_log` với `status='print_case'`.
+* Bảng tương tác:
+  - `export_temp`
+  - `export_log`
+* Điều kiện bắt buộc:
+  - `case_no` phải là mã kiện riêng trong từng Invoice.
+  - Không được in thiếu hoặc dư kiện so với `export_temp`.
 
-### 11. In tem packing (print_case.php)
-* **Mục tiêu:** In tem packing cho từng kiện `case_no` theo Invoice, dùng để dán lên kiện hàng bao gồm các thông tin: mã Invoice `command`, mã kiện `case_no`, mã khách hàng `for_product`, loại hình vận chuyển `transport_type`, số items `product_id` có trong kiện.
-* **Luồng nghiệp vụ:** Layout giống hệt trang chức năng in phiếu picking, nhưng thay vì thống kê theo mã hàng thì thống kê theo mã kiện `case_no`. Mỗi kiện sẽ có 1 tem riêng, tem này được tạo ra từ dữ liệu packing list trong bảng `export_temp` theo từng Invoice.
-- Bước 1. Chọn Invoice cần in tem packing. Hệ thống sẽ tổng hợp số lượng theo từng kiện `case_no`, hiển thị danh sách các kiện, số items có trong kiện. Xuất ra chế độ Xem trước tem packing, mỗi tem phải bao gồm thông tin: mã Invoice `command`, ngày xuất `created_at`, loại hình vận chuyển `transport_type`, mã khách hàng `for_product`, mã kiện `case_no`, số items có trong kiện dùng để in trực tiếp, ngày/giờ in ấn. QR code tạo từ chuỗi [command]$[case_no]$[for_product]$[count distinct product_id]$[transprot_type]$[created_at].
-- Bước 2. Nhấn nút In tem packing. Ghi nhận `INSERT INTO export_log (status='print_case')` theo từng Invoice.
+#### 14. Packing (packing.php)
+* Mục tiêu: xếp từng thùng hàng vào kiện theo `case_no`.
+* Thao tác:
+  1. Quét QR tem packing.
+  2. Hệ thống đọc `command`, `case_no`, `for_product`, `transport_type`, `created_at`.
+  3. Quét mã thùng hàng theo dạng `[TEXT]$[product_id]$[TEXT]$[quantity]$[TEXT]`.
+  4. Lấy `product_id` và `quantity` từ thùng, đối chiếu với dữ liệu `export_temp` theo `command` và `case_no`.
+  5. Nếu `product_id` hoặc `quantity` không khớp, báo popup màu ĐỎ.
+  6. Nếu khớp, ghi một log `export_log` với `status='packing'`.
+  7. Khi nhấn Hoàn thành, kiểm tra tổng lượng đã packing trên từng `case_no`.
+  8. Nếu thiếu số lượng, popup màu VÀNG: "Packing chưa đủ số lượng, vui lòng kiểm tra lại".
+  9. Nếu đủ, popup màu XANH: "Packing hoàn tất, vui lòng chuyển sang bước Pickup".
+* Bảng tương tác:
+  - `export_temp`
+  - `export_log`
+* Điều kiện bắt buộc:
+  - Không được vượt quá số lượng theo `case_no` đã quy định trong `export_temp`.
+  - Mỗi thùng phải khớp đúng `product_id` và `quantity` ban đầu.
 
-### 12. Packing (packing.php)
-* **Mục tiêu:** Chia số lượng đã picking thành từng kiện `case_no` riêng biệt theo Invoice, dữ liệu packing list lấy từ bảng `export_temp`.
-* **Luồng nghiệp vụ:**
-  - Bước 1: Quét QR trên phiếu Packing đã in ở bước trước dạng chuỗi [command]$[case_no]$[for_product]$[count distinct product_id]$[transprot_type]$[created_at].
-  - Bước 2: Bắt đầu đưa từng thùng hàng vào kiện. -> Quét mã Thùng hàng dạng chuỗi [TEXT]$[product_id]$[TEXT]$[quantity]$[TEXT], kiểm tra với dữ liệu của mã hàng này trong bảng `export_temp` theo Invoice `command` và `case_no`. Nếu không khớp Cả về mã hàng và số lượng thì báo lỗi bằng poup màu ĐỎ. Nếu đúng thì ghi nhận lịch sử vào bảng `export_log` với `status='packing'`.
-  - Bước 3: Khi đã quét hết tất cả các thùng hàng đầu vào, dù đủ hay chưa đủ thì cũng có thể nhấn HOÀN THÀNH để kết thúc Packing. Tuyệt đối không ghi nhận trường hợp thừa số lượng cho mỗi `case_no`. Nếu còn thiếu số lượng thì báo Popup màu VÀNG là "Packing chưa đủ số lượng, vui lòng kiểm tra lại". Nếu đủ số lượng thì báo Popup màu XANH là "Packing hoàn tất, vui lòng chuyển sang bước Pickup".
-  
-### 13. Pickup (pickup.php)
-* **Mục tiêu:** Quét mã vạch xác nhận tem trên pallet và tem trên phiếu shipping mark khi bốc hàng lên xe, nếu khớp thì mới bàn giao cho đơn vị vận chuyển.
-* **Luồng nghiệp vụ:**
-  - Bước 1: Quét QR trên tem pallet dạng chuỗi [command]$[case_no]$[for_product]$[count distinct product_id]$[transprot_type]$[created_at] thể hiện tất cả thông tin sau khi quét bao gồm số invoice, số kiện, mã khách hàng, loại hình vận chuyển, ngày xuất.
-  - Bước 2: Tiếp tục quét thông tin trên phiếu shipping mark dạng chuỗi [command][case_no] với command 6 ký tự đi liền với case_no 3 ký tự. Hệ thống sẽ đối chiếu với thông tin đã quét ở bước 1. Nếu không khớp thì báo lỗi bằng poup màu ĐỎ. Nếu khớp thì hiển thị dòng thông tin "đã khớp thông tin" và đặt con trỏ ở ô quét tem Pallet chờ nhận lệnh Bước 1.
-  - Bước 3: Ghi nhận `INSERT INTO export_log (status='pickup')`.
+#### 15. Pickup (pickup.php)
+* Mục tiêu: xác nhận kiện hàng đã sẵn sàng bốc lên xe theo tem pallet và shipping mark.
+* Thao tác:
+  1. Quét QR tem pallet chứa thông tin `command`, `case_no`, `for_product`, `transport_type`, `created_at`.
+  2. Quét tiếp shipping mark với định dạng `[command][case_no]`.
+  3. Hệ thống đối chiếu thông tin 2 mã này.
+  4. Nếu khớp, hiển thị "đã khớp thông tin" và quét tiếp cho lần kế tiếp.
+  5. Nếu không khớp, popup màu ĐỎ.
+  6. Ghi `export_log` với `status='pickup'`.
+* Bảng tương tác:
+  - `export_log`
+* Điều kiện bắt buộc:
+  - `command` và `case_no` trên tem pallet phải khớp hoàn toàn với shipping mark.
 
-### 14. Monitor (monitor.php)
-* **Mục tiêu:** Giám sát tiến độ xuất hàng theo Invoice (`command`), tiến độ picking theo items (`product_id` duy nhất của invoice), tiến độ packing theo items (`product_id` duy nhất của invoice), tiến độ pickup theo số kiện hàng (`case_no` duy nhất của invoice).
-* **Cách thể hiện**
-  * Đây là giao diện cho Khách hàng tham quan xem và cảm nhận mức độ chuyên nghiệp của hệ thống nên không cần đăng nhập, chỉ cần mở trình duyệt và truy cập vào link. Giao diện này sẽ tự động reload sau mỗi 5 phút để cập nhật tiến độ mới nhất.
-  - Toàn bộ thông tin thể hiện trên 1 trang màn hình và danh sách cuộn tự động chứ người dùng không cần thao tác. Tham khảo dashboard lịch trình chuyến bay tại các sân bay để thấy cách thể hiện trực quan, dễ hiểu. Mỗi dòng là 1 Invoice, hiển thị các thông tin: số Invoice, ngày xuất, loại hình vận chuyển, mã khách hàng, số items cần picking, số items đã picking, số items còn lại cần picking, số items đã packing, số items còn lại cần packing, số kiện hàng đã pickup, số kiện hàng còn lại cần pickup.
-  - Layout full màn hình, không có header, footer, sidebar. Chỉ có danh sách các Invoice theo ngày và tiến độ picking (theo số items), packing (theo items), pickup (theo số kiện hàng, ngày bốc hàng lên xe).
-  - Có chế độ Light và Dark mode cho người dùng lựa chọn (nút toggle). Mặc định là Dark mode nền đen chữ trắng (thông thường), màu sắc tiến độ picking, packing, pickup là màu xanh lá cây và màu đỏ.
+#### 16. Monitor / Dashboard (monitor.php)
+* Mục tiêu: giám sát tiến độ xuất hàng theo ngày, hiển thị cho khách hàng hoặc leader.
+* Thao tác:
+  1. Mở trang không cần đăng nhập.
+  2. Hệ thống tự động refresh sau 5 phút để cập nhật tiến độ mới nhất.
+  3. Hiển thị mỗi dòng là 1 Invoice, bao gồm: ngày xuất, `transport_type`, `for_product`, số item cần picking, số item đã picking, số item còn lại, số item đã packing, số kiện đã pickup, số kiện còn lại.
+  4. Giao diện full màn hình, có Light/Dark mode. Mặc định là Dark mode.
+* Bảng tương tác:
+  - `export_temp`
+  - `export_log`
+  - `inventory`
+  - `transactions`
+* Điều kiện bắt buộc:
+  - Dữ liệu phải được tổng hợp theo `command` và cập nhật theo trạng thái `picking`, `packing`, `pickup`.
 
+#### 17. Kiểm kê (check-stock.php)
+* Mục tiêu: đối chiếu thực tế kho với dữ liệu hệ thống.
+* Thao tác:
+  1. Nhân viên quét mã hàng / vị trí cần kiểm kê.
+  2. So sánh số lượng thực tế với dữ liệu `inventory`.
+  3. Ghi kết quả vào `check_log`.
+* Bảng tương tác:
+  - `check_log`
+  - `inventory`
+* Điều kiện bắt buộc:
+  - `result_code` và `result_message` dùng để đánh giá khớp/không khớp.
+  - `is_product_match`, `is_qty_match` lưu trạng thái đối chiếu.
 
+#### 18. Quản lý người dùng và phân quyền (admin.php / log_users)
+* Mục tiêu: phân quyền truy cập theo ma trận quyền.
+* Thao tác:
+  1. Thêm/sửa/xóa tài khoản trong `log_users`.
+  2. Gán vai trò: Guest, Staff, Leader, Manager, Admin.
+  3. Kiểm tra quyền theo chức năng và màn hình được phép truy cập.
+* Bảng tương tác:
+  - `log_users`
+* Điều kiện bắt buộc:
+  - `username` phải unique.
+  - `role` phải nằm trong danh sách quyền được định nghĩa.
+
+#### 19. Xuất dữ liệu (data-export.php)
+* Mục tiêu: xuất dữ liệu ra Excel/CSV phục vụ kiểm tra và đối chiếu.
+* Thao tác:
+  1. Lựa chọn loại dữ liệu cần xuất: sản phẩm, tồn kho, lịch sử nhập/xuất, kiểm kê.
+  2. Hệ thống truy vấn bảng tương ứng.
+  3. Xuất file Excel/CSV cho người dùng tải xuống.
+* Bảng tương tác:
+  - `products`, `inventory`, `transactions`, `check_log`, `export_temp`, `import_temp`
+* Điều kiện bắt buộc:
+  - Chỉ export những dữ liệu theo quyền truy cập được phép.
+
+#### 20. Layout (layout.php)
+* Mục tiêu: hiển thị trực quan trạng thái kệ trong kho.
+* Thao tác:
+  1. Hệ thống đọc `shelves` và `inventory` để biết kệ nào còn hàng, kệ nào hết hàng.
+  2. Hiển thị màu sắc trạng thái các vị trí khe/cột/kệ.
+* Bảng tương tác:
+  - `shelves`
+  - `inventory`
+* Điều kiện bắt buộc:
+  - Nếu `current_usage = 0` hoặc `quantity = 0`, hiển thị trạng thái trống.
+  - Nếu `current_usage > 0`, hiển thị trạng thái đã có hàng.
+
+### Tóm tắt mối quan hệ dữ liệu chính
+- `products` là master SKU dùng cho nhập, xuất, picking, packing.
+- `shelves` là master vị trí kho, có `capacity` và `current_usage`.
+- `inventory` lưu tồn kho theo cặp `(shelf_id, product_id)`.
+- `transactions` ghi lịch sử nhập/xuất/đổi kệ liên quan đến sự thay đổi tồn kho với `type` và `created_by`.
+- `import_temp` lưu pallet đang ở trạng thái tạm, phục vụ nhập và cất kệ.
+- `import_log` ghi quá trình nhập, nhận, cất kệ Pallet.
+- `export_temp` lưu kế hoạch xuất hàng theo `command`, `case_no`, `product_id`.
+- `export_log` ghi quá trình picking, packing, pickup.
+- `check_log` lưu lịch sử kiểm kê thực tế.

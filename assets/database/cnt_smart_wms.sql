@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost:3306
--- Generation Time: Aug 13, 2026 at 10:55 AM
+-- Generation Time: Aug 21, 2026 at 12:54 PM
 -- Server version: 8.0.46-0ubuntu0.22.04.3
 -- PHP Version: 8.1.2-1ubuntu2.25
 
@@ -84,6 +84,20 @@ CREATE TABLE `export_temp` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `import_log`
+--
+
+CREATE TABLE `import_log` (
+  `id` int UNSIGNED NOT NULL,
+  `pallet_id` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `status` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `created_by` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `import_temp`
 --
 
@@ -123,6 +137,8 @@ CREATE TABLE `log_users` (
   `full_name` varchar(100) CHARACTER SET utf8mb3 COLLATE utf8mb3_unicode_ci DEFAULT NULL,
   `role` varchar(20) CHARACTER SET utf8mb3 COLLATE utf8mb3_unicode_ci NOT NULL DEFAULT 'Staff',
   `status` tinyint(1) DEFAULT '1',
+  `remember_token` varchar(64) COLLATE utf8mb3_unicode_ci DEFAULT NULL,
+  `remember_token_expires` datetime DEFAULT NULL,
   `last_login` datetime DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci;
@@ -227,6 +243,13 @@ ALTER TABLE `export_temp`
   ADD KEY `idx_export_temp_product_id` (`product_id`);
 
 --
+-- Indexes for table `import_log`
+--
+ALTER TABLE `import_log`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uk_import_log_pallet_status` (`pallet_id`,`status`);
+
+--
 -- Indexes for table `import_temp`
 --
 ALTER TABLE `import_temp`
@@ -296,6 +319,12 @@ ALTER TABLE `export_log`
 --
 ALTER TABLE `export_temp`
   MODIFY `id` int NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `import_log`
+--
+ALTER TABLE `import_log`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `import_temp`

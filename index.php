@@ -2,18 +2,15 @@
 // Start output buffering to allow header redirects
 ob_start();
 
-require_once 'config/db.php'; 
-if (session_status() === PHP_SESSION_NONE) {
-    ini_set('session.gc_maxlifetime', 28800);
-    session_set_cookie_params(28800);
-    session_start();
-}
+require_once 'config/db.php';
+require_once 'config/session_init.php';
 $user = $_SESSION['user'] ?? null;
 $role = $user['role'] ?? '';
 $page = $_GET['page'] ?? 'inventory';
 
 $pageShortLabels = [
     'import' => 'Nhập Pallet',
+    'pallet_receive' => 'Nhận Pallet',
     'inbound' => 'Nhập kho',
     'outbound' => 'Xuất kho',
     'packing' => 'Packing',
@@ -51,6 +48,7 @@ $sidebarMenuItems = [
     ['page' => 'inventory', 'label' => 'Tra tồn', 'icon' => '📦', 'min_role' => 'Guest'],
     ['page' => 'dashboard', 'label' => 'Dashboard', 'icon' => '🛫', 'min_role' => 'Guest'],
     ['page' => 'import', 'label' => 'Nhận hàng (Pallet)', 'icon' => '🚚', 'min_role' => 'Staff'],
+    ['page' => 'pallet_receive', 'label' => 'Nhận Pallet (Kho Tổng)', 'icon' => '🏭', 'min_role' => 'Staff'],
     ['page' => 'picking', 'label' => 'Picking', 'icon' => '🧭', 'min_role' => 'Staff'],
     ['page' => 'packing', 'label' => 'Packing', 'icon' => '📫', 'min_role' => 'Staff'],
     ['page' => 'pickup', 'label' => 'Pickup', 'icon' => '🚛', 'min_role' => 'Staff'],
@@ -392,6 +390,72 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                 oscillator.start(audioContext.currentTime);
                 oscillator.stop(audioContext.currentTime + 0.12);
             } catch (e) {}
+        }
+
+        // Chan nhap tay tren cac o quet pallet_id / shelf_id: may quet (keyboard-wedge)
+        // go ky tu rat nhanh (thuong < ~40-50ms/ky tu), nguoi go tay se co khoang cach lon hon.
+        // Neu phat hien khoang cach vuot nguong -> coi la nhap tay -> xoa va canh bao.
+        function attachScanOnlyGuard(selector, options) {
+            options = options || {};
+            const maxGap = options.maxGap || 50;
+
+            document.querySelectorAll(selector).forEach(function(el) {
+                if (el.dataset.scanOnlyGuard === '1') return;
+                el.dataset.scanOnlyGuard = '1';
+
+                let lastTime = 0;
+                let lastWarnTime = 0;
+                const warnCooldown = 1200; // tranh mo modal lien tuc khi nguoi dung go tay nhieu ky tu lien tiep
+
+                function warnOnce() {
+                    const now = Date.now();
+                    if (now - lastWarnTime < warnCooldown) return;
+                    lastWarnTime = now;
+                    // Bo focus de cac ky tu go tay tiep theo khong tiep tuc kich hoat guard lien tuc
+                    el.blur();
+                    scanOnlyWarn(options.warnMessage);
+                }
+
+                el.addEventListener('keydown', function(e) {
+                    if (e.ctrlKey || e.metaKey || e.altKey) return;
+                    if (e.key.length !== 1) return; // bo qua Enter, Backspace, Tab, phim dieu huong...
+
+                    const now = Date.now();
+                    const currentLen = el.value.length;
+
+                    if (currentLen === 0 || el.selectionStart === 0 && el.selectionEnd === currentLen) {
+                        lastTime = now;
+                        return;
+                    }
+
+                    const gap = now - lastTime;
+                    lastTime = now;
+
+                    if (gap > maxGap) {
+                        e.preventDefault();
+                        el.value = '';
+                        lastTime = 0;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        warnOnce();
+                    }
+                });
+
+                el.addEventListener('paste', function(e) {
+                    e.preventDefault();
+                    warnOnce();
+                });
+            });
+        }
+
+        function scanOnlyWarn(message) {
+            const text = message || 'Vui lòng quét mã bằng máy quét, không nhập tay!';
+            if (typeof window.showModal === 'function') {
+                window.showModal(text, 'warning');
+            } else if (typeof window.showErrorModal === 'function') {
+                window.showErrorModal(text);
+            } else {
+                alert(text);
+            }
         }
 
         document.addEventListener('keydown', function(event) {

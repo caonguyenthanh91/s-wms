@@ -1,8 +1,6 @@
 <?php
 // Session should already be started by index.php
-if (session_status() === PHP_SESSION_NONE) {
-	session_start();
-}
+require_once __DIR__ . '/../config/session_init.php';
 
 $user = $_SESSION['user'] ?? null;
 $role = $user['role'] ?? '';
@@ -162,9 +160,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export_action']) && $
 
 <?php
 // Session should already be started by index.php
-if (session_status() === PHP_SESSION_NONE) {
-	session_start();
-}
+require_once __DIR__ . '/../config/session_init.php';
 
 $user = $_SESSION['user'] ?? null;
 $role = $user['role'] ?? ($role ?? '');

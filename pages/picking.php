@@ -1074,7 +1074,7 @@ function processBoxQrScan(parsed, fromScanner) {
         pickingState.productConfirmed = false;
 
         // Thông báo nếu đây là thùng cuối cùng
-        if (suggestedQty + pickedQty + totalQtyInList + suggestedQty === requiredQty) {
+        if (pickedQty + totalQtyInList + suggestedQty === requiredQty) {
             setWorkflowStatus('✓ Đã đủ số lượng! Nhấn OK để hoàn tất.', 'text-green-700');
             $('#box-qr-input').prop('disabled', true);
             $('#btn-parse-box').prop('disabled', true);

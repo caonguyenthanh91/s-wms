@@ -506,6 +506,7 @@ async function submitInbound() {
 }
 
 $(document).ready(function() {
+    attachScanOnlyGuard('#shelf-input');
     setInboundScanMode(false);
     updateInboundCounters();
 

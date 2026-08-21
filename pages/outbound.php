@@ -563,6 +563,7 @@ async function submitOutbound() {
 }
 
 $(document).ready(function() {
+    attachScanOnlyGuard('#shelf-input');
     setOutboundScanMode(false);
     updateOutboundCounters();
 

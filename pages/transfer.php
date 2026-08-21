@@ -24,21 +24,16 @@
 
     <div class="bg-white p-4 rounded-lg shadow-md mb-4 border border-slate-200 pda-hide">
         <h4 class="text-sm font-bold uppercase tracking-wide text-slate-600 mb-3">Thống kê tiến độ nhập kho Pallet</h4>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
-                <div class="text-[11px] uppercase font-bold text-blue-700">Tổng số</div>
-                <div id="summary-total" class="text-2xl font-black text-blue-800 leading-tight">0</div>
-                <div class="text-[11px] text-blue-700">pallet</div>
-            </div>
-            <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
-                <div class="text-[11px] uppercase font-bold text-emerald-700">Đã lên kệ</div>
-                <div id="summary-transferred" class="text-2xl font-black text-emerald-800 leading-tight">0</div>
-                <div class="text-[11px] text-emerald-700">pallet</div>
-            </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                <div class="text-[11px] uppercase font-bold text-amber-700">Chưa lên kệ</div>
+                <div class="text-[11px] uppercase font-bold text-amber-700">Đang đóng Pallet</div>
                 <div id="summary-pending" class="text-2xl font-black text-amber-800 leading-tight">0</div>
                 <div class="text-[11px] text-amber-700">pallet</div>
+            </div>
+            <div class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2">
+                <div class="text-[11px] uppercase font-bold text-blue-700">Đang chờ lên kệ</div>
+                <div id="summary-received" class="text-2xl font-black text-blue-800 leading-tight">0</div>
+                <div class="text-[11px] text-blue-700">pallet</div>
             </div>
         </div>
     </div>
@@ -63,6 +58,7 @@
                 <thead>
                     <tr class="bg-gray-50 border-b">
                         <th class="p-3 text-left">Mã Pallet</th>
+                        <th class="p-3 text-center">Trạng thái</th>
                         <th class="p-3 text-left pda-hide">Thời điểm đăng ký</th>
                         <th class="p-3 text-left pda-hide">Người thao tác</th>
                         <th class="p-3 text-center pda-hide">Số thùng/ pallet</th>
@@ -282,9 +278,8 @@ function closeConfirmModal() {
 }
 
 function updateTransferSummary(summary) {
-    $('#summary-total').text(summary.total_pallets || 0);
-    $('#summary-transferred').text(summary.transferred_pallets || 0);
     $('#summary-pending').text(summary.pending_pallets || 0);
+    $('#summary-received').text(summary.received_pallets || 0);
 }
 
 function loadTransferSummary(keyword) {
@@ -295,7 +290,7 @@ function loadTransferSummary(keyword) {
         }
         updateTransferSummary({ total_pallets: 0, transferred_pallets: 0, pending_pallets: 0 });
     }).fail(function() {
-        updateTransferSummary({ total_pallets: 0, transferred_pallets: 0, pending_pallets: 0 });
+        updateTransferSummary({ pending_pallets: 0, received_pallets: 0 });
     });
 }
 
@@ -322,20 +317,29 @@ function renderPalletTable(data) {
         const tbody = $('#pallet-list');
         tbody.empty();
         if (!data || data.length === 0) {
-            tbody.append('<tr><td colspan="5" class="p-8 text-center text-gray-400">Không có pallet nào đang chờ chuyển kho.</td></tr>');
+            tbody.append('<tr><td colspan="6" class="p-8 text-center text-gray-400">Không có pallet nào đang chờ chuyển kho.</td></tr>');
             return;
         }
         data.forEach(p => {
+            const isPending = p.status === 'PENDING';
+            const statusBadge = isPending
+                ? '<span class="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-xs font-semibold">Đang đóng Pallet</span>'
+                : '<span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-semibold">Chờ lên kệ</span>';
+            const transferBtn = isPending
+                ? '<button disabled title="Pallet chưa được xác nhận nhận hàng tại kho tổng" class="pda-transfer-btn bg-gray-300 text-gray-500 px-4 py-1.5 rounded text-xs font-bold uppercase tracking-wider cursor-not-allowed">Transfer</button>'
+                : `<button onclick="openModal('${p.pallet_id}')" class="pda-transfer-btn bg-blue-600 text-white px-4 py-1.5 rounded text-xs font-bold hover:bg-blue-700 transition uppercase tracking-wider shadow-sm">Transfer</button>`;
+
             tbody.append(`
                 <tr class="pallet-row border-b hover:bg-gray-50 transition" data-id="${p.pallet_id}">
                     <td class="p-3 font-mono font-bold text-blue-600">
                         <button type="button" onclick="openPalletDetailModal('${p.pallet_id}')" class="hover:underline">${p.pallet_id}</button>
                     </td>
+                    <td class="p-3 text-center">${statusBadge}</td>
                     <td class="p-3 text-gray-500 pda-hide">${p.created_at}</td>
                     <td class="p-3 text-gray-500 pda-hide">${p.created_by}</td>
                     <td class="p-3 text-center pda-hide"><span class="bg-gray-200 px-2 py-0.5 rounded text-xs font-semibold">${p.sku_count} SKUs</span></td>
                     <td class="p-3 text-right">
-                        <button onclick="openModal('${p.pallet_id}')" class="pda-transfer-btn bg-blue-600 text-white px-4 py-1.5 rounded text-xs font-bold hover:bg-blue-700 transition uppercase tracking-wider shadow-sm">Transfer</button>
+                        ${transferBtn}
                     </td>
                 </tr>
             `);
@@ -430,6 +434,8 @@ async function confirmTransfer() {
 }
 
 $(document).ready(function() {
+    attachScanOnlyGuard('#pallet-search, #target-shelf-id');
+
     loadPendingPallets();
     loadTransferSummary('');
 

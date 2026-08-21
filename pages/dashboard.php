@@ -257,9 +257,9 @@ function renderFlightKpi(rows) {
     });
 
     $('#kpi-commands').text(totalCommands + ' (' + totalCasesInDay + ' case)');
-    $('#kpi-picking').text(pickingComplete + ' / ' + totalCommands + ' (' + pickingCompleteCases + ' case done)');
-    $('#kpi-packing').text(packingComplete + ' / ' + totalCommands + ' (' + packingCompleteCases + ' case done)');
-    $('#kpi-pickup').text(pickupComplete + ' / ' + totalCommands + ' (' + pickupCompleteCases + ' case done)');
+    $('#kpi-picking').text(pickingComplete + ' / ' + totalCommands);
+    $('#kpi-packing').text(packingComplete + ' / ' + totalCommands);
+    $('#kpi-pickup').text(pickupComplete + ' / ' + totalCommands);
 }
 
 function loadCommandFlightBoard() {

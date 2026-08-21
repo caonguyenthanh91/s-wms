@@ -1,9 +1,7 @@
 <?php
 // S-WMS Export Monitor - Bảng tiến độ xuất hàng full-screen cho màn hình TV lớn.
 // Không cần đăng nhập (Guest). Tự động tải lại dữ liệu mỗi 5 phút và cuộn danh sách tự động.
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+require_once __DIR__ . '/config/session_init.php';
 
 $assetBaseUrl = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
 if ($assetBaseUrl === '') {
