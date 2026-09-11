@@ -16,6 +16,7 @@ $pageShortLabels = [
     'packing' => 'Packing',
     'pickup' => 'Pickup',
     'check_box' => 'Check Box',
+    'check_inventory' => 'Kiểm kê',
     'inventory' => 'Tra tồn',
     'picking' => 'Picking',
     'transfer' => 'Pallet >>> Kệ',
@@ -32,6 +33,7 @@ $pageShortLabels = [
     'wms_import' => 'WMS Import',
     'system_check' => 'Kiểm tra Hệ Thống',
     'admin' => 'Quản trị',
+    'packing_ver_2' => 'Test_ORC',
 ];
 
 $normalizedRole = $role === '' ? 'Guest' : $role;
@@ -53,10 +55,12 @@ $sidebarMenuItems = [
     ['page' => 'packing', 'label' => 'Packing', 'icon' => '📫', 'min_role' => 'Staff'],
     ['page' => 'pickup', 'label' => 'Pickup', 'icon' => '🚛', 'min_role' => 'Staff'],
     ['page' => 'check_box', 'label' => 'Check Box', 'icon' => '✅', 'min_role' => 'Staff'],
+    ['page' => 'check_inventory', 'label' => 'Kiểm kê', 'icon' => '📋', 'min_role' => 'Staff'],
     ['page' => 'transfer', 'label' => 'Pallet >>> Kệ', 'icon' => '🔄', 'min_role' => 'Leader'],
     ['page' => 'inbound', 'label' => 'Nhập Kho', 'icon' => '📥', 'min_role' => 'Leader'],
     ['page' => 'outbound', 'label' => 'Xuất Kho', 'icon' => '📤', 'min_role' => 'Leader'],
     ['page' => 'change', 'label' => 'Đổi kệ', 'icon' => '↔️', 'min_role' => 'Leader'],
+    ['page' => 'packing_ver_2', 'label' => 'Test_ORC', 'icon' => '🧪', 'min_role' => 'Staff'],
     ['page' => 'print', 'label' => 'In phiếu [Picking]', 'icon' => '🖨️', 'min_role' => 'Leader'],
     ['page' => 'print_case', 'label' => 'In tem [Packing]', 'icon' => '📦', 'min_role' => 'Leader'],
     ['page' => 'print_pallet', 'label' => 'In tem [Pallet]', 'icon' => '📮', 'min_role' => 'Leader'],
@@ -163,10 +167,10 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
     <div id="app-container" class="min-h-screen flex flex-col md:flex-row sidebar-expanded">
         <!-- Sidebar -->
         <aside id="sidebar" class="w-full md:w-64 bg-slate-800 text-white flex-shrink-0 transition-all duration-300 overflow-hidden">
-            <div id="mobile-header-bar" class="md:hidden px-3 py-2 border-b border-slate-700 flex items-center justify-between cursor-pointer">
-                <button id="mobile-menu-toggle" type="button" class="font-bold text-base tracking-wide flex items-center gap-2">
+            <div id="mobile-header-bar" class="md:hidden px-3 py-2 border-b border-slate-700 flex items-center justify-between">
+                <button id="mobile-menu-toggle" type="button" onclick="openMobileMenuOverlay()" class="font-bold text-base tracking-wide flex items-center gap-2">
+                    <i id="mobile-menu-icon" class="fas fa-bars text-lg"></i>
                     <span id="mobile-menu-label"><?php echo htmlspecialchars($mobileHeaderLabel, ENT_QUOTES, 'UTF-8'); ?></span>
-                    <i id="mobile-menu-icon" class="fas fa-chevron-down text-xs"></i>
                 </button>
                 <div id="auth-block-mobile" class="text-xs text-gray-300">Đang tải...</div>
             </div>
@@ -215,6 +219,18 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
             </div>
         </main>
     </div>
+
+    <!-- Menu chức năng dạng lưới (menu.php) - chỉ hiển thị trên màn hình nhỏ khi bấm hamburger -->
+    <div id="mobile-menu-overlay" class="fixed inset-0 z-[9998] bg-gray-100 overflow-y-auto hidden md:hidden">
+        <div class="sticky top-0 z-10 flex items-center justify-between px-4 py-3 bg-slate-800 text-white shadow">
+            <span class="font-bold text-lg flex items-center gap-2"><i class="fas fa-th-large"></i> Menu chức năng</span>
+            <button type="button" onclick="closeMobileMenuOverlay()" aria-label="Đóng" class="text-3xl leading-none px-2 -my-1">&times;</button>
+        </div>
+        <div class="p-4">
+            <?php include __DIR__ . '/menu.php'; ?>
+        </div>
+    </div>
+
     <script src="<?php echo $assetBaseUrl; ?>assets/js/bootstrap.bundle.min.js"></script>
     <script src="<?php echo $assetBaseUrl; ?>assets/js/chart.umd.js"></script>
     <script src="<?php echo $assetBaseUrl; ?>assets/js/html5-qrcode.min.js"></script>
@@ -243,7 +259,7 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
         let currentAuthUser = null;
 
         function pdaOptimizedPages() {
-            return ['import', 'inbound', 'outbound', 'transfer', 'change', 'inventory', 'packing', 'pickup', 'check_box'];
+            return ['import', 'inbound', 'outbound', 'transfer', 'change', 'inventory', 'packing', 'pickup', 'check_box', 'check_inventory', 'packing_ver_2'];
         }
 
         function isPdaCompactMode() {
@@ -463,6 +479,11 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
                 const modal = document.getElementById('qr-scanner-modal');
                 if (modal && !modal.classList.contains('hidden')) {
                     closeQRScannerModal();
+                    return;
+                }
+                const menuOverlay = document.getElementById('mobile-menu-overlay');
+                if (menuOverlay && !menuOverlay.classList.contains('hidden')) {
+                    closeMobileMenuOverlay();
                 }
             }
         });
@@ -579,6 +600,20 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
             });
         }
 
+        function openMobileMenuOverlay() {
+            const ov = document.getElementById('mobile-menu-overlay');
+            if (!ov) return;
+            ov.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeMobileMenuOverlay() {
+            const ov = document.getElementById('mobile-menu-overlay');
+            if (!ov) return;
+            ov.classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+
         function toggleMobileSidebarMenu() {
             const nav = document.getElementById('sidebar-nav');
             const icon = document.getElementById('mobile-menu-icon');
@@ -638,15 +673,15 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
             loadAuth();
             updateMobileMenuLabel(getCurrentMobileLabelFromPage());
 
-            $('#mobile-header-bar').on('click', function(e) {
-                const interactive = e.target.closest('a, input, textarea, select, label');
-                if (interactive) return;
-                toggleMobileSidebarMenu();
-            });
-
+            // Hamburger trên màn hình nhỏ -> mở menu chức năng dạng lưới (menu.php)
             $('#mobile-menu-toggle').on('click', function(e) {
                 e.stopPropagation();
-                toggleMobileSidebarMenu();
+                openMobileMenuOverlay();
+            });
+
+            // Bấm 1 chức năng trong overlay -> đóng overlay (link tự điều hướng)
+            $('#mobile-menu-overlay').on('click', 'a.menu-card:not(.restricted)', function() {
+                closeMobileMenuOverlay();
             });
 
             $('#sidebar-nav').on('click', 'a', function() {
@@ -665,6 +700,7 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
             if (window.innerWidth >= 768) {
                 const nav = document.getElementById('sidebar-nav');
                 if (nav) nav.classList.remove('hidden');
+                closeMobileMenuOverlay();
             }
         });
     </script>

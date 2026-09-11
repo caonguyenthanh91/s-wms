@@ -275,6 +275,7 @@ let pickingState = {
     selectedShelf: null,
     shelfConfirmed: false,
     productConfirmed: false,
+    currentBoxId: '', // box_id vừa quét từ tem thùng ('' = luồng cũ, trừ tồn box_id IS NULL)
     busy: false,
     history: []
 };
@@ -302,7 +303,7 @@ function showModal(message, type = 'error', title = null) {
     $('#error-modal').css('display', 'flex');
 }
 
-function submitOutboundWithRetry(shelf_id, product_id, quantity, command, case_no, is_picking, idempotency_key, maxRetries = 3) {
+function submitOutboundWithRetry(shelf_id, product_id, quantity, command, case_no, is_picking, idempotency_key, box_id = '', maxRetries = 3) {
     return new Promise((resolve, reject) => {
         let retryCount = 0;
 
@@ -314,7 +315,8 @@ function submitOutboundWithRetry(shelf_id, product_id, quantity, command, case_n
                 command: command,
                 case_no: case_no,
                 is_picking: is_picking,
-                idempotency_key: idempotency_key
+                idempotency_key: idempotency_key,
+                box_id: box_id || ''
             }, function(res) {
                 if (res.success) {
                     resolve(res);
@@ -445,12 +447,15 @@ function updatePickBoxListDisplay() {
     let totalQty = 0;
     pickBoxList.forEach(function(item, index) {
         totalQty += item.qty;
+        const boxLabel = item.boxId
+            ? `<span class="block text-[10px] text-emerald-700 font-mono">📦 ${item.boxId}</span>`
+            : '<span class="block text-[10px] text-slate-400">— không thùng —</span>';
         tbody.append(`
             <tr class="border-b hover:bg-gray-50">
-                <td class="p-2 text-xs text-slate-600">${index + 1}</td>
-                <td class="p-2 text-xs font-mono font-bold">${item.productId}</td>
-                <td class="p-2 text-right text-xs font-semibold">${item.qty}</td>
-                <td class="p-2 text-center">
+                <td class="p-2 text-xs text-slate-600 align-top">${index + 1}</td>
+                <td class="p-2 text-xs font-mono font-bold">${item.productId}${boxLabel}</td>
+                <td class="p-2 text-right text-xs font-semibold align-top">${item.qty}</td>
+                <td class="p-2 text-center align-top">
                     <button type="button" onclick="removePickBoxItem(${index})" class="text-red-500 text-sm font-bold hover:text-red-700">✕</button>
                 </td>
             </tr>
@@ -523,13 +528,22 @@ function sortShelvesByQtyAndCode(rows) {
             return {
                 shelf_id: normalizeQrText(row.shelf_id),
                 shelf_name: row.shelf_name || '',
-                qty: parseFloat(row.qty || 0)
+                qty: parseFloat(row.qty || 0),
+                first_box_id: row.first_box_id ? String(row.first_box_id).trim() : ''
             };
         })
         .filter(function(row) {
             return row.shelf_id && row.qty > 0;
         })
         .sort(function(a, b) {
+            // FIFO: vị trí có box_id lên trước, sắp theo box_id cũ nhất (yymmdd trong mã).
+            var aHasBox = !!a.first_box_id;
+            var bHasBox = !!b.first_box_id;
+            if (aHasBox !== bHasBox) return aHasBox ? -1 : 1;
+            if (aHasBox && bHasBox && a.first_box_id !== b.first_box_id) {
+                return a.first_box_id.localeCompare(b.first_box_id, undefined, { numeric: true });
+            }
+            // Không có box_id: giữ hành vi cũ - tồn thấp nhất trước, rồi theo mã vị trí.
             if (a.qty === b.qty) {
                 return a.shelf_id.localeCompare(b.shelf_id, undefined, { numeric: true });
             }
@@ -560,6 +574,9 @@ function renderShelfList() {
 
         const btnLabel = canSelect ? 'Chọn vị trí này' : 'Chỉ chọn khi lên đầu danh sách';
         const shelfName = shelf.shelf_name && shelf.shelf_name !== shelf.shelf_id ? ` - ${shelf.shelf_name}` : '';
+        const boxLine = shelf.first_box_id
+            ? `<div class="text-[11px] mt-1 text-emerald-700 font-mono">FIFO · thùng cũ nhất: ${shelf.first_box_id}</div>`
+            : '';
 
         list.append(`
             <button type="button" class="${cls}" onclick="selectShelf('${shelf.shelf_id}')">
@@ -573,6 +590,7 @@ function renderShelfList() {
                         <div class="text-xl font-black text-slate-900">${shelf.qty}</div>
                     </div>
                 </div>
+                ${boxLine}
                 <div class="text-xs mt-1 ${canSelect ? 'text-sky-700' : 'text-slate-500'}">${btnLabel}</div>
             </button>
         `);
@@ -582,6 +600,7 @@ function renderShelfList() {
 function resetStep2And3Inputs() {
     pickingState.shelfConfirmed = false;
     pickingState.productConfirmed = false;
+    pickingState.currentBoxId = '';
     pickBoxList = [];
 
     $('#shelf-qr-input').val('');
@@ -689,6 +708,7 @@ function resetPickingJob(clearInput) {
         selectedShelf: null,
         shelfConfirmed: false,
         productConfirmed: false,
+        currentBoxId: '',
         busy: false,
         history: []
     };
@@ -908,6 +928,24 @@ function processShelfQrScan(scanned, fromScanner) {
     return true;
 }
 
+// box_id dạng [TEXT]-[yymmdd]-[num], TEXT có thể chứa . _ - (vd LOT-260828-1, AL.EXT-211228-001).
+var BOX_ID_PATTERN = /^[A-Za-z0-9._-]+-\d{6}-\d+$/;
+
+function extractBoxIdFromParts(parts) {
+    // box_id nằm ở index 8. Index 0..7 theo chuẩn QR đã thiết đặt trước đó -> KHÔNG dò tới,
+    // để QR cũ (không có box_id ở index 8) không bị phá vỡ luồng picking.
+    var candidate = (parts[8] || '').trim().toUpperCase();
+    if (candidate && BOX_ID_PATTERN.test(candidate)) return candidate;
+    // Dự phòng: quét từ index 8 trở đi (phòng lệch cột do số ký tự '$'), vẫn không đụng index 0..7.
+    for (var i = 8; i < parts.length; i++) {
+        var token = (parts[i] || '').trim().toUpperCase();
+        if (BOX_ID_PATTERN.test(token)) return token;
+    }
+    // Chấp nhận index 8 nếu trông giống mã định danh (có gạch nối + chữ số) dù không khớp regex chặt.
+    if (candidate && /-/.test(candidate) && /\d/.test(candidate)) return candidate;
+    return null;
+}
+
 function parseBoxQr(rawValue) {
     const raw = normalizeQrText(rawValue);
     if (!raw || raw.indexOf('$') === -1) return null;
@@ -918,21 +956,32 @@ function parseBoxQr(rawValue) {
 
     if (parts.length < 4) return null;
 
+    // Vị trí cố định: mã hàng = index 1, số lượng = index 3.
+    // Không quét số từ cuối chuỗi (QR tem thùng có field số phía sau: ...$-$1$0$<ngày>$<mã>$0).
     const productId = (parts[1] || '').toUpperCase();
     if (!productId) return null;
 
-    let qtyToken = '';
-    for (let i = parts.length - 1; i >= 3; i--) {
-        if (/^\d+$/.test(parts[i])) {
-            qtyToken = parts[i];
-            break;
+    let qty = NaN;
+    if (/^\d+$/.test(parts[3] || '')) {
+        qty = parseInt(parts[3], 10);
+    } else {
+        for (let i = 3; i < parts.length; i++) {
+            if (/^\d+$/.test(parts[i]) && parseInt(parts[i], 10) > 0) {
+                qty = parseInt(parts[i], 10);
+                break;
+            }
         }
     }
 
-    const qty = parseInt(qtyToken, 10);
-    if (isNaN(qty) || qty <= 0) return null;
+    const boxId = extractBoxIdFromParts(parts);
 
-    return { productId, qty };
+    if (isNaN(qty) || qty <= 0) {
+        console.log('[picking box QR] parse FAIL =>', { raw: raw, parts: parts, productId: productId, qty: qty, boxId: boxId });
+        return null;
+    }
+    console.log('[picking box QR] product_id =', productId, '| quantity =', qty, '| box_id =', boxId);
+
+    return { productId, qty, boxId };
 }
 
 function getMaxPickAllowedNow() {
@@ -970,6 +1019,9 @@ function processBoxQrScan(parsed, fromScanner) {
         }
         return false;
     }
+
+    // Ghi nhận box_id của tem vừa quét ('' = tem cũ chưa đăng ký box -> trừ tồn luồng cũ).
+    pickingState.currentBoxId = parsed.boxId || '';
 
     if (parsed.productId !== pickingState.productId) {
         const msg = `✓ Cần: ${pickingState.productId}\n✗ Quét: ${parsed.productId}\n\nVui lòng quét lại đúng mã hàng!`;
@@ -1064,7 +1116,7 @@ function processBoxQrScan(parsed, fromScanner) {
     // Mode liên tục: tự động thêm vào danh sách
     if (isContinuousPickScan) {
         // Thêm vào danh sách
-        pickBoxList.push({ productId: parsed.productId, qty: suggestedQty });
+        pickBoxList.push({ productId: parsed.productId, qty: suggestedQty, boxId: parsed.boxId || '' });
         updatePickBoxListDisplay();
         updatePickBoxListCounter();
 
@@ -1072,6 +1124,7 @@ function processBoxQrScan(parsed, fromScanner) {
         $('#pick-qty-input').val('');
         $('#box-qr-input').val('').focus();
         pickingState.productConfirmed = false;
+        pickingState.currentBoxId = '';
 
         // Thông báo nếu đây là thùng cuối cùng
         if (pickedQty + totalQtyInList + suggestedQty === requiredQty) {
@@ -1216,14 +1269,15 @@ function addPickBoxItemFromInput() {
         return false;
     }
 
-    // Thêm vào danh sách
-    pickBoxList.push({ productId: pickingState.productId, qty: qty });
+    // Thêm vào danh sách (giữ box_id của tem vừa quét)
+    pickBoxList.push({ productId: pickingState.productId, qty: qty, boxId: pickingState.currentBoxId || '' });
     updatePickBoxListDisplay();
 
     // Reset input
     $('#pick-qty-input').val('');
     $('#box-qr-input').val('').focus();
     pickingState.productConfirmed = false;
+    pickingState.currentBoxId = '';
     hideError('#step3-error');
 
     setWorkflowStatus('Đã thêm vào danh sách. Tiếp tục quét thùng tiếp theo.', 'text-green-700');
@@ -1342,6 +1396,14 @@ function submitPickAndDeductStock() {
         const item = pickBoxList[index];
         const idempotencyKey = `${currentPickBatchId}-${index}`;
 
+        console.log('[picking trừ tồn] =>', {
+            shelf_id: selectedShelfId,
+            product_id: item.productId,
+            quantity: item.qty,
+            box_id: item.boxId || '',
+            command: pickingState.command
+        });
+
         try {
             const res = await submitOutboundWithRetry(
                 selectedShelfId,
@@ -1351,6 +1413,7 @@ function submitPickAndDeductStock() {
                 '001',
                 pickingState.command ? 1 : 0,
                 idempotencyKey,
+                item.boxId || '',
                 3
             );
             successCount++;

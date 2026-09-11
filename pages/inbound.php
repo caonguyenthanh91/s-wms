@@ -120,8 +120,8 @@
         </div>
 
         <div class="mb-2 inline-flex rounded-lg border border-gray-300 overflow-hidden self-start">
-            <button type="button" id="scan-mode-interrupt" onclick="setInboundScanMode(false)" class="px-1 py-1 text-sm font-semibold bg-blue-600 text-white">Gián đoạn</button>
-            <button type="button" id="scan-mode-continuous" onclick="setInboundScanMode(true)" class="px-1 py-1 text-sm font-semibold bg-white text-gray-700 hover:bg-gray-100">Liên tục</button>
+            <button type="button" id="scan-mode-interrupt" onclick="setInboundScanMode(false)" class="px-1 py-1 text-sm font-semibold bg-white text-gray-700 hover:bg-gray-100">Gián đoạn</button>
+            <button type="button" id="scan-mode-continuous" onclick="setInboundScanMode(true)" class="px-1 py-1 text-sm font-semibold bg-blue-600 text-white">Liên tục</button>
         </div>
 
         <div class="grid grid-cols-12 gap-2 mb-2">
@@ -174,6 +174,46 @@ let inboundItems = [];
 let qrScanTimer = null;
 let lastHandledQRRaw = '';
 let isContinuousInboundScan = false;
+let inboundCurrentBoxId = null; // box_id vừa quét từ QR tem thùng (null = luồng cũ, không thùng)
+let inboundCurrentBoxMeta = null; // metadata thùng lấy từ QR (chỉ dùng khi có box_id)
+let inboundLastParsedBoxProductId = null; // mã hàng tương ứng với inboundCurrentBoxId hiện tại (đối chiếu ở addItem)
+let inboundScanSeq = 0; // đếm tăng dần mỗi lượt quét mới -> callback bất đồng bộ của lượt cũ tự biết đã lỗi thời
+
+// box_id dạng [TEXT]-[yymmdd]-[num], TEXT có thể chứa . _ - (vd LOT-260828-1, AL.EXT-211228-001)
+const BOX_ID_PATTERN = /^[A-Za-z0-9._-]+-\d{6}-\d+$/;
+
+function extractBoxIdFromParts(parts) {
+    // Ưu tiên: quét mọi phần tử tìm token đúng định dạng box_id [TEXT]-[yymmdd]-[num].
+    // (QR thực tế box_no có thể ở index 7 hoặc 8 tùy số ký tự '$' ngăn cách.)
+    for (let i = 0; i < parts.length; i++) {
+        const token = (parts[i] || '').trim().toUpperCase();
+        if (BOX_ID_PATTERN.test(token)) return token;
+    }
+    // Dự phòng theo vị trí cố định: index 7 rồi 8.
+    for (const idx of [7, 8]) {
+        const fixed = (parts[idx] || '').trim().toUpperCase();
+        if (fixed && /-/.test(fixed) && /\d/.test(fixed)) return fixed;
+    }
+    return null;
+}
+
+// Metadata thùng ghi vào box_info, theo vị trí cố định trong QR tem thùng:
+//   invoice_no=9, order_no=10, bundle_no=11, weight=12, input_date=13, lot_no=14, supplier=15
+function extractBoxMetaFromParts(parts) {
+    const g = i => {
+        const v = (parts[i] || '').trim();
+        return v === '' ? null : v;
+    };
+    return {
+        invoice_no: g(9),
+        order_no:   g(10),
+        bundle_no:  g(11),
+        weight:     g(12),
+        input_date: g(13),
+        lot_no:     g(14),
+        supplier:   g(15),
+    };
+}
 
 function setInboundScanMode(isContinuous) {
     isContinuousInboundScan = !!isContinuous;
@@ -267,21 +307,33 @@ function parseInboundQRPayload(rawValue) {
     const parts = normalizedValue.split('$').map(part => part.trim());
     if (parts.length < 3) return null;
 
+    // Vị trí cố định: mã hàng = index 1, số lượng = index 3.
+    // (Không quét số từ cuối chuỗi nữa vì QR tem thùng có các field số phía sau:
+    //  ...$-$1$0$<ngày>$<mã>$0  -> dễ bắt nhầm '0' thành số lượng.)
     const productId = (parts[1] || '').toUpperCase();
 
-    // Tim quantity theo token toan so gan cuoi chuoi de tranh lech cot khi QR co them field.
-    let qtyToken = '';
-    for (let i = parts.length - 1; i >= 2; i--) {
-        if (/^\d+$/.test(parts[i])) {
-            qtyToken = parts[i];
-            break;
+    let quantity = NaN;
+    if (/^\d+$/.test(parts[3] || '')) {
+        quantity = parseInt(parts[3], 10);
+    } else {
+        // Dự phòng: token toàn số đầu tiên tính từ index 2 trở đi.
+        for (let i = 2; i < parts.length; i++) {
+            if (/^\d+$/.test(parts[i]) && parseInt(parts[i], 10) > 0) {
+                quantity = parseInt(parts[i], 10);
+                break;
+            }
         }
     }
 
-    const quantity = parseInt(qtyToken, 10);
+    const boxId = extractBoxIdFromParts(parts);
+    const boxMeta = boxId ? extractBoxMetaFromParts(parts) : null;
 
-    if (!productId || isNaN(quantity) || quantity <= 0) return null;
-    return { productId, quantity };
+    if (!productId || isNaN(quantity) || quantity <= 0) {
+        console.log('[inbound QR] parse FAIL =>', { raw: normalizedValue, parts, productId, quantity, boxId });
+        return null;
+    }
+    console.log('[inbound QR] product_id =', productId, '| quantity =', quantity, '| box_id =', boxId, '| box_meta =', boxMeta);
+    return { productId, quantity, boxId, boxMeta };
 }
 
 function validateProduct(productId, onSuccess, onFail) {
@@ -306,7 +358,21 @@ function handleQRProductPayload(rawValue) {
 
     lastHandledQRRaw = normalizedRaw;
 
+    // check_product là request bất đồng bộ: máy quét có thể kích hoạt thêm 1 lượt debounce
+    // khác (VD: lượt đầu bắt được chuỗi khi box_id chưa gõ xong) trước khi lượt này trả lời.
+    // Đánh dấu "phiên" (seq) cho lượt quét này; callback chỉ được phép ghi nhận nếu vẫn còn
+    // là lượt MỚI NHẤT tại thời điểm trả lời - lượt cũ hơn tự coi là lỗi thời và bỏ qua,
+    // tránh nhiều callback ghi đè lung tung lên inboundCurrentBoxId.
+    inboundScanSeq += 1;
+    const mySeq = inboundScanSeq;
+
+    inboundCurrentBoxId = parsed.boxId || null;
+    inboundCurrentBoxMeta = parsed.boxId ? (parsed.boxMeta || null) : null;
+    inboundLastParsedBoxProductId = parsed.productId;
+
     validateProduct(parsed.productId, function() {
+        if (mySeq !== inboundScanSeq) return; // đã có lượt quét mới hơn xử lý thay
+
         $('#product_id').val(parsed.productId);
         $('#qty-input').val(parsed.quantity);
 
@@ -318,6 +384,8 @@ function handleQRProductPayload(rawValue) {
             $('#qty-input').focus().select();
         }
     }, function() {
+        if (mySeq !== inboundScanSeq) return;
+
         $('#product_id').val(parsed.productId).select();
         $('#qty-input').val('');
     });
@@ -365,7 +433,10 @@ function resetInbound() {
     $('#shelf-input').val('').focus();
     inboundItems = [];
     lastHandledQRRaw = '';
-    setInboundScanMode(false);
+    inboundCurrentBoxId = null;
+    inboundCurrentBoxMeta = null;
+    inboundLastParsedBoxProductId = null;
+    setInboundScanMode(true);
     renderItemList();
     updateInboundCounters();
 }
@@ -373,15 +444,26 @@ function resetInbound() {
 $('#product_id').on('input', function() {
     updateInboundCounters();
     const rawValue = normalizeInboundQRRaw($(this).val());
-    if (!rawValue || rawValue.indexOf('$') === -1) return;
+    // Gõ tay mã hàng (không phải payload QR) -> bỏ box_id đang giữ.
+    if (!rawValue || rawValue.indexOf('$') === -1) {
+        inboundCurrentBoxId = null;
+        inboundCurrentBoxMeta = null;
+        inboundLastParsedBoxProductId = null;
+        return;
+    }
 
     // Cho scanner nhap xong toan bo chuoi roi moi parse de tranh ky tu duoi QR chay vao o so luong.
+    // Ngưỡng >=10 đảm bảo đã gõ QUA KHỎI field box_id (index 8) - tức dấu '$' đóng field box_id
+    // (field thứ 9) đã xuất hiện - trước khi coi là "xong". Trước đây >=7, rồi >=9, đều chốt NGAY
+    // LÚC field box_id vừa mở ra còn rỗng (chưa gõ ký tự nào của box_id) -> vẫn mất box_id.
+    // Đây chỉ là tối ưu giảm số lần chốt sớm; cơ chế "seq" ở handleQRProductPayload mới là chốt
+    // chặn thật sự khi lỡ vẫn chốt sớm.
     clearTimeout(qrScanTimer);
     qrScanTimer = setTimeout(function() {
         const finalRaw = normalizeInboundQRRaw($('#product_id').val());
-        const isLikelyComplete = finalRaw.endsWith('$') || finalRaw.split('$').length >= 7;
+        const isLikelyComplete = finalRaw.endsWith('$') || finalRaw.split('$').length >= 10;
         if (isLikelyComplete) handleQRProductPayload(finalRaw);
-    }, 120);
+    }, 150);
 });
 
 // Xử lý sự kiện khi rời khỏi ô nhập hoặc nhấn Enter (focus out) cho mã sản phẩm
@@ -393,6 +475,8 @@ $('#product_id').on('change', function() {
     lastHandledQRRaw = '';
     if (handleQRProductPayload(rawValue)) return;
 
+    inboundCurrentBoxId = null;
+    inboundCurrentBoxMeta = null;
     const pid = rawValue.toUpperCase();
     validateProduct(pid, function() {
         $('#product_id').val(pid);
@@ -421,14 +505,32 @@ function addItem() {
         return;
     }
 
-    inboundItems.push({ product_id: productId, quantity: qty });
+    // Chỉ gắn box_id đang giữ nếu nó thực sự thuộc về đúng mã hàng đang hiển thị ở #product_id.
+    // Đây là chốt chặn cuối cùng: nếu có bất kỳ xáo trộn nào (gõ tay đè lên, lượt quét khác
+    // xen vào...) khiến inboundCurrentBoxId không còn khớp mã hàng hiện tại, thà bỏ box_id
+    // (rơi về luồng cũ) còn hơn gắn nhầm box cho 1 mã hàng khác.
+    const boxIdMatches = inboundLastParsedBoxProductId === productId;
+    const boxIdToUse = boxIdMatches ? (inboundCurrentBoxId || null) : null;
+    const boxMetaToUse = boxIdToUse ? (inboundCurrentBoxMeta || null) : null;
+
+    const newItem = {
+        product_id: productId,
+        quantity: qty,
+        box_id: boxIdToUse,
+        box_meta: boxMetaToUse
+    };
+    console.log('[inbound addItem] product_id =', newItem.product_id, '| quantity =', newItem.quantity, '| box_id =', newItem.box_id, '| box_meta =', newItem.box_meta);
+    inboundItems.push(newItem);
     renderItemList();
-    
+
     // Tối ưu: Reset và quay lại ô nhập mã sản phẩm ngay lập tức
     $('#product_id').val('').removeClass('border-green-500 border-red-500').focus();
     $('#qty-input').val('');
     $('#product-error').addClass('hidden');
     lastHandledQRRaw = '';
+    inboundCurrentBoxId = null;
+    inboundCurrentBoxMeta = null;
+    inboundLastParsedBoxProductId = null;
     updateInboundCounters();
 }
 
@@ -436,11 +538,14 @@ function renderItemList() {
     const list = $('#item-list');
     list.empty();
     inboundItems.forEach((item, index) => {
+        const boxLabel = item.box_id
+            ? `<span class="block text-[10px] text-blue-700 font-mono">📦 ${item.box_id}</span>`
+            : '<span class="block text-[10px] text-gray-400">— không thùng —</span>';
         list.append(`
             <tr class="border-b">
-                <td class="p-2 text-left font-mono">${item.product_id}</td>
-                <td class="p-2 text-right">${item.quantity}</td>
-                <td class="p-2 text-center">
+                <td class="p-2 text-left font-mono">${item.product_id}${boxLabel}</td>
+                <td class="p-2 text-right align-top">${item.quantity}</td>
+                <td class="p-2 text-center align-top">
                     <button onclick="removeItem(${index})" class="text-red-500 hover:text-red-700">✕</button>
                 </td>
             </tr>
@@ -465,11 +570,22 @@ async function submitInbound() {
 
     for (const item of inboundItems) {
         try {
-            const res = await $.post('api.php?action=inbound_submit', {
+            const meta = item.box_id ? (item.box_meta || {}) : {};
+            const payload = {
                 shelf_id: shelfId,
                 product_id: item.product_id,
-                quantity: item.quantity
-            });
+                quantity: item.quantity,
+                box_id: item.box_id || '',
+                box_invoice_no: meta.invoice_no || '',
+                box_order_no: meta.order_no || '',
+                box_bundle_no: meta.bundle_no || '',
+                box_weight: meta.weight || '',
+                box_input_date: meta.input_date || '',
+                box_lot_no: meta.lot_no || '',
+                box_supplier: meta.supplier || ''
+            };
+            console.log('[inbound submit] =>', payload);
+            const res = await $.post('api.php?action=inbound_submit', payload);
 
             if (!res.success) {
                 showModal(`Lỗi khi nhập SP ${item.product_id}: ${res.message}`, 'error');
@@ -507,7 +623,7 @@ async function submitInbound() {
 
 $(document).ready(function() {
     attachScanOnlyGuard('#shelf-input');
-    setInboundScanMode(false);
+    setInboundScanMode(true);
     updateInboundCounters();
 
     $(document).on('keydown', function(e) {
@@ -534,7 +650,9 @@ $(document).ready(function() {
             if (items && items.length > 0) {
                 inboundItems = items.map(i => ({
                     product_id: i.product_id,
-                    quantity: parseInt(i.quantity)
+                    quantity: parseInt(i.quantity),
+                    box_id: i.box_id || null,
+                    box_meta: null
                 }));
                 renderItemList();
                 updateInboundCounters();
