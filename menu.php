@@ -9,10 +9,11 @@ $roleEmojis = [
 
 $categoryGrouping = [
     'Cơ bản' => ['inventory', 'dashboard'],
-    'Vận hành kho' => ['import', 'pallet_receive', 'picking', 'packing', 'pickup', 'check_box', 'check_inventory', 'transfer', 'inbound', 'outbound', 'change', 'packing_ver_2'],
+    'Vận hành kho' => ['import', 'pallet_receive', 'transfer', 'picking', 'packing', 'pickup', 'inbound', 'outbound', 'change'],
     'In ấn' => ['print', 'print_case', 'print_pallet'],
     'Cấu hình & Quản lý' => ['layout', 'shelves', 'products', 'data_export', 'wms_import', 'data_import', 'admin'],
     'Bảo trì' => ['system_check'],
+    'Đang phát triển' => ['check_box', 'check_inventory', 'packing_ver_2'],
 ];
 ?>
 

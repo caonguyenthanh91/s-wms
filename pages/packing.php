@@ -752,7 +752,12 @@ $('#box-qr-input').on('input', function() {
         const finalRaw = normalizeQrText($('#box-qr-input').val());
         if (!finalRaw || finalRaw === packingState.lastHandledQRRaw) return;
 
-        const isLikelyComplete = finalRaw.endsWith('$') || finalRaw.split('$').length >= 7;
+        // Ngưỡng >=10 đồng bộ với picking.php/outbound.php: đảm bảo đã gõ qua khỏi field box_id
+        // (index 8, dù packing chưa dùng) trước khi coi là "đã quét xong" - tránh chốt sớm giữa
+        // chừng khi máy quét có khoảng dừng ký tự, gây phát sinh 1 lượt packing ảo cho cùng 1
+        // thùng. Tem cũ (~8 field, không box_id) không tự-chốt qua ngưỡng này, vẫn xử lý được
+        // nhờ Enter (xem handler keydown bên dưới).
+        const isLikelyComplete = finalRaw.endsWith('$') || finalRaw.split('$').length >= 10;
         if (!isLikelyComplete) return;
 
         const parsed = parseBoxQr(finalRaw);
@@ -760,7 +765,7 @@ $('#box-qr-input').on('input', function() {
 
         packingState.lastHandledQRRaw = finalRaw;
         processBoxScan(parsed, false);
-    }, 110);
+    }, 150);
 });
 
 $('#box-qr-input').on('keydown', function(e) {

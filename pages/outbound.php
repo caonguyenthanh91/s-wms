@@ -751,9 +751,14 @@ $(document).ready(function() {
         clearTimeout(outboundQrScanTimer);
         outboundQrScanTimer = setTimeout(function() {
             const finalRaw = normalizeOutboundQRRaw($('#product_id').val());
-            const isLikelyComplete = finalRaw.endsWith('$') || finalRaw.split('$').length >= 7;
+            // Ngưỡng >=10 đảm bảo đã gõ QUA KHỎI field box_id (index 7/8) trước khi coi là "xong"
+            // (giống fix đã áp dụng ở inbound.php) - tránh chốt sớm giữa chừng khi máy quét
+            // (đặc biệt Bluetooth) có khoảng dừng ký tự ngay tại đó, gây mất box_id hoặc phát
+            // sinh 1 dòng ảo (tem cũ, ~8 field, không box_id, không tự-chốt qua ngưỡng này -
+            // vẫn xử lý được nhờ Enter/sự kiện 'change' khi rời ô nhập).
+            const isLikelyComplete = finalRaw.endsWith('$') || finalRaw.split('$').length >= 10;
             if (isLikelyComplete) handleOutboundQRProductPayload(finalRaw);
-        }, 120);
+        }, 150);
     });
 
     $('#product_id').on('change', function() {

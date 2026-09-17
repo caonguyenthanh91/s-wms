@@ -9,46 +9,30 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'], true)) {
 ?>
 
 <div class="pda-checkinv-wrap pb-4">
-    <div class="pda-card p-3 mb-3">
+    <div class="pda-card p-2 mb-2">
         <div class="flex items-center justify-between gap-2">
-            <div class="pda-title">Kiểm kê tồn kho theo vị trí</div>
-            <div id="ci-status" class="text-xs font-bold text-sky-700">Bước 1: quét mã vị trí</div>
-        </div>
-        <div class="pda-checkinv-index mt-3 flex gap-2 text-xs font-semibold">
-            <div id="ci-pill-1" class="flex-1 text-center rounded border border-sky-300 bg-sky-50 text-sky-800 py-1">1. Quét vị trí</div>
-            <div id="ci-pill-2" class="flex-1 text-center rounded border border-slate-200 bg-slate-50 text-slate-500 py-1">2. Quét thùng &amp; lưu</div>
-        </div>
-        <div class="pda-top-index mt-3 grid grid-cols-3 gap-2">
-            <div class="pda-kpi">
-                <div class="pda-kpi-label">Vị trí</div>
-                <div id="ci-summary-loc" class="pda-kpi-value">-</div>
-            </div>
-            <div class="pda-kpi">
-                <div class="pda-kpi-label">Đang chờ lưu</div>
-                <div id="ci-summary-scans" class="pda-kpi-value">0</div>
-            </div>
-            <div class="pda-kpi">
-                <div class="pda-kpi-label">Mã đã đủ / tổng</div>
-                <div id="ci-summary-progress" class="pda-kpi-value">0 / 0</div>
-            </div>
+            <div class="pda-title text-sm">Kiểm kê vị trí</div>
+            <div id="ci-status" class="ci-status-text">Bước 1: quét mã vị trí</div>
         </div>
     </div>
 
     <!-- Bước 1: quét mã vị trí -->
-    <div id="ci-step-1" class="pda-card p-3 mb-3">
-        <div class="pda-subtitle">Bước 1</div>
-        <div class="pda-title mt-1">Quét QR mã vị trí</div>
-        <div class="text-xs text-slate-500 mt-1">Có thể lưu nhiều đợt. Lần sau quét lại vị trí, hệ thống hiện các mã hàng chưa kiểm đủ để kiểm tiếp.</div>
+    <div id="ci-step-1" class="pda-card p-2 mb-2">
+        <div class="flex items-center justify-between gap-1">
+            <div class="pda-title mt-0 text-sm">Quét QR mã vị trí</div>
+            <button type="button" class="ci-help-toggle" onclick="ciToggleHelp('ci-step1-help')" title="Trợ giúp"><i class="fas fa-info-circle"></i></button>
+        </div>
+        <div id="ci-step1-help" class="ci-help-box hidden">Có thể lưu nhiều đợt. Lần sau quét lại vị trí, hệ thống hiện các mã hàng chưa kiểm đủ để kiểm tiếp.</div>
 
-        <div class="relative mt-3">
+        <div class="relative mt-2">
             <input type="text" id="ci-loc-input" class="pda-input" placeholder="Quét QR mã vị trí" autocomplete="off" maxlength="120">
             <button type="button" onclick="openQRScannerModal('ci-loc-input', 'QR Mã Vị Trí')" class="absolute right-3 top-1/2 -translate-y-1/2 text-sky-600">
                 <i class="fas fa-qrcode text-lg"></i>
             </button>
         </div>
 
-        <div class="mt-3">
-            <button type="button" class="pda-btn pda-btn-primary" id="ci-btn-confirm-loc" onclick="ciConfirmLocation()">Xác nhận vị trí</button>
+        <div class="mt-2">
+            <button type="button" class="pda-btn pda-btn-primary w-full" id="ci-btn-confirm-loc" onclick="ciConfirmLocation()">Xác nhận vị trí</button>
         </div>
 
         <div id="ci-step1-error" class="pda-msg-error mt-2 hidden"></div>
@@ -56,98 +40,102 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'], true)) {
     </div>
 
     <!-- Bước 2: quét từng thùng hàng -->
-    <div id="ci-step-2" class="pda-card p-3 mb-3" style="display:none;">
-        <div class="flex items-center justify-between gap-2">
-            <div>
-                <div class="pda-subtitle">Bước 2</div>
-                <div class="pda-title mt-1">Quét QR từng thùng hàng</div>
+    <div id="ci-step-2" class="pda-card p-2 mb-2" style="display:none;">
+        <!-- Thanh ghim vị trí đang kiểm -->
+        <div class="ci-pinned-bar">
+            <div class="ci-pinned-loc">
+                <span class="ci-pin-icon">📍</span>
+                <span id="ci-pinned-shelf" class="ci-pinned-shelf-text">-</span>
             </div>
-            <button type="button" class="pda-btn" onclick="ciBackToStep1()">Đổi vị trí</button>
-        </div>
-        <div class="text-xs text-slate-500 mt-1">QR chuẩn: mã hàng ở vị trí 1, số lượng ở vị trí 2 (VD: <span class="font-mono">TEXT$MÃ HÀNG$SỐ LƯỢNG$...</span>)</div>
-
-        <!-- Bảng tiến độ đối chiếu -->
-        <div id="ci-progress-wrap" class="mt-3 border border-gray-200 rounded-lg overflow-hidden">
-            <table class="w-full text-sm">
-                <thead class="bg-gray-100">
-                    <tr>
-                        <th class="p-2 text-left text-xs font-bold text-gray-700">MÃ HÀNG</th>
-                        <th class="p-2 text-right text-xs font-bold text-gray-700">HỆ THỐNG</th>
-                        <th class="p-2 text-right text-xs font-bold text-gray-700">ĐÃ KIỂM</th>
-                        <th class="p-2 text-right text-xs font-bold text-gray-700">CÒN LẠI</th>
-                        <th class="p-2 text-center text-xs font-bold text-gray-700">TT</th>
-                    </tr>
-                </thead>
-                <tbody id="ci-progress-body">
-                    <tr><td colspan="5" class="p-2 text-center text-slate-500 text-xs">Chưa có dữ liệu</td></tr>
-                </tbody>
-            </table>
+            <div class="ci-pinned-actions">
+                <span id="ci-progress-chip" class="ci-chip">0/0</span>
+                <button type="button" class="ci-small-btn" onclick="ciBackToStep1()">Đổi vị trí</button>
+            </div>
         </div>
 
-        <div class="mb-3 mt-3 inline-flex rounded-lg border border-gray-300 overflow-hidden">
-            <button type="button" id="ci-scan-mode-interrupt" onclick="ciSetScanMode(false)" class="px-3 py-2 text-sm font-semibold bg-green-600 text-white rounded-l">Gián đoạn</button>
-            <button type="button" id="ci-scan-mode-continuous" onclick="ciSetScanMode(true)" class="px-3 py-2 text-sm font-semibold bg-white text-gray-700 hover:bg-gray-100 rounded-r">Liên tục</button>
+        <!-- Vùng quét chính: luôn gọn trong 1 màn hình -->
+        <div class="ci-scan-zone">
+            <div class="flex items-center justify-between gap-2">
+                <div class="inline-flex rounded-lg border border-gray-300 overflow-hidden text-xs">
+                    <button type="button" id="ci-scan-mode-interrupt" onclick="ciSetScanMode(false)" class="px-2 py-1 font-semibold bg-green-600 text-white">Gián đoạn</button>
+                    <button type="button" id="ci-scan-mode-continuous" onclick="ciSetScanMode(true)" class="px-2 py-1 font-semibold bg-white text-gray-700 hover:bg-gray-100">Liên tục</button>
+                </div>
+                <button type="button" class="ci-help-toggle" onclick="ciToggleHelp('ci-step2-help')" title="Trợ giúp định dạng QR"><i class="fas fa-info-circle"></i></button>
+            </div>
+            <div id="ci-step2-help" class="ci-help-box hidden">QR chuẩn: mã hàng ở vị trí 1, số lượng ở vị trí 2 (VD: TEXT$MÃ HÀNG$SỐ LƯỢNG$...)</div>
+
+            <div class="relative mt-2">
+                <input type="text" id="ci-box-input" class="pda-input" placeholder="Quét QR trên thùng" autocomplete="off">
+                <button type="button" onclick="openQRScannerModal('ci-box-input', 'QR Thùng Hàng')" class="absolute right-3 top-1/2 -translate-y-1/2 text-green-600">
+                    <i class="fas fa-qrcode text-lg"></i>
+                </button>
+            </div>
+
+            <div class="ci-scan-row mt-2">
+                <div id="ci-current-product" class="ci-scan-product-value">-</div>
+                <input type="number" id="ci-qty-input" class="pda-input" min="1" placeholder="SL" disabled>
+            </div>
+
+            <div class="mt-2">
+                <button type="button" class="ci-add-btn" id="ci-btn-add" onclick="ciAddItemFromInput()" disabled>
+                    <i class="fas fa-plus"></i> Thêm vào danh sách
+                </button>
+            </div>
+
+            <div id="ci-step2-error" class="pda-msg-error mt-2 hidden"></div>
         </div>
 
-        <div class="relative mt-1">
-            <input type="text" id="ci-box-input" class="pda-input" placeholder="Quét QR trên thùng" autocomplete="off">
-            <button type="button" onclick="openQRScannerModal('ci-box-input', 'QR Thùng Hàng')" class="absolute right-3 top-1/2 -translate-y-1/2 text-green-600">
-                <i class="fas fa-qrcode text-lg"></i>
+        <div class="ci-scan-actions mt-3">
+            <button type="button" id="ci-btn-bulk" onclick="ciBulkConfirm()" class="ci-bulk-btn"
+                title="Xác nhận hàng loạt: dùng khi hàng ở trên cao, khó quét từng thùng. Chấp nhận kết quả kiểm kê = toàn bộ tồn hệ thống của vị trí. Cần mật khẩu.">
+                <i class="fas fa-layer-group"></i>
+            </button>
+            <button type="button" class="pda-btn pda-btn-success flex-1" id="ci-btn-save" onclick="ciSave()" disabled>
+                Lưu lịch sử quét (<span id="ci-save-count">0</span>)
             </button>
         </div>
 
-        <div class="mt-2">
-            <button type="button" class="pda-btn" id="ci-btn-parse-box" onclick="ciParseBoxFromInput()">Đọc QR thùng</button>
-        </div>
-
-        <div class="mt-3 grid grid-cols-2 gap-2 items-end">
-            <div>
-                <label class="text-xs text-slate-600">Mã hàng vừa quét</label>
-                <div id="ci-current-product" class="font-black text-slate-900 text-sm mt-1">-</div>
+        <!-- ============ Bên dưới: danh sách đã quét & tiến độ ============ -->
+        <div class="ci-below-fold">
+            <div class="pda-subtitle">Danh sách đã quét (chờ lưu)</div>
+            <div class="mt-2 border border-gray-200 rounded-lg overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="p-2 text-left text-xs font-bold text-gray-700">STT</th>
+                            <th class="p-2 text-left text-xs font-bold text-gray-700">MÃ HÀNG</th>
+                            <th class="p-2 text-right text-xs font-bold text-gray-700">SL</th>
+                            <th class="p-2 text-center text-xs font-bold text-gray-700">XÓA</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ci-box-list">
+                        <tr><td colspan="4" class="p-2 text-center text-slate-500 text-xs">Chưa quét thùng nào</td></tr>
+                    </tbody>
+                </table>
             </div>
-            <div>
-                <label class="text-xs text-slate-600">Số lượng</label>
-                <input type="number" id="ci-qty-input" class="pda-input mt-1" min="1" placeholder="Số lượng" disabled>
+
+            <div class="pda-subtitle mt-3">Tiến độ theo mã hàng tại vị trí</div>
+            <div class="mt-2 border border-gray-200 rounded-lg overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="p-2 text-left text-xs font-bold text-gray-700">MÃ HÀNG</th>
+                            <th class="p-2 text-right text-xs font-bold text-gray-700">HỆ THỐNG</th>
+                            <th class="p-2 text-right text-xs font-bold text-gray-700">ĐÃ KIỂM</th>
+                            <th class="p-2 text-right text-xs font-bold text-gray-700">CÒN LẠI</th>
+                            <th class="p-2 text-center text-xs font-bold text-gray-700">TT</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ci-progress-body">
+                        <tr><td colspan="5" class="p-2 text-center text-slate-500 text-xs">Chưa có dữ liệu</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
-
-        <div class="mt-2">
-            <button type="button" class="pda-btn pda-btn-primary" id="ci-btn-add" onclick="ciAddItemFromInput()" disabled>Thêm vào danh sách</button>
-        </div>
-
-        <div class="mt-2">
-            <button type="button" id="ci-btn-bulk" onclick="ciBulkConfirm()"
-                class="w-full px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold text-sm">
-                <i class="fas fa-layer-group mr-1"></i> Xác nhận hàng loạt (toàn bộ tồn vị trí)
-            </button>
-            <div class="text-[11px] text-slate-500 mt-1">Dùng khi hàng ở trên cao, khó quét từng thùng. Chấp nhận kết quả kiểm kê = toàn bộ tồn hệ thống của vị trí. Cần mật khẩu.</div>
-        </div>
-
-        <div class="mt-4 border border-gray-200 rounded-lg overflow-hidden">
-            <table class="w-full text-sm">
-                <thead class="bg-gray-100">
-                    <tr>
-                        <th class="p-2 text-left text-xs font-bold text-gray-700">STT</th>
-                        <th class="p-2 text-left text-xs font-bold text-gray-700">MÃ HÀNG (chờ lưu)</th>
-                        <th class="p-2 text-right text-xs font-bold text-gray-700">SL</th>
-                        <th class="p-2 text-center text-xs font-bold text-gray-700">XÓA</th>
-                    </tr>
-                </thead>
-                <tbody id="ci-box-list">
-                    <tr><td colspan="4" class="p-2 text-center text-slate-500 text-xs">Chưa quét thùng nào</td></tr>
-                </tbody>
-            </table>
-        </div>
-
-        <div class="mt-3">
-            <button type="button" class="pda-btn pda-btn-success w-full" id="ci-btn-save" onclick="ciSave()" disabled>Lưu lịch sử quét</button>
-        </div>
-
-        <div id="ci-step2-error" class="pda-msg-error mt-2 hidden"></div>
     </div>
 
     <!-- Lịch sử -->
-    <div class="pda-card p-3 mt-3">
+    <div class="pda-card p-2 mt-2">
         <div class="pda-subtitle">Lịch sử kiểm kê gần nhất</div>
         <div class="pda-table-wrap mt-2">
             <table class="w-full pda-table">
@@ -170,6 +158,160 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'], true)) {
 </div>
 
 <style>
+    /* ---------- Bố cục gọn cho màn hình PDA 4 inch ---------- */
+    .pda-checkinv-wrap .pda-card { padding: 0.6rem; }
+    .pda-checkinv-wrap .pda-subtitle { font-size: 11px; }
+
+    .ci-status-text {
+        font-size: 11px;
+        font-weight: 700;
+        text-align: right;
+        max-width: 60%;
+        line-height: 1.3;
+    }
+
+    .ci-help-toggle {
+        width: 24px;
+        height: 24px;
+        border-radius: 999px;
+        border: 1px solid #cbd5e1;
+        background: #f8fafc;
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+    .ci-help-box {
+        font-size: 11px;
+        color: #64748b;
+        background: #f8fafc;
+        border: 1px dashed #cbd5e1;
+        border-radius: 8px;
+        padding: 6px 8px;
+        margin-top: 6px;
+        line-height: 1.4;
+    }
+
+    /* Thanh ghim mã vị trí đang kiểm */
+    .ci-pinned-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        background: #0f172a;
+        color: #fff;
+        border-radius: 10px;
+        padding: 8px 10px;
+        margin-bottom: 8px;
+    }
+    .ci-pinned-loc { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .ci-pin-icon { font-size: 14px; flex-shrink: 0; }
+    .ci-pinned-shelf-text {
+        font-weight: 800;
+        font-size: 15px;
+        font-family: ui-monospace, monospace;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .ci-pinned-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .ci-chip {
+        background: rgba(255, 255, 255, 0.16);
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 3px 8px;
+        white-space: nowrap;
+    }
+    .ci-small-btn {
+        background: rgba(255, 255, 255, 0.16);
+        border: none;
+        color: #fff;
+        font-size: 11px;
+        font-weight: 700;
+        border-radius: 6px;
+        padding: 5px 8px;
+        white-space: nowrap;
+        cursor: pointer;
+    }
+
+    /* Vùng quét mã hàng + số lượng - cùng 1 dòng, tỷ lệ 7:5, cùng chiều cao & cỡ chữ */
+    .ci-scan-row {
+        display: flex;
+        gap: 6px;
+        align-items: stretch;
+    }
+    .ci-scan-product-value {
+        flex: 7 1 0%;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        height: 42px;
+        box-sizing: border-box;
+        font-weight: 800;
+        font-size: 15px;
+        color: #0f172a;
+        font-family: ui-monospace, monospace;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 0 8px;
+        background: #f8fafc;
+    }
+    #ci-qty-input {
+        flex: 5 1 0%;
+        min-width: 0;
+        height: 42px;
+        box-sizing: border-box;
+        padding: 0 8px;
+        text-align: center;
+        font-size: 15px;
+        font-weight: 800;
+        font-family: ui-monospace, monospace;
+    }
+    .ci-add-btn {
+        width: 100%;
+        height: 42px;
+        border-radius: 8px;
+        border: none;
+        background: #0284c7;
+        color: #fff;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .ci-add-btn:disabled { background: #94a3b8; }
+
+    .ci-scan-actions { display: flex; gap: 8px; align-items: stretch; }
+    .ci-bulk-btn {
+        flex-shrink: 0;
+        width: 42px;
+        border-radius: 8px;
+        border: none;
+        background: #f59e0b;
+        color: #fff;
+        font-size: 15px;
+        cursor: pointer;
+    }
+
+    .ci-below-fold {
+        margin-top: 12px;
+        padding-top: 10px;
+        border-top: 1px dashed #cbd5e1;
+    }
+
+    @media (max-width: 480px) {
+        .pda-checkinv-wrap { padding-bottom: 0.5rem; }
+        .pda-checkinv-wrap .pda-card { padding: 0.5rem !important; margin-bottom: 0.4rem !important; }
+        .ci-pinned-shelf-text { font-size: 13px; }
+        .ci-status-text { font-size: 10px; }
+        #ci-loc-input, #ci-box-input { padding-top: 0.5rem; padding-bottom: 0.5rem; font-size: 12px; }
+    }
+
+    /* ---------- Modal ---------- */
     .ci-modal-overlay {
         position: fixed !important;
         top: 0 !important;
@@ -288,14 +430,8 @@ function ciSetStatus(text, tone) {
     el.addClass(tone || 'text-sky-700');
 }
 
-function ciSetPill(step) {
-    [1, 2].forEach(function(i) {
-        const pill = $('#ci-pill-' + i);
-        pill.removeClass('border-sky-300 bg-sky-50 text-sky-800 border-slate-200 bg-slate-50 text-slate-500 border-green-300 bg-green-50 text-green-800');
-        if (i < step) pill.addClass('border-green-300 bg-green-50 text-green-800');
-        else if (i === step) pill.addClass('border-sky-300 bg-sky-50 text-sky-800');
-        else pill.addClass('border-slate-200 bg-slate-50 text-slate-500');
-    });
+function ciToggleHelp(targetId) {
+    $('#' + targetId).toggleClass('hidden');
 }
 
 function ciShowError(sel, msg) { $(sel).removeClass('hidden').text(msg || 'Có lỗi xảy ra.'); }
@@ -393,9 +529,9 @@ function ciUpdateSummary() {
     const rows = ciRenderProgress();
     const done = rows.filter(function(r) { return r.status === 'match'; }).length;
     const totalSys = rows.filter(function(r) { return r.system !== null; }).length;
-    $('#ci-summary-loc').text(ciState.shelfId || '-');
-    $('#ci-summary-scans').text(ciState.list.length);
-    $('#ci-summary-progress').text(done + ' / ' + totalSys);
+    $('#ci-pinned-shelf').text(ciState.shelfId || '-');
+    $('#ci-progress-chip').text(done + '/' + totalSys);
+    $('#ci-save-count').text(ciState.list.length);
     $('#ci-btn-save').prop('disabled', ciState.list.length === 0 || ciState.busy);
 }
 
@@ -433,7 +569,6 @@ function ciConfirmLocation() {
 
         $('#ci-step-1').hide();
         $('#ci-step-2').show();
-        ciSetPill(2);
         ciRenderBoxList();
         ciUpdateSummary();
         ciSetScanMode(false);
@@ -442,7 +577,7 @@ function ciConfirmLocation() {
         const pending = prog.filter(function(r) { return r.status === 'pending' || r.status === 'short'; });
         if (res.checked_before) {
             const pnames = pending.map(function(r) { return r.productId + ' (còn ' + r.remaining + ')'; });
-            ciSetStatus('Vị trí đã kiểm 1 phần — kiểm tiếp ' + pending.length + ' mã còn thiếu.', 'text-amber-700');
+            ciSetStatus('Đã kiểm 1 phần — còn ' + pending.length + ' mã.', 'text-amber-700');
             ciShowAlert(
                 'Vị trí ' + res.shelf_id + ' đã được kiểm kê trước đó' +
                 (res.last_checked_at ? ' (gần nhất ' + res.last_checked_at + ' bởi ' + (res.last_checked_by || '?') + ')' : '') + '.\n\n' +
@@ -452,7 +587,7 @@ function ciConfirmLocation() {
                 'warning'
             );
         } else {
-            ciSetStatus('Bước 2: quét từng thùng hàng tại ' + ciState.shelfId, 'text-sky-700');
+            ciSetStatus('Đang kiểm tại ' + ciState.shelfId, 'text-sky-700');
         }
         setTimeout(function() { $('#ci-box-input').focus(); }, 60);
         console.log('[kiểm kê] bắt đầu', ciState.shelfId, 'prior=', ciState.priorCounted);
@@ -536,9 +671,9 @@ function ciProcessBoxScan(parsed, fromScanner) {
         $('#ci-btn-add').prop('disabled', true);
         $('#ci-current-product').text('-');
         setTimeout(function() { $('#ci-box-input').focus(); }, 60);
-        ciSetStatus('Đã thêm ' + parsed.productId + ' x' + parsed.qty + '. Quét thùng tiếp theo.', 'text-green-700');
+        ciSetStatus('Đã thêm ' + parsed.productId + ' x' + parsed.qty + '. Quét tiếp.', 'text-green-700');
     } else {
-        ciSetStatus('Đã đọc QR: ' + parsed.productId + '. Kiểm tra số lượng rồi nhấn "Thêm vào danh sách".', 'text-sky-700');
+        ciSetStatus('Đã đọc: ' + parsed.productId + '. Kiểm tra SL rồi nhấn +.', 'text-sky-700');
         setTimeout(function() { $('#ci-qty-input').focus().select(); }, 60);
     }
     return true;
@@ -565,7 +700,7 @@ function ciAddItemFromInput() {
     $('#ci-current-product').text('-');
     ciHideError('#ci-step2-error');
     setTimeout(function() { $('#ci-box-input').focus(); }, 60);
-    ciSetStatus('Đã thêm vào danh sách. Tiếp tục quét hoặc nhấn "Lưu lịch sử quét".', 'text-green-700');
+    ciSetStatus('Đã thêm. Quét tiếp hoặc nhấn "Lưu lịch sử quét".', 'text-green-700');
 }
 
 function ciRemoveItem(index) {
@@ -626,7 +761,7 @@ function ciBulkConfirm() {
 
     ciRenderBoxList();
     ciUpdateSummary();
-    ciSetStatus('Đã xác nhận hàng loạt ' + addedProducts + ' mã hàng (' + addedQty + ' đơn vị). Nhấn "Lưu lịch sử quét".', 'text-amber-700');
+    ciSetStatus('Đã xác nhận hàng loạt ' + addedProducts + ' mã (' + addedQty + ' đơn vị). Nhấn Lưu.', 'text-amber-700');
     ciShowAlert(
         'Đã đưa toàn bộ tồn của vị trí ' + ciState.shelfId + ' vào danh sách:\n' +
         addedProducts + ' mã hàng, tổng ' + addedQty + ' đơn vị.\n\n' +
@@ -698,9 +833,9 @@ function ciSave() {
         ciShowReconModal(res);
         const pending = res.pending_count || 0;
         if (pending > 0) {
-            ciSetStatus('Đã lưu. Còn ' + pending + ' mã hàng chưa kiểm đủ tại ' + res.shelf_id + '.', 'text-amber-700');
+            ciSetStatus('Đã lưu. Còn ' + pending + ' mã chưa kiểm đủ tại ' + res.shelf_id + '.', 'text-amber-700');
         } else if ((res.mismatch_count || 0) > 0) {
-            ciSetStatus('Đã lưu. Có mã hàng lệch tồn - xem bảng đối chiếu.', 'text-amber-700');
+            ciSetStatus('Đã lưu. Có mã lệch tồn - xem bảng đối chiếu.', 'text-amber-700');
         } else {
             ciSetStatus('Đã lưu. Toàn bộ mã hàng khớp tồn hệ thống.', 'text-green-700');
         }
@@ -754,12 +889,11 @@ function ciResetToStep1(focusInput) {
 
     $('#ci-step-2').hide();
     $('#ci-step-1').show();
-    ciSetPill(1);
     ciRenderBoxList();
     $('#ci-progress-body').html('<tr><td colspan="5" class="p-2 text-center text-slate-500 text-xs">Chưa có dữ liệu</td></tr>');
-    $('#ci-summary-loc').text('-');
-    $('#ci-summary-scans').text('0');
-    $('#ci-summary-progress').text('0 / 0');
+    $('#ci-pinned-shelf').text('-');
+    $('#ci-progress-chip').text('0/0');
+    $('#ci-save-count').text('0');
     $('#ci-btn-save').prop('disabled', true);
 
     $('#ci-loc-input').val('');

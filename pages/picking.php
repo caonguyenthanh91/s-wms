@@ -281,6 +281,7 @@ let pickingState = {
 };
 
 let boxQrScanTimer = null;
+let lastHandledBoxQrRaw = ''; // chống chốt trùng khi debounce/Enter/scanner-modal cùng xử lý 1 chuỗi
 let isContinuousPickScan = false;
 let pickBoxList = [];
 let allowPickAnyShelf = false;
@@ -997,8 +998,30 @@ function parseBoxQrAndSuggestQty() {
         return;
     }
 
+    // Enter / nút "Đọc QR thùng" là tín hiệu CHẮC CHẮN người dùng coi là đã quét xong
+    // (không phụ thuộc số field đã gõ) -> luôn xử lý, không để dedup của lượt debounce
+    // trước đó (nếu có, trên cùng chuỗi) chặn lại.
+    lastHandledBoxQrRaw = '';
     const parsed = parseBoxQr($('#box-qr-input').val());
     return processBoxQrScan(parsed, false);
+}
+
+// Dùng riêng cho lượt tự-động phát hiện qua debounce 'input' (không chắc chắn đã quét xong
+// bằng Enter) - có dedup theo đúng nội dung để tránh chốt lặp cùng 1 chuỗi.
+function handleBoxQrRawFromDebounce(rawValue) {
+    const raw = normalizeQrText(rawValue);
+    if (!raw || raw === lastHandledBoxQrRaw) return false;
+
+    const parsed = parseBoxQr(raw);
+    if (!parsed) return false;
+
+    lastHandledBoxQrRaw = raw;
+    const handled = processBoxQrScan(parsed, false);
+    // Trả dedup về rỗng ngay sau khi xử lý xong (dù thành công hay lỗi) - dedup ở đây chỉ nhằm
+    // chặn các lượt trigger LẶP LẠI gần như tức thì cho đúng 1 chuỗi y hệt (VD: 2 timer debounce
+    // chồng nhau), không nhằm chặn việc quét lại thùng sau này.
+    lastHandledBoxQrRaw = '';
+    return handled;
 }
 
 function processBoxQrScan(parsed, fromScanner) {
@@ -1503,7 +1526,13 @@ $('#box-qr-input').on('keydown', function(e) {
     }
 });
 
-// Tự động parse và fill số lượng khi quét thùng hàng
+// Tự động parse và fill số lượng khi quét thùng hàng.
+// QR tem thùng hiện có 2 dạng chạy song song: dạng cũ (~8 field, KHÔNG có box_id) và dạng mới
+// (~16 field, box_id ở index 8). Ngưỡng "đã gõ xong" phải nằm SAU field box_id của dạng mới để
+// không bao giờ chốt khi box_id còn đang gõ dở (đã gặp bug mất box_id ở inbound.php) - dạng cũ
+// (không có box_id, tối đa ~8 field) sẽ không tự-chốt qua đường debounce này (isLikelyComplete
+// luôn false), vẫn xử lý được nhờ Enter hoặc nút "Đọc QR thùng" (xem parseBoxQrAndSuggestQty),
+// không phụ thuộc ngưỡng field ở đây.
 $('#box-qr-input').on('input', function() {
     const rawValue = $(this).val();
     if (!rawValue || rawValue.indexOf('$') === -1) return;
@@ -1511,14 +1540,11 @@ $('#box-qr-input').on('input', function() {
     clearTimeout(boxQrScanTimer);
     boxQrScanTimer = setTimeout(function() {
         const finalRaw = $('#box-qr-input').val();
-        const isLikelyComplete = finalRaw.endsWith('$') || finalRaw.split('$').length >= 4;
+        const isLikelyComplete = finalRaw.endsWith('$') || finalRaw.split('$').length >= 10;
         if (isLikelyComplete) {
-            const parsed = parseBoxQr(finalRaw);
-            if (parsed) {
-                processBoxQrScan(parsed, false);
-            }
+            handleBoxQrRawFromDebounce(finalRaw);
         }
-    }, 100);
+    }, 150);
 });
 
 window.handleQRScannerScan = function(targetId, scannedValue) {
@@ -1531,6 +1557,9 @@ window.handleQRScannerScan = function(targetId, scannedValue) {
 
     if (targetId === 'box-qr-input') {
         $('#box-qr-input').val(normalizedValue);
+        // Kết quả trả về từ modal quét camera là 1 lượt quét trọn vẹn, chắc chắn đã xong
+        // -> không để dedup của debounce 'input' (nếu lỡ có) chặn lại.
+        lastHandledBoxQrRaw = '';
         return processBoxQrScan(parseBoxQr(normalizedValue), true);
     }
 

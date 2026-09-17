@@ -1311,7 +1311,67 @@ switch ($action) {
 
         echo json_encode(['success' => true]);
         break;
-    
+
+    case 'get_checkin_board':
+        // Public board for the TV monitor - no login required (Guest role in readme).
+        // Mỗi cột [Hôm nay] đếm theo NGÀY XẢY RA SỰ KIỆN đó (created_at của đúng status), không phải trạng thái hiện tại.
+        // Cột [Lũy kế] đếm số pallet hiện đang RECEIVED nhưng chưa IMPORTED, tính đến thời điểm hiện tại (không giới hạn ngày).
+        // Nhóm theo "chủng loại" = đoạn đầu tiên của pallet_id (dạng [chủng loại]-[text]-[text])
+        $dateRaw = trim($_GET['date'] ?? '');
+        $dateObj = DateTime::createFromFormat('Y-m-d', $dateRaw ?: date('Y-m-d'));
+        $date = $dateObj ? $dateObj->format('Y-m-d') : date('Y-m-d');
+
+        $stmt = $pdo->prepare(
+            "SELECT x.category,
+                    SUM(DATE(x.pending_at) = ?) AS pending_today,
+                    SUM(DATE(x.received_at) = ?) AS received_today,
+                    SUM(DATE(x.imported_at) = ?) AS imported_today,
+                    SUM(x.current_status = 'RECEIVED') AS backlog_received
+             FROM (
+                 SELECT il.pallet_id,
+                        SUBSTRING_INDEX(il.pallet_id, '-', 1) AS category,
+                        MIN(CASE WHEN il.status = 'PENDING' THEN il.created_at END) AS pending_at,
+                        MAX(CASE WHEN il.status = 'RECEIVED' THEN il.created_at END) AS received_at,
+                        MAX(CASE WHEN il.status = 'IMPORTED' THEN il.created_at END) AS imported_at,
+                        CASE
+                            WHEN MAX(il.status = 'IMPORTED') = 1 THEN 'IMPORTED'
+                            WHEN MAX(il.status = 'RECEIVED') = 1 THEN 'RECEIVED'
+                            ELSE 'PENDING'
+                        END AS current_status
+                 FROM import_log il
+                 GROUP BY il.pallet_id
+             ) x
+             GROUP BY x.category
+             HAVING pending_today > 0 OR received_today > 0 OR imported_today > 0 OR backlog_received > 0
+             ORDER BY x.category ASC"
+        );
+        $stmt->execute([$date, $date, $date]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $kpi = ['pending_today' => 0, 'received_today' => 0, 'imported_today' => 0, 'backlog_received' => 0];
+        foreach ($rows as &$row) {
+            $row['date'] = $date;
+            $row['category'] = (string)($row['category'] ?? '');
+            $row['pending_today'] = (int)($row['pending_today'] ?? 0);
+            $row['received_today'] = (int)($row['received_today'] ?? 0);
+            $row['imported_today'] = (int)($row['imported_today'] ?? 0);
+            $row['backlog_received'] = (int)($row['backlog_received'] ?? 0);
+
+            $kpi['pending_today'] += $row['pending_today'];
+            $kpi['received_today'] += $row['received_today'];
+            $kpi['imported_today'] += $row['imported_today'];
+            $kpi['backlog_received'] += $row['backlog_received'];
+        }
+        unset($row);
+
+        echo json_encode([
+            'success' => true,
+            'date' => $date,
+            'kpi' => $kpi,
+            'rows' => $rows,
+        ]);
+        break;
+
         case 'get_products_on_shelf':
         require_role(['Admin','Leader','Manager','Staff']);
         $shelf_id_code = strtoupper($_GET['shelf_id'] ?? '');
@@ -2996,16 +3056,21 @@ switch ($action) {
                  GROUP BY done_cases.command
              ) pc ON pc.command = cmd.command
              LEFT JOIN (
-                 SELECT command,
-                        COUNT(DISTINCT case_no) AS picked_cases,
-                        MAX(created_at) AS last_pickup_at
-                 FROM export_log
-                 WHERE status = 'pickup'
-                 GROUP BY command
+                 SELECT el.command,
+                        COUNT(DISTINCT el.case_no) AS picked_cases,
+                        MAX(el.created_at) AS last_pickup_at
+                 FROM export_log el
+                 INNER JOIN (
+                     SELECT DISTINCT command, case_no
+                     FROM export_temp
+                     WHERE DATE(created_at) = ?
+                 ) et ON et.command = el.command AND et.case_no = el.case_no
+                 WHERE el.status = 'pickup'
+                 GROUP BY el.command
              ) pu ON pu.command = cmd.command
              ORDER BY cmd.first_created_at ASC, cmd.command ASC"
         );
-        $stmt->execute([$date, $date, $date]);
+        $stmt->execute([$date, $date, $date, $date]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         foreach ($rows as &$row) {

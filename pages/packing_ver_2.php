@@ -236,12 +236,16 @@ let packingState = {
     verifyScanTimer: null
 };
 
-function showModal(message, type = 'error', title = null) {
+let modalCloseCallback = null;
+
+function showModal(message, type = 'error', title = null, onClose = null) {
     const titles = {
         error: '❌ Lỗi',
         success: '✅ Thành công',
         warning: '⚠️ Cảnh báo'
     };
+
+    modalCloseCallback = typeof onClose === 'function' ? onClose : null;
 
     $('#error-modal-title').text(title || titles[type]);
     $('#error-modal-message').text(message);
@@ -255,6 +259,11 @@ function showErrorModal(message) {
 
 function closeErrorModal() {
     $('#error-modal').css('display', 'none');
+    const callback = modalCloseCallback;
+    modalCloseCallback = null;
+    if (typeof callback === 'function') {
+        callback();
+    }
 }
 
 function normalizeQrText(text) {
@@ -648,73 +657,7 @@ function stageBoxScan(parsed, fromScanner) {
         return false;
     }
 
-    packingState.pendingBox = {
-        productId: parsed.productId,
-        qty: parsed.qty,
-        raw: parsed.raw,
-        fromScanner: !!fromScanner
-    };
-
-    hideError('#step2-error');
-    $('#box-qr-input').prop('disabled', true);
-    $('#product-verify-wrap').removeClass('hidden');
-    $('#product-verify-input').val('').prop('disabled', false).focus();
-    showInfo('#product-verify-hint', `Đã quét thùng: ${parsed.productId} (SL ${parsed.qty}). Quét mã hàng từ máy đọc OCR để đối chiếu.`);
-    setWorkflowStatus('Chờ đối chiếu mã hàng', 'text-amber-700');
-
-    if (fromScanner && typeof window.closeQRScannerModal === 'function') {
-        window.closeQRScannerModal();
-    }
-
-    return true;
-}
-
-function handleProductVerifyScan() {
-    if (packingState.busy) return;
-
-    const pending = packingState.pendingBox;
-    if (!pending) return;
-
-    const scanned = normalizeQrText($('#product-verify-input').val());
-    if (!scanned) return;
-
-    if (scanned !== pending.productId) {
-        showModal('Không khớp mã hàng', 'error');
-        showError('#step2-error', `Không khớp mã hàng. Cần: ${pending.productId} — Đã quét: ${scanned}`);
-        setWorkflowStatus('Sai mã hàng đối chiếu', 'text-red-700');
-        $('#product-verify-input').val('').focus();
-        return;
-    }
-
-    // Khớp mã hàng -> tiếp tục luồng ghi log như ban đầu
-    hideError('#step2-error');
-    showInfo('#product-verify-hint', '');
-    $('#product-verify-input').val('').prop('disabled', true);
-    $('#product-verify-wrap').addClass('hidden');
-    $('#box-qr-input').prop('disabled', false);
-
-    packingState.pendingBox = null;
-    processBoxScan({ productId: pending.productId, qty: pending.qty, raw: pending.raw }, pending.fromScanner);
-}
-
-function processBoxScan(parsed, fromScanner) {
-    if (packingState.busy) {
-        return false;
-    }
-
-    if (!packingState.invoiceCode) {
-        showError('#step2-error', 'Cần quét invoice ở bước 1 trước.');
-        return false;
-    }
-
-    if (!parsed) {
-        showError('#step2-error', 'QR thùng không đúng định dạng [TEXT]$[MÃ HÀNG]$[TEXT]$[SỐ LƯỢNG]$.');
-        if (fromScanner && typeof window.resetQRScannerModalState === 'function') {
-            window.resetQRScannerModalState();
-        }
-        return false;
-    }
-
+    // Đối chiếu mã hàng + số lượng của QR thùng ngay khi quét xong (trước khi qua bước OCR)
     const line = packingState.items.find(function(item) {
         return item.product_id === parsed.productId;
     });
@@ -742,6 +685,73 @@ function processBoxScan(parsed, fromScanner) {
         if (fromScanner && typeof window.resetQRScannerModalState === 'function') {
             window.resetQRScannerModalState();
         }
+        return false;
+    }
+
+    // QR thùng hợp lệ -> tạm giữ, chuyển sang bước đối chiếu OCR trên tem
+    packingState.pendingBox = {
+        productId: parsed.productId,
+        qty: parsed.qty,
+        raw: parsed.raw,
+        fromScanner: !!fromScanner
+    };
+
+    hideError('#step2-error');
+    $('#box-qr-input').prop('disabled', true);
+    $('#product-verify-wrap').removeClass('hidden');
+    $('#product-verify-input').val('').prop('disabled', false).focus();
+    showInfo('#product-verify-hint', `Đã quét thùng: ${parsed.productId} (SL ${parsed.qty}). Quét mã hàng trên tem (OCR) để đối chiếu.`);
+    setWorkflowStatus('Chờ đối chiếu mã hàng OCR', 'text-amber-700');
+
+    if (fromScanner && typeof window.closeQRScannerModal === 'function') {
+        window.closeQRScannerModal();
+    }
+
+    return true;
+}
+
+function handleProductVerifyScan() {
+    if (packingState.busy) return;
+
+    const pending = packingState.pendingBox;
+    if (!pending) return;
+
+    const scanned = normalizeQrText($('#product-verify-input').val());
+    if (!scanned) return;
+
+    if (scanned !== pending.productId) {
+        // Sai mã hàng trên tem -> chặn ô OCR lại, bắt buộc nhấn OK mới được quét tiếp
+        $('#product-verify-input').prop('disabled', true);
+        showError('#step2-error', `Không khớp mã hàng. Cần: ${pending.productId} — Đã quét: ${scanned}`);
+        setWorkflowStatus('Sai mã hàng đối chiếu OCR', 'text-red-700');
+        showModal(
+            `Mã hàng trên tem không khớp với mã hàng của thùng.\n\nCần: ${pending.productId}\nĐã quét: ${scanned}`,
+            'error',
+            'Không khớp mã hàng',
+            function() {
+                $('#product-verify-input').val('').prop('disabled', false).focus();
+            }
+        );
+        return;
+    }
+
+    // Khớp mã hàng ở cả 2 bước (QR thùng + OCR tem) -> tiếp tục luồng ghi log như ban đầu
+    hideError('#step2-error');
+    showInfo('#product-verify-hint', '');
+    $('#product-verify-input').val('').prop('disabled', true);
+    $('#product-verify-wrap').addClass('hidden');
+    $('#box-qr-input').prop('disabled', false);
+
+    packingState.pendingBox = null;
+    processBoxScan({ productId: pending.productId, qty: pending.qty, raw: pending.raw }, pending.fromScanner);
+}
+
+function processBoxScan(parsed, fromScanner) {
+    if (packingState.busy) {
+        return false;
+    }
+
+    if (!packingState.invoiceCode || !parsed) {
         return false;
     }
 
