@@ -1,130 +1,130 @@
-<div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
-    <!-- BÊN TRÁI: ĐĂNG KÝ SẢN PHẨM MỚI -->
-    <section>
-        <div class="bg-white p-6 rounded-lg shadow-md">
-            <h3 class="text-lg font-bold mb-4 text-gray-800 flex items-center">
-                <span class="mr-2">📝</span> Đăng ký Sản phẩm Mới
+<div class="max-w-2xl mx-auto">
+    <div class="bg-white rounded-2xl shadow-lg ring-1 ring-gray-100 overflow-hidden">
+        <!-- Header -->
+        <div class="px-6 py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+            <h3 class="text-xl font-bold flex items-center gap-2">
+                <span>📦</span> Quản lý Sản phẩm
             </h3>
-            <form id="add-product-form" class="space-y-4">
-                <div>
-                    <label for="product_id" class="block text-xs font-bold text-gray-500 uppercase mb-1">Mã Sản Phẩm (SKU) *</label>
-                    <input type="text" id="product_id" name="product_id" required
-                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none uppercase font-mono text-sm">
-                </div>
-                <div>
-                    <label for="product_name" class="block text-xs font-bold text-gray-500 uppercase mb-1">Tên Sản Phẩm</label>
-                    <input type="text" id="product_name" name="product_name" placeholder="(Không bắt buộc)"
-                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm">
-                </div>
-                <div>
-                    <label for="unit" class="block text-xs font-bold text-gray-500 uppercase mb-1">Đơn Vị Tính</label>
-                    <input type="text" id="unit" name="unit" placeholder="(Không bắt buộc)"
-                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm">
-                </div>
-                <button type="submit" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md font-bold hover:bg-blue-700 transition">
-                    LƯU SẢN PHẨM
-                </button>
-                <p id="form-message" class="mt-3 text-center text-sm"></p>
-            </form>
-        </div>
-    </section>
-
-    <!-- BÊN PHẢI: TRA CỨU THEO MÃ SẢN PHẨM -->
-    <section>
-        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
-            <h3 class="text-lg font-bold mb-4 text-gray-800 flex items-center">
-                <span class="mr-2">🔍</span> Tra cứu Vị trí & Tồn kho
-            </h3>
-            <div class="flex gap-2">
-                <input type="text" id="search-product-id-input" placeholder="Nhập mã SKU..." 
-                       class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none uppercase font-mono text-sm">
-                <button onclick="searchByProduct()" class="bg-green-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-green-700 transition text-sm">
-                    Tìm kiếm
-                </button>
-            </div>
+            <p class="text-blue-100 text-sm mt-1">Nhập mã SKU và nhấn <kbd class="px-1.5 py-0.5 bg-white/20 rounded text-xs font-mono">Enter</kbd> để kiểm tra đăng ký.</p>
         </div>
 
-        <!-- Kết quả tìm kiếm -->
-        <div id="product-results-container" class="bg-white rounded-lg shadow-md overflow-hidden hidden">
-            <div class="p-4 border-b bg-green-50">
-                <h4 class="font-bold text-green-800">SKU: <span id="res-sku" class="font-mono"></span></h4>
-                <p class="text-xs text-gray-600 mt-1" id="res-product-name"></p>
+        <form id="product-form" class="p-6 space-y-5" autocomplete="off">
+            <!-- SKU -->
+            <div>
+                <label for="product_id" class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Mã Sản Phẩm (SKU) *</label>
+                <div class="relative">
+                    <input type="text" id="product_id" name="product_id" required placeholder="Nhập mã SKU rồi nhấn Enter..."
+                           class="w-full pl-4 pr-24 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none uppercase font-mono text-base transition">
+                    <button type="button" id="btn-reset-sku" class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold transition">
+                        Đổi mã
+                    </button>
+                </div>
+                <div id="sku-status" class="hidden mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"></div>
             </div>
-            <table class="w-full text-left border-collapse text-sm">
-                <thead>
-                    <tr class="bg-gray-100 text-gray-600 uppercase text-[10px] font-bold">
-                        <th class="p-3 border-b">Vị trí kệ</th>
-                        <th class="p-3 border-b text-right">Số lượng tồn</th>
-                    </tr>
-                </thead>
-                <tbody id="product-inventory-results"></tbody>
-                <tfoot>
-                    <tr class="bg-gray-50 font-bold border-t">
-                        <td class="p-3">TỔNG TỒN</td>
-                        <td class="p-3 text-right text-green-700" id="product-total-qty">0</td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
-        <div id="product-no-results" class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded hidden text-sm">
-            Mã sản phẩm này hiện không có tồn kho tại bất kỳ vị trí nào.
-        </div>
-    </section>
+
+            <!-- Các thông số -->
+            <fieldset id="detail-fields" disabled class="space-y-5 transition disabled:opacity-50">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="box_name" class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Mã Thùng *</label>
+                        <input type="text" id="box_name" name="box_name" required
+                               class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none font-mono text-sm transition">
+                    </div>
+                    <div>
+                        <label for="box_nom" class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Định Lượng Thùng *</label>
+                        <input type="number" id="box_nom" name="box_nom" required min="1" step="1"
+                               class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm transition">
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div class="sm:col-span-2">
+                        <label for="product_name" class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Tên Sản Phẩm</label>
+                        <input type="text" id="product_name" name="product_name" placeholder="(Không bắt buộc)"
+                               class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm transition">
+                    </div>
+                    <div>
+                        <label for="unit" class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Đơn Vị Tính</label>
+                        <input type="text" id="unit" name="unit" placeholder="(Không bắt buộc)"
+                               class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm transition">
+                    </div>
+                </div>
+
+                <button type="submit" id="btn-submit"
+                        class="w-full py-3 px-4 rounded-xl font-bold text-white bg-gray-400 shadow-md transition">
+                    LƯU
+                </button>
+            </fieldset>
+
+            <p id="form-message" class="text-center text-sm font-medium min-h-[1.25rem]"></p>
+        </form>
+    </div>
 </div>
 
 <script>
 $(document).ready(function() {
-    $('#add-product-form').submit(function(e) {
-        e.preventDefault();
-        const form = $(this);
-        const messageDiv = $('#form-message');
-        messageDiv.removeClass('text-green-600 text-red-600').text('');
+    let mode = null; // 'add' | 'update'
 
-        $.post('api.php?action=add_product', form.serialize(), function(res) {
-            if (res.success) {
-                messageDiv.text(res.message).addClass('text-green-600');
-                form[0].reset();
-            } else {
-                messageDiv.text(res.message).addClass('text-red-600');
-            }
-        }, 'json').fail(function() {
-            messageDiv.text('Lỗi kết nối máy chủ.').addClass('text-red-600');
-        });
-    });
+    function setMessage(text, ok) {
+        $('#form-message').removeClass('text-green-600 text-red-600')
+            .addClass(ok ? 'text-green-600' : 'text-red-600').text(text || '');
+    }
 
-    $('#search-product-id-input').on('keypress', function(e) { if(e.which == 13) searchByProduct(); });
-});
+    function resetForm() {
+        mode = null;
+        $('#product-form')[0].reset();
+        $('#product_id').prop('readonly', false).removeClass('bg-gray-100 text-gray-500').focus();
+        $('#btn-reset-sku, #sku-status').addClass('hidden');
+        $('#detail-fields').prop('disabled', true);
+        $('#btn-submit').text('LƯU').attr('class', 'w-full py-3 px-4 rounded-xl font-bold text-white bg-gray-400 shadow-md transition');
+    }
 
-function searchByProduct() {
-    const pid = $('#search-product-id-input').val().trim();
-    if (!pid) return;
+    function applyMode(exists, data) {
+        mode = exists ? 'update' : 'add';
+        $('#product_id').prop('readonly', true).addClass('bg-gray-100 text-gray-500');
+        $('#btn-reset-sku').removeClass('hidden');
+        $('#detail-fields').prop('disabled', false);
 
-    $('#product-results-container, #product-no-results').addClass('hidden');
-
-    $.getJSON('api.php?action=search_sku', { product_id: pid }, function(data) {
-        if (data && data.length > 0) {
-            $('#res-sku').text(pid.toUpperCase());
-            $('#res-product-name').text(data[0].product_name || '');
-            
-            const tbody = $('#product-inventory-results');
-            tbody.empty();
-            let total = 0;
-
-            data.forEach(item => {
-                total += parseInt(item.quantity);
-                tbody.append(`
-                    <tr class="hover:bg-gray-50 border-b">
-                        <td class="p-3 font-mono font-bold text-gray-700">${item.shelf_id}</td>
-                        <td class="p-3 text-right font-medium">${item.quantity}</td>
-                    </tr>
-                `);
-            });
-
-            $('#product-total-qty').text(total);
-            $('#product-results-container').removeClass('hidden');
+        const status = $('#sku-status').removeClass('hidden bg-yellow-100 text-yellow-800 bg-green-100 text-green-800');
+        const btn = $('#btn-submit');
+        if (exists) {
+            status.addClass('bg-yellow-100 text-yellow-800').html('<span>●</span> Mã hàng đã đăng ký');
+            btn.text('CẬP NHẬT').attr('class', 'w-full py-3 px-4 rounded-xl font-bold text-white bg-amber-500 hover:bg-amber-600 shadow-md transition');
+            $('#box_name').val(data.box_name || '');
+            $('#box_nom').val(data.box_nom || '');
+            $('#product_name').val(data.product_name || '');
+            $('#unit').val(data.unit || '');
         } else {
-            $('#product-no-results').removeClass('hidden');
+            status.addClass('bg-green-100 text-green-800').html('<span>●</span> Mã hàng chưa đăng ký');
+            btn.text('ĐĂNG KÝ').attr('class', 'w-full py-3 px-4 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 shadow-md transition');
+            $('#box_name, #box_nom, #product_name, #unit').val('');
         }
+        $('#box_name').focus();
+    }
+
+    function checkSku() {
+        const sku = $('#product_id').val().trim().toUpperCase();
+        if (!sku) return;
+        $('#product_id').val(sku);
+        setMessage('');
+        $.getJSON('api.php?action=get_product_detail', { product_id: sku }, function(res) {
+            if (res.success) applyMode(res.exists, res.data);
+            else setMessage(res.message || 'Không kiểm tra được mã hàng.', false);
+        }).fail(function() { setMessage('Lỗi kết nối máy chủ.', false); });
+    }
+
+    $('#product_id').on('keydown', function(e) {
+        if (e.which === 13) { e.preventDefault(); if (!mode) checkSku(); }
     });
-}
+    $('#btn-reset-sku').on('click', function() { setMessage(''); resetForm(); });
+
+    $('#product-form').submit(function(e) {
+        e.preventDefault();
+        if (!mode) { checkSku(); return; }
+        const action = mode === 'update' ? 'update_product' : 'add_product';
+        $.post('api.php?action=' + action, $(this).serialize(), function(res) {
+            setMessage(res.message, res.success);
+            if (res.success) resetForm();
+        }, 'json').fail(function() { setMessage('Lỗi kết nối máy chủ.', false); });
+    });
+});
 </script>

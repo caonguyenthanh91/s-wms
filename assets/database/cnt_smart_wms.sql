@@ -1297,6 +1297,7 @@ CREATE TABLE `check_inventory` (
   `raw_qr` text COLLATE utf8mb4_unicode_ci,
   `system_qty` int DEFAULT NULL,
   `is_match` tinyint(1) NOT NULL DEFAULT '1',
+  `note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `checked_by` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
   `checked_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -47047,7 +47048,9 @@ CREATE TABLE `products` (
   `id` int NOT NULL,
   `product_id` varchar(50) CHARACTER SET utf8mb3 COLLATE utf8mb3_unicode_ci NOT NULL,
   `product_name` varchar(255) CHARACTER SET utf8mb3 COLLATE utf8mb3_unicode_ci DEFAULT 'noname',
-  `unit` varchar(20) CHARACTER SET utf8mb3 COLLATE utf8mb3_unicode_ci DEFAULT 'pcs'
+  `unit` varchar(20) CHARACTER SET utf8mb3 COLLATE utf8mb3_unicode_ci DEFAULT 'pcs',
+  `box_name` varchar(50) CHARACTER SET utf8mb3 COLLATE utf8mb3_unicode_ci DEFAULT NULL COMMENT 'Mã thùng',
+  `box_nom` int DEFAULT NULL COMMENT 'Định lượng số lượng chuẩn của 1 thùng, dùng để quy đổi khi kiểm kê'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci;
 
 -- --------------------------------------------------------

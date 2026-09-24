@@ -1,96 +1,14 @@
 <?php
 require_once 'config/db.php';
 require_once 'config/session_init.php';
-
-const AUTH_COOKIE_NAME = 'wms_auth';
+// AUTH_COOKIE_NAME, AUTH_SESSION_LIFETIME và toàn bộ hàm auth (issue_auth_cookie,
+// clear_auth_cookie, restore_session_from_cookie, current_user, require_role) được
+// định nghĩa tập trung trong config/session_init.php để mọi entry point (trang lẫn
+// api.php) dùng chung 1 logic timeout/rolling-cookie.
 
 header('Content-Type: application/json');
 
 $action = $_GET['action'] ?? '';
-
-function ensure_user_token_schema(PDO $pdo) {
-    static $checked = false;
-    if ($checked) return;
-    $checked = true;
-    try {
-        $columns = $pdo->query('SHOW COLUMNS FROM log_users')->fetchAll(PDO::FETCH_ASSOC);
-        $columnNames = [];
-        foreach ($columns as $column) {
-            $columnName = $column['Field'] ?? '';
-            if ($columnName !== '') $columnNames[$columnName] = true;
-        }
-        if (!isset($columnNames['remember_token']))
-            $pdo->exec('ALTER TABLE log_users ADD COLUMN remember_token VARCHAR(64) DEFAULT NULL AFTER status');
-        if (!isset($columnNames['remember_token_expires']))
-            $pdo->exec('ALTER TABLE log_users ADD COLUMN remember_token_expires DATETIME DEFAULT NULL AFTER remember_token');
-    } catch (Throwable $e) {}
-}
-
-function issue_auth_cookie(PDO $pdo, array $user) {
-    ensure_user_token_schema($pdo);
-    $token = bin2hex(random_bytes(32));
-    $expires = date('Y-m-d H:i:s', time() + AUTH_SESSION_LIFETIME);
-    $stmt = $pdo->prepare('UPDATE log_users SET remember_token = ?, remember_token_expires = ? WHERE id = ?');
-    $stmt->execute([hash('sha256', $token), $expires, $user['id']]);
-
-    $authCookieSecure = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
-    setcookie(AUTH_COOKIE_NAME, $user['id'] . ':' . $token, [
-        'expires'  => time() + AUTH_SESSION_LIFETIME,
-        'path'     => '/',
-        'secure'   => $authCookieSecure,
-        'httponly' => true,
-        'samesite' => 'Lax',
-    ]);
-}
-
-function clear_auth_cookie(PDO $pdo) {
-    if (isset($_SESSION['user']['id'])) {
-        ensure_user_token_schema($pdo);
-        $stmt = $pdo->prepare('UPDATE log_users SET remember_token = NULL, remember_token_expires = NULL WHERE id = ?');
-        $stmt->execute([$_SESSION['user']['id']]);
-    }
-    $authCookieSecure = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
-    setcookie(AUTH_COOKIE_NAME, '', [
-        'expires'  => time() - 3600,
-        'path'     => '/',
-        'secure'   => $authCookieSecure,
-        'httponly' => true,
-        'samesite' => 'Lax',
-    ]);
-}
-
-function restore_session_from_cookie(PDO $pdo) {
-    if (isset($_SESSION['user']) || empty($_COOKIE[AUTH_COOKIE_NAME])) return;
-    $parts = explode(':', $_COOKIE[AUTH_COOKIE_NAME], 2);
-    if (count($parts) !== 2) return;
-    [$userId, $token] = $parts;
-    if (!ctype_digit($userId) || $token === '') return;
-
-    ensure_user_token_schema($pdo);
-    $stmt = $pdo->prepare('SELECT id, username, full_name, role, status, remember_token, remember_token_expires FROM log_users WHERE id = ? LIMIT 1');
-    $stmt->execute([$userId]);
-    $u = $stmt->fetch(PDO::FETCH_ASSOC);
-    if (!$u || !$u['status'] || !$u['remember_token'] || !$u['remember_token_expires']) return;
-    if (strtotime($u['remember_token_expires']) < time()) return;
-    if (!hash_equals($u['remember_token'], hash('sha256', $token))) return;
-
-    $_SESSION['user'] = ['id'=>$u['id'],'username'=>$u['username'],'full_name'=>$u['full_name'],'role'=>$u['role']];
-    issue_auth_cookie($pdo, $_SESSION['user']); // rolling 8h expiry
-}
-
-restore_session_from_cookie($pdo);
-
-function current_user() {
-    return isset($_SESSION['user']) ? $_SESSION['user'] : null;
-}
-
-function require_role(array $roles) {
-    $u = current_user();
-    if (!$u || !in_array($u['role'], $roles)) {
-        echo json_encode(['success' => false, 'message' => 'Permission denied']);
-        exit;
-    }
-}
 
 function ensure_export_temp_schema(PDO $pdo) {
     static $checked = false;
@@ -181,6 +99,7 @@ function ensure_check_inventory_schema(PDO $pdo) {
             raw_qr TEXT DEFAULT NULL,
             system_qty INT DEFAULT NULL,
             is_match TINYINT(1) NOT NULL DEFAULT 1,
+            note VARCHAR(255) DEFAULT NULL,
             checked_by VARCHAR(50) NOT NULL,
             checked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -189,7 +108,86 @@ function ensure_check_inventory_schema(PDO $pdo) {
             KEY idx_check_inventory_session (session_id),
             KEY idx_check_inventory_checked_at (checked_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        // Bảng đã tồn tại từ trước khi có cột note -> bổ sung cho tương thích ngược.
+        $columns = $pdo->query('SHOW COLUMNS FROM check_inventory')->fetchAll(PDO::FETCH_ASSOC);
+        $columnNames = [];
+        foreach ($columns as $column) {
+            $columnName = $column['Field'] ?? '';
+            if ($columnName !== '') $columnNames[$columnName] = true;
+        }
+        if (!isset($columnNames['note'])) {
+            $pdo->exec('ALTER TABLE check_inventory ADD COLUMN note VARCHAR(255) DEFAULT NULL AFTER is_match');
+        }
     } catch (Throwable $e) {}
+}
+
+// Tách mã kệ đầy đủ dạng "SMC_4--P01-02-03-04-05" thành
+// shelf_name = SMC_4, level0_val = P01, level1_val = 02, ... level4_val = 05.
+function parse_shelf_code(string $code): array {
+    $parts = explode('--', $code, 2);
+    if (count($parts) !== 2 || $parts[0] === '' || $parts[1] === '') {
+        return ['ok' => false, 'message' => 'Mã kệ không đúng định dạng "TÊN--L0-L1-L2-L3-L4".'];
+    }
+    $levels = explode('-', $parts[1]);
+    $maxLen = [4, 2, 2, 2, 10]; // theo độ dài cột shelves.level0_val..level4_val
+    if (count($levels) !== 5 || in_array('', $levels, true)) {
+        return ['ok' => false, 'message' => 'Mã kệ phải có đủ 5 cấp: L0-L1-L2-L3-L4.'];
+    }
+    if (strlen($parts[0]) > 50) return ['ok' => false, 'message' => 'Tên kệ vượt quá 50 ký tự.'];
+    foreach ($levels as $i => $lv) {
+        if (strlen($lv) > $maxLen[$i]) return ['ok' => false, 'message' => "Level $i \"$lv\" vượt quá {$maxLen[$i]} ký tự."];
+    }
+    return ['ok' => true, 'data' => [
+        'shelf_name' => $parts[0],
+        'level0_val' => $levels[0], 'level1_val' => $levels[1], 'level2_val' => $levels[2],
+        'level3_val' => $levels[3], 'level4_val' => $levels[4],
+    ]];
+}
+
+// Định lượng số lượng chuẩn của 1 thùng cho từng mã hàng (products.box_nom), dùng để quy đổi
+// "X box * Y pcs (+ Z pcs)" khi kiểm kê. Cột có thể NULL nếu chưa khai báo định lượng thùng.
+function ensure_products_box_nom_schema(PDO $pdo) {
+    static $checked = false;
+    if ($checked) return;
+    $checked = true;
+
+    try {
+        $columns = $pdo->query('SHOW COLUMNS FROM products')->fetchAll(PDO::FETCH_ASSOC);
+        $columnNames = [];
+        foreach ($columns as $column) {
+            $columnName = $column['Field'] ?? '';
+            if ($columnName !== '') $columnNames[$columnName] = true;
+        }
+        if (!isset($columnNames['box_nom'])) {
+            $pdo->exec('ALTER TABLE products ADD COLUMN box_nom INT DEFAULT NULL AFTER unit');
+        }
+        if (!isset($columnNames['box_name'])) {
+            $pdo->exec('ALTER TABLE products ADD COLUMN box_name VARCHAR(50) DEFAULT NULL AFTER unit');
+        }
+    } catch (Throwable $e) {}
+}
+
+// Quy đổi số lượng kiểm kê được của 1 mã hàng thành chuỗi "X box * Y pcs (+ Z pcs)".
+// - $isBulk = true (BULK-CONFIRM) và có box_nom hợp lệ -> chia theo box_nom.
+// - Còn lại (quét từng thùng, hoặc bulk nhưng không rõ box_nom) -> 1 lần quét = đúng 1 thùng thực tế.
+function check_inventory_build_note(int $qty, $boxNom, bool $isBulk): string {
+    $boxNom = ($boxNom !== null) ? (int) $boxNom : null;
+
+    if ($isBulk && $boxNom !== null && $boxNom > 0) {
+        $fullBoxes = intdiv($qty, $boxNom);
+        $remainder = $qty % $boxNom;
+
+        if ($fullBoxes > 0 && $remainder > 0) {
+            return "{$fullBoxes} box * {$boxNom} pcs + {$remainder} pcs";
+        }
+        if ($fullBoxes > 0) {
+            return "{$fullBoxes} box * {$boxNom} pcs";
+        }
+        return "{$qty} pcs";
+    }
+
+    return "1 box * {$qty} pcs";
 }
 
 function ensure_check_log_schema(PDO $pdo) {
@@ -1527,22 +1525,59 @@ switch ($action) {
         }
         break;
 
-    case 'add_product':
-        // Only Admin or Leader can add products
+    case 'get_product_detail':
         require_role(['Admin','Leader','Manager']);
-        $sku = strtoupper($_POST['product_id'] ?? '');
-        $name = !empty($_POST['product_name']) ? $_POST['product_name'] : "Sản phẩm $sku";
-        $unit = !empty($_POST['unit']) ? $_POST['unit'] : 'Cái';
+        ensure_products_box_nom_schema($pdo);
+        $sku = strtoupper(trim($_GET['product_id'] ?? ''));
+        $stmt = $pdo->prepare("SELECT product_id, product_name, unit, box_name, box_nom FROM products WHERE product_id = ?");
+        $stmt->execute([$sku]);
+        $product = $stmt->fetch(PDO::FETCH_ASSOC);
+        echo json_encode(['success' => true, 'exists' => (bool) $product, 'data' => $product ?: null]);
+        break;
+
+    case 'add_product':
+    case 'update_product':
+        // Only Admin or Leader can add/update products
+        require_role(['Admin','Leader','Manager']);
+        $isUpdate = $action === 'update_product';
+        $sku = strtoupper(trim($_POST['product_id'] ?? ''));
+        $name = trim($_POST['product_name'] ?? '');
+        $unit = trim($_POST['unit'] ?? '');
+        $box_name = trim($_POST['box_name'] ?? '');
+        $box_nom = trim($_POST['box_nom'] ?? '');
         if (empty($sku)) { echo json_encode(['success' => false, 'message' => 'Mã sản phẩm (SKU) không được để trống.']); break; }
+        if ($box_name === '') { echo json_encode(['success' => false, 'message' => 'Mã thùng không được để trống.']); break; }
+        if (!ctype_digit($box_nom) || (int) $box_nom <= 0) { echo json_encode(['success' => false, 'message' => 'Định lượng thùng phải là số nguyên dương.']); break; }
+        ensure_products_box_nom_schema($pdo);
         try {
-            $stmt = $pdo->prepare("INSERT INTO products (product_id, product_name, unit) VALUES (?, ?, ?)");
-            $stmt->execute([$sku, $name, $unit]);
-            echo json_encode(['success' => true, 'message' => 'Thêm sản phẩm thành công!']);
+            if ($isUpdate) {
+                // Tên sản phẩm / đơn vị tính bỏ trống -> trả về giá trị mặc định của SQL
+                $stmt = $pdo->prepare("UPDATE products SET box_name = ?, box_nom = ?, "
+                    . ($name !== '' ? "product_name = ?" : "product_name = DEFAULT") . ", "
+                    . ($unit !== '' ? "unit = ?" : "unit = DEFAULT") . " WHERE product_id = ?");
+                $params = [$box_name, (int) $box_nom];
+                if ($name !== '') $params[] = $name;
+                if ($unit !== '') $params[] = $unit;
+                $params[] = $sku;
+                $stmt->execute($params);
+                $exists = $pdo->prepare("SELECT 1 FROM products WHERE product_id = ?");
+                $exists->execute([$sku]);
+                if (!$exists->fetchColumn()) { echo json_encode(['success' => false, 'message' => 'Mã sản phẩm chưa được đăng ký.']); break; }
+                echo json_encode(['success' => true, 'message' => 'Cập nhật sản phẩm thành công!']);
+                break;
+            }
+            // Tên sản phẩm / đơn vị tính bỏ trống -> không đưa vào INSERT để dùng giá trị mặc định của SQL
+            $cols = ['product_id' => $sku, 'box_name' => $box_name, 'box_nom' => (int) $box_nom];
+            if ($name !== '') $cols['product_name'] = $name;
+            if ($unit !== '') $cols['unit'] = $unit;
+            $stmt = $pdo->prepare("INSERT INTO products (" . implode(', ', array_keys($cols)) . ") VALUES (" . implode(', ', array_fill(0, count($cols), '?')) . ")");
+            $stmt->execute(array_values($cols));
+            echo json_encode(['success' => true, 'message' => 'Đăng ký sản phẩm thành công!']);
         } catch (PDOException $e) {
             if ($e->errorInfo[1] == 1062) {
                 echo json_encode(['success' => false, 'message' => 'Mã sản phẩm đã tồn tại. Vui lòng chọn mã khác.']);
             } else {
-                echo json_encode(['success' => false, 'message' => 'Lỗi khi thêm sản phẩm: ' . $e->getMessage()]);
+                echo json_encode(['success' => false, 'message' => 'Lỗi khi lưu sản phẩm: ' . $e->getMessage()]);
             }
         }
         break;
@@ -2038,6 +2073,134 @@ switch ($action) {
         }
         break;
 
+    case 'inventory_lookup':
+        // Tra tồn tổng hợp: mỗi lần chỉ trả về 1 loại kết quả theo $type
+        require_role(['Admin','Leader','Manager','Staff']);
+        $type = $_GET['type'] ?? '';
+        $q = strtoupper(trim($_GET['q'] ?? ''));
+        if ($q === '') { echo json_encode(['success' => false, 'message' => 'Vui lòng nhập từ khóa tìm kiếm.']); break; }
+        $rows = [];
+        $meta = [];
+        try {
+            switch ($type) {
+                case 'product':
+                    $stmt = $pdo->prepare("SELECT p.product_id, p.product_name, s.shelf_id, SUM(i.quantity) AS quantity, 'INVENTORY' AS source
+                                           FROM inventory i
+                                           JOIN products p ON p.id = i.product_id
+                                           JOIN shelves s ON s.id = i.shelf_id
+                                           WHERE p.product_id = ? AND (s.status != 'Deactive' OR s.status IS NULL)
+                                           GROUP BY p.product_id, p.product_name, s.shelf_id
+                                           HAVING SUM(i.quantity) > 0
+                                           ORDER BY s.shelf_id");
+                    $stmt->execute([$q]);
+                    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    // Pallet đã nhận (RECEIVED) nhưng chưa cất kho
+                    $stmt = $pdo->prepare("SELECT it.part_no AS product_id, p.product_name, it.pallet_id AS shelf_id, SUM(it.qty) AS quantity, 'PALLET' AS source
+                                           FROM import_temp it
+                                           LEFT JOIN products p ON p.product_id = it.part_no
+                                           WHERE it.part_no = ? AND (it.status IS NULL OR it.status = '')
+                                             AND EXISTS (SELECT 1 FROM import_log il WHERE il.pallet_id = it.pallet_id AND il.status = 'RECEIVED')
+                                             AND NOT EXISTS (SELECT 1 FROM import_log il WHERE il.pallet_id = it.pallet_id AND il.status = 'IMPORTED')
+                                           GROUP BY it.part_no, p.product_name, it.pallet_id
+                                           HAVING SUM(it.qty) > 0
+                                           ORDER BY it.pallet_id");
+                    $stmt->execute([$q]);
+                    $rows = array_merge($rows, $stmt->fetchAll(PDO::FETCH_ASSOC));
+                    break;
+
+                case 'shelf':
+                    $stmt = $pdo->prepare("SELECT p.product_id, p.product_name, s.shelf_id, SUM(i.quantity) AS quantity, 'INVENTORY' AS source
+                                           FROM inventory i
+                                           JOIN products p ON p.id = i.product_id
+                                           JOIN shelves s ON s.id = i.shelf_id
+                                           WHERE s.shelf_id = ?
+                                           GROUP BY p.product_id, p.product_name, s.shelf_id
+                                           HAVING SUM(i.quantity) > 0
+                                           ORDER BY p.product_id");
+                    $stmt->execute([$q]);
+                    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    break;
+
+                case 'box':
+                    $stmt = $pdo->prepare("SELECT b.box_id, p.product_id, p.product_name, b.qty, b.weight, b.lot_no, b.invoice_no, b.order_no,
+                                                  b.bundle_no, b.supplier, b.input_date, b.created_by, b.created_at
+                                           FROM box_info b
+                                           LEFT JOIN products p ON p.id = b.product_id
+                                           WHERE b.box_id = ?");
+                    $stmt->execute([$q]);
+                    $meta['box'] = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+                    $stmt = $pdo->prepare("SELECT p.product_id, p.product_name, s.shelf_id, i.quantity, 'INVENTORY' AS source
+                                           FROM inventory i
+                                           JOIN products p ON p.id = i.product_id
+                                           JOIN shelves s ON s.id = i.shelf_id
+                                           WHERE i.box_id = ? AND i.quantity > 0
+                                           ORDER BY s.shelf_id");
+                    $stmt->execute([$q]);
+                    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    break;
+
+                case 'pallet':
+                    $stmt = $pdo->prepare("SELECT status FROM import_log WHERE pallet_id = ?");
+                    $stmt->execute([$q]);
+                    $logStatuses = $stmt->fetchAll(PDO::FETCH_COLUMN);
+                    $palletStatus = in_array('IMPORTED', $logStatuses, true) ? 'IMPORTED'
+                        : (in_array('RECEIVED', $logStatuses, true) ? 'RECEIVED' : 'PENDING');
+                    $stmt = $pdo->prepare("SELECT it.part_no AS product_id, p.product_name, NULLIF(TRIM(it.status), '') AS shelf_id, SUM(it.qty) AS quantity
+                                           FROM import_temp it
+                                           LEFT JOIN products p ON p.product_id = it.part_no
+                                           WHERE it.pallet_id = ?
+                                           GROUP BY it.part_no, p.product_name, NULLIF(TRIM(it.status), '')
+                                           ORDER BY it.part_no");
+                    $stmt->execute([$q]);
+                    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    $meta['pallet_status'] = $rows ? $palletStatus : null;
+                    break;
+
+                case 'invoice':
+                case 'order':
+                    $col = $type === 'invoice' ? 'et.command' : 'et.order_code';
+                    $stmt = $pdo->prepare("SELECT et.command, et.case_no, et.product_id, p.product_name, et.order_code, et.total_qty AS quantity,
+                                                  CASE WHEN EXISTS (
+                                                      SELECT 1 FROM export_log el
+                                                      WHERE el.command = CONVERT(et.command USING utf8mb4) COLLATE utf8mb4_unicode_ci
+                                                        AND el.case_no = CONVERT(et.case_no USING utf8mb4) COLLATE utf8mb4_unicode_ci
+                                                        AND el.product_id = CONVERT(et.product_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+                                                        AND el.status = 'picking'
+                                                  ) THEN 'picking' ELSE '-' END AS status
+                                           FROM export_temp et
+                                           LEFT JOIN products p ON p.product_id = et.product_id
+                                           WHERE $col = ?
+                                           ORDER BY et.command, et.case_no + 0, et.case_no, et.product_id");
+                    $stmt->execute([$q]);
+                    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    break;
+
+                case 'history':
+                    $month = $_GET['month'] ?? date('Y-m');
+                    if (!preg_match('/^\d{4}-\d{2}$/', $month)) $month = date('Y-m');
+                    $from = $month . '-01 00:00:00';
+                    $to = date('Y-m-d H:i:s', strtotime($from . ' +1 month'));
+                    $stmt = $pdo->prepare("SELECT p.product_id, p.product_name, s.shelf_id, t.type, t.quantity, t.created_by, t.created_at
+                                           FROM transactions t
+                                           JOIN products p ON p.id = t.product_id
+                                           LEFT JOIN shelves s ON s.id = t.shelf_id
+                                           WHERE p.product_id = ? AND t.created_at >= ? AND t.created_at < ?
+                                           ORDER BY t.created_at DESC, t.id DESC");
+                    $stmt->execute([$q, $from, $to]);
+                    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    $meta['month'] = $month;
+                    break;
+
+                default:
+                    echo json_encode(['success' => false, 'message' => 'Loại tìm kiếm không hợp lệ.']);
+                    break 2;
+            }
+            echo json_encode(['success' => true, 'type' => $type, 'q' => $q, 'rows' => $rows, 'meta' => $meta]);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'message' => 'Lỗi: ' . $e->getMessage()]);
+        }
+        break;
+
     case 'search_sku':
         $pid = strtoupper($_GET['product_id'] ?? '');
                 $stmt = $pdo->prepare("SELECT p.product_name AS product_name,
@@ -2168,20 +2331,43 @@ switch ($action) {
         }
         break;
 
-    case 'add_shelf':
+    case 'get_shelf_detail':
         require_role(['Admin','Leader','Manager']);
-        $sid = strtoupper($_POST['shelf_id']);
-        $name = $_POST['shelf_name'];
-        $l0 = $_POST['level0_val'];
-        $l1 = $_POST['level1_val'];
-        $l2 = $_POST['level2_val'];
-        $l3 = $_POST['level3_val'];
-        $l4 = $_POST['level4_val'];
-        $cap = $_POST['capacity'];
-        $stmt = $pdo->prepare("INSERT INTO shelves (shelf_id, shelf_name, level0_val, level1_val, level2_val, level3_val, level4_val, capacity) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        $sid = strtoupper(trim($_GET['shelf_id'] ?? ''));
+        $parsed = parse_shelf_code($sid);
+        if (!$parsed['ok']) { echo json_encode(['success' => false, 'message' => $parsed['message']]); break; }
+        $stmt = $pdo->prepare("SELECT shelf_id, shelf_name, level0_val, level1_val, level2_val, level3_val, level4_val, capacity FROM shelves WHERE shelf_id = ?");
+        $stmt->execute([$sid]);
+        $shelf = $stmt->fetch(PDO::FETCH_ASSOC);
+        echo json_encode(['success' => true, 'exists' => (bool) $shelf, 'parsed' => $parsed['data'], 'data' => $shelf ?: null]);
+        break;
+
+    case 'add_shelf':
+    case 'update_shelf':
+        require_role(['Admin','Leader','Manager']);
+        $sid = strtoupper(trim($_POST['shelf_id'] ?? ''));
+        $parsed = parse_shelf_code($sid);
+        if (!$parsed['ok']) { echo json_encode(['success' => false, 'message' => $parsed['message']]); break; }
+        $cap = trim($_POST['capacity'] ?? '');
+        if (!ctype_digit($cap) || (int) $cap <= 0) { echo json_encode(['success' => false, 'message' => 'Sức chứa phải là số nguyên dương.']); break; }
+        $p = $parsed['data'];
+        $values = [$p['shelf_name'], $p['level0_val'], $p['level1_val'], $p['level2_val'], $p['level3_val'], $p['level4_val'], (int) $cap];
         try {
-            $stmt->execute([$sid, $name, $l0, $l1, $l2, $l3, $l4, $cap]);
-            echo json_encode(['success' => true]);
+            if ($action === 'update_shelf') {
+                $stmt = $pdo->prepare("UPDATE shelves SET shelf_name = ?, level0_val = ?, level1_val = ?, level2_val = ?, level3_val = ?, level4_val = ?, capacity = ? WHERE shelf_id = ?");
+                $stmt->execute(array_merge($values, [$sid]));
+                $chk = $pdo->prepare("SELECT 1 FROM shelves WHERE shelf_id = ?");
+                $chk->execute([$sid]);
+                if (!$chk->fetchColumn()) { echo json_encode(['success' => false, 'message' => 'Mã kệ chưa được đăng ký.']); break; }
+                echo json_encode(['success' => true, 'message' => 'Cập nhật mã kệ thành công!']);
+            } else {
+                $dup = $pdo->prepare("SELECT 1 FROM shelves WHERE shelf_id = ?");
+                $dup->execute([$sid]);
+                if ($dup->fetchColumn()) { echo json_encode(['success' => false, 'message' => 'Mã kệ đã tồn tại.']); break; }
+                $stmt = $pdo->prepare("INSERT INTO shelves (shelf_id, shelf_name, level0_val, level1_val, level2_val, level3_val, level4_val, capacity) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt->execute(array_merge([$sid], $values));
+                echo json_encode(['success' => true, 'message' => 'Đăng ký mã kệ thành công!']);
+            }
         } catch (Exception $e) {
             echo json_encode(['success' => false, 'message' => 'Lỗi: ' . $e->getMessage()]);
         }
@@ -3452,6 +3638,7 @@ switch ($action) {
         // hiện tại theo mã hàng và cho biết vị trí đã từng được kiểm kê hay chưa.
         require_role(['Admin','Leader','Manager','Staff']);
         ensure_check_inventory_schema($pdo);
+        ensure_products_box_nom_schema($pdo);
 
         $sid = strtoupper(trim((string)($_GET['shelf_id'] ?? $_POST['shelf_id'] ?? '')));
         if (strpos($sid, 'B032-') === 0) {
@@ -3471,14 +3658,14 @@ switch ($action) {
                 break;
             }
 
-            $stmt = $pdo->prepare("SELECT p.product_id, p.product_name, SUM(i.quantity) AS quantity
+            $stmt = $pdo->prepare("SELECT p.product_id, p.product_name, p.box_nom, SUM(i.quantity) AS quantity
                                    FROM inventory i
                                    JOIN products p ON i.product_id = p.id
                                    JOIN shelves s ON i.shelf_id = s.id
                                    WHERE s.shelf_id = ?
                                      AND i.quantity > 0
                                      AND (s.status != 'Deactive' OR s.status IS NULL)
-                                   GROUP BY p.product_id, p.product_name
+                                   GROUP BY p.product_id, p.product_name, p.box_nom
                                    ORDER BY p.product_id");
             $stmt->execute([$sid]);
             $systemRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -3518,6 +3705,7 @@ switch ($action) {
                         'product_id' => strtoupper(trim((string)$r['product_id'])),
                         'product_name' => $r['product_name'] ?? '',
                         'quantity' => (float)$r['quantity'],
+                        'box_nom' => $r['box_nom'] !== null ? (int)$r['box_nom'] : null,
                     ];
                 }, $systemRows),
                 'counted' => array_map(function ($r) {
@@ -3537,6 +3725,7 @@ switch ($action) {
         // Lưu lịch sử quét kiểm kê: 1 dòng / 1 lần quét thùng (vị trí, mã hàng, SL, người kiểm, thời gian).
         require_role(['Admin','Leader','Manager','Staff']);
         ensure_check_inventory_schema($pdo);
+        ensure_products_box_nom_schema($pdo);
 
         $sid = strtoupper(trim((string)($_POST['shelf_id'] ?? '')));
         if (strpos($sid, 'B032-') === 0) {
@@ -3562,6 +3751,16 @@ switch ($action) {
             $stmt->execute([$sid]);
             if (!$stmt->fetchColumn()) {
                 echo json_encode(['success' => false, 'message' => 'Mã vị trí ' . $sid . ' không tồn tại']);
+                break;
+            }
+
+            // Ràng buộc: 1 vị trí chỉ được kiểm kê 1 lần. Nếu đã có bất kỳ dòng kiểm kê nào
+            // cho vị trí này (dù từ trước khi có ràng buộc này) thì chặn lưu thêm, kể cả khi
+            // client bỏ qua cảnh báo ở bước quét vị trí.
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM check_inventory WHERE shelf_id = ?");
+            $stmt->execute([$sid]);
+            if ((int)$stmt->fetchColumn() > 0) {
+                echo json_encode(['success' => false, 'message' => 'Vị trí ' . $sid . ' đã được kiểm kê trước đó. Mỗi vị trí chỉ được kiểm kê 1 lần.', 'already_checked' => true]);
                 break;
             }
 
@@ -3592,6 +3791,19 @@ switch ($action) {
                 break;
             }
 
+            // Định lượng thùng (box_nom) của từng mã hàng trong batch này, để quy đổi note "X box * Y pcs".
+            $boxNomMap = [];
+            $pidsInBatch = array_values(array_unique(array_column($cleanItems, 'product_id')));
+            if ($pidsInBatch) {
+                $placeholders = implode(',', array_fill(0, count($pidsInBatch), '?'));
+                $stmt = $pdo->prepare("SELECT UPPER(TRIM(product_id)) AS product_id, box_nom
+                                       FROM products WHERE UPPER(TRIM(product_id)) IN ($placeholders)");
+                $stmt->execute($pidsInBatch);
+                foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                    $boxNomMap[$r['product_id']] = $r['box_nom'] !== null ? (int)$r['box_nom'] : null;
+                }
+            }
+
             // Số đã kiểm cộng dồn TRƯỚC batch này (các lượt kiểm trước đó)
             $stmt = $pdo->prepare("SELECT UPPER(TRIM(product_id)) AS product_id, SUM(quantity) AS q
                                    FROM check_inventory WHERE shelf_id = ?
@@ -3613,15 +3825,18 @@ switch ($action) {
 
             $pdo->beginTransaction();
             $ins = $pdo->prepare("INSERT INTO check_inventory
-                (session_id, shelf_id, product_id, quantity, raw_qr, system_qty, is_match, checked_by, checked_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+                (session_id, shelf_id, product_id, quantity, raw_qr, system_qty, is_match, note, checked_by, checked_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
             foreach ($cleanItems as $ci) {
                 $sysQ = array_key_exists($ci['product_id'], $sysMap) ? (int)round($sysMap[$ci['product_id']]) : null;
                 $isMatch = ($sysQ !== null && (int)($afterMap[$ci['product_id']] ?? 0) === $sysQ) ? 1 : 0;
+                $isBulk = strtoupper(trim($ci['raw'])) === 'BULK-CONFIRM';
+                $boxNom = $boxNomMap[$ci['product_id']] ?? null;
+                $note = check_inventory_build_note($ci['qty'], $boxNom, $isBulk);
                 $ins->execute([
                     $sessionId, $sid, $ci['product_id'], $ci['qty'],
                     $ci['raw'] !== '' ? $ci['raw'] : null,
-                    $sysQ, $isMatch, $checkedBy,
+                    $sysQ, $isMatch, $note, $checkedBy,
                 ]);
             }
             $pdo->commit();
@@ -3677,24 +3892,351 @@ switch ($action) {
         break;
 
     case 'check_inventory_history':
+        // Lịch sử kiểm kê gần nhất: chỉ của người đang đăng nhập (msnv), tối đa 50 dòng.
         require_role(['Admin','Leader','Manager','Staff']);
         ensure_check_inventory_schema($pdo);
         try {
-            $limit = (int)($_GET['limit'] ?? 15);
-            if ($limit <= 0 || $limit > 100) $limit = 15;
-            $stmt = $pdo->query("SELECT session_id, shelf_id,
+            $limit = (int)($_GET['limit'] ?? 50);
+            if ($limit <= 0 || $limit > 50) $limit = 50;
+
+            $currentUser = current_user();
+            $username = $currentUser['username'] ?? '';
+
+            $stmt = $pdo->prepare("SELECT session_id, shelf_id,
                         MIN(checked_at) AS checked_at,
                         MAX(checked_by) AS checked_by,
                         COUNT(*) AS scan_rows,
                         SUM(quantity) AS total_qty,
                         SUM(CASE WHEN is_match = 0 THEN 1 ELSE 0 END) AS mismatch_rows
                      FROM check_inventory
+                     WHERE checked_by = ?
                      GROUP BY session_id, shelf_id
                      ORDER BY checked_at DESC
                      LIMIT " . $limit);
+            $stmt->execute([$username]);
             echo json_encode(['success' => true, 'sessions' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
         } catch (Throwable $e) {
             echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        break;
+
+    case 'check_dashboard_summary':
+        // KPI tiến độ kiểm kê: tổng số + breakdown theo shelves.level0_val.
+        require_role(['Admin','Leader','Manager','Staff']);
+        ensure_check_inventory_schema($pdo);
+
+        try {
+            // Vị trí đang có tồn kho (active), kèm khu vực (level0_val)
+            $stmt = $pdo->query(
+                "SELECT DISTINCT s.shelf_id, COALESCE(NULLIF(TRIM(s.level0_val), ''), '(Không xác định)') AS zone
+                 FROM shelves s
+                 JOIN inventory i ON i.shelf_id = s.id
+                 WHERE i.quantity > 0 AND (s.status != 'Deactive' OR s.status IS NULL)"
+            );
+            $stockByShelf = [];
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $stockByShelf[$r['shelf_id']] = $r['zone'];
+            }
+
+            // Khu vực của TẤT CẢ vị trí (kể cả đã deactive/hết tồn) để không mất dữ liệu lịch sử kiểm kê
+            $stmt = $pdo->query("SELECT shelf_id, COALESCE(NULLIF(TRIM(level0_val), ''), '(Không xác định)') AS zone FROM shelves");
+            $zoneByShelf = [];
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $zoneByShelf[$r['shelf_id']] = $r['zone'];
+            }
+
+            // Đối chiếu cộng dồn theo vị trí + mã hàng (snapshot tồn hệ thống mới nhất của mỗi cặp)
+            $stmt = $pdo->query(
+                "SELECT ci.shelf_id, ci.product_id, SUM(ci.quantity) AS counted_qty,
+                        (SELECT ci2.system_qty FROM check_inventory ci2
+                          WHERE ci2.shelf_id = ci.shelf_id AND ci2.product_id = ci.product_id
+                          ORDER BY ci2.checked_at DESC, ci2.id DESC LIMIT 1) AS system_qty
+                 FROM check_inventory ci
+                 GROUP BY ci.shelf_id, ci.product_id"
+            );
+
+            $checkedShelfMismatch = []; // shelf_id => bool (có ít nhất 1 mã hàng lệch)
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $sid = $r['shelf_id'];
+                $counted = (int) round((float) $r['counted_qty']);
+                $sys = $r['system_qty'] !== null ? (int) round((float) $r['system_qty']) : null;
+                $isMatch = ($sys !== null && $counted === $sys);
+                if (!isset($checkedShelfMismatch[$sid])) $checkedShelfMismatch[$sid] = false;
+                if (!$isMatch) $checkedShelfMismatch[$sid] = true;
+            }
+
+            $zones = [];
+            $ensureZone = function ($zone) use (&$zones) {
+                if (!isset($zones[$zone])) {
+                    $zones[$zone] = [
+                        'zone' => $zone,
+                        'shelves_with_stock' => 0,
+                        'shelves_checked' => 0,
+                        'shelves_remaining' => 0,
+                        'shelves_mismatch' => 0,
+                    ];
+                }
+            };
+
+            foreach ($stockByShelf as $sid => $zone) {
+                $ensureZone($zone);
+                $zones[$zone]['shelves_with_stock']++;
+            }
+
+            foreach ($checkedShelfMismatch as $sid => $mismatch) {
+                $zone = $zoneByShelf[$sid] ?? '(Không xác định)';
+                $ensureZone($zone);
+                $zones[$zone]['shelves_checked']++;
+                if ($mismatch) $zones[$zone]['shelves_mismatch']++;
+            }
+
+            foreach ($stockByShelf as $sid => $zone) {
+                if (!isset($checkedShelfMismatch[$sid])) {
+                    $zones[$zone]['shelves_remaining']++;
+                }
+            }
+
+            ksort($zones, SORT_NATURAL | SORT_FLAG_CASE);
+
+            $totals = ['shelves_with_stock' => 0, 'shelves_checked' => 0, 'shelves_remaining' => 0, 'shelves_mismatch' => 0];
+            foreach ($zones as $z) {
+                $totals['shelves_with_stock'] += $z['shelves_with_stock'];
+                $totals['shelves_checked'] += $z['shelves_checked'];
+                $totals['shelves_remaining'] += $z['shelves_remaining'];
+                $totals['shelves_mismatch'] += $z['shelves_mismatch'];
+            }
+
+            echo json_encode([
+                'success' => true,
+                'totals' => $totals,
+                'by_zone' => array_values($zones),
+            ]);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        break;
+
+    case 'check_dashboard_mismatch_list':
+        // Danh sách các dòng đã kiểm kê nhưng lệch tồn hệ thống, tìm theo mã hàng, tùy chọn lọc theo khu vực.
+        require_role(['Admin','Leader','Manager','Staff']);
+        ensure_check_inventory_schema($pdo);
+
+        $q = strtoupper(trim((string) ($_GET['q'] ?? '')));
+        $zoneFilter = trim((string) ($_GET['zone'] ?? ''));
+        $limit = (int) ($_GET['limit'] ?? 300);
+        if ($limit <= 0 || $limit > 1000) $limit = 300;
+
+        try {
+            $stmt = $pdo->query(
+                "SELECT ci.shelf_id, ci.product_id, SUM(ci.quantity) AS counted_qty,
+                        (SELECT ci2.system_qty FROM check_inventory ci2
+                          WHERE ci2.shelf_id = ci.shelf_id AND ci2.product_id = ci.product_id
+                          ORDER BY ci2.checked_at DESC, ci2.id DESC LIMIT 1) AS system_qty,
+                        (SELECT ci2.checked_by FROM check_inventory ci2
+                          WHERE ci2.shelf_id = ci.shelf_id AND ci2.product_id = ci.product_id
+                          ORDER BY ci2.checked_at DESC, ci2.id DESC LIMIT 1) AS checked_by,
+                        MAX(ci.checked_at) AS checked_at
+                 FROM check_inventory ci
+                 GROUP BY ci.shelf_id, ci.product_id"
+            );
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $stmt = $pdo->query("SELECT product_id, product_name FROM products");
+            $nameMap = [];
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $nameMap[strtoupper(trim((string) $r['product_id']))] = $r['product_name'];
+            }
+
+            $stmt = $pdo->query("SELECT shelf_id, COALESCE(NULLIF(TRIM(level0_val), ''), '(Không xác định)') AS zone FROM shelves");
+            $zoneMap = [];
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $zoneMap[$r['shelf_id']] = $r['zone'];
+            }
+
+            $items = [];
+            foreach ($rows as $r) {
+                $counted = (int) round((float) $r['counted_qty']);
+                $sys = $r['system_qty'] !== null ? (int) round((float) $r['system_qty']) : null;
+                $isMatch = ($sys !== null && $counted === $sys);
+                if ($isMatch) continue; // mặc định chỉ liệt kê các dòng đang lệch tồn
+
+                $pid = strtoupper(trim((string) $r['product_id']));
+                if ($q !== '' && strpos($pid, $q) === false) continue;
+
+                $zone = $zoneMap[$r['shelf_id']] ?? '(Không xác định)';
+                if ($zoneFilter !== '' && strcasecmp($zone, $zoneFilter) !== 0) continue;
+
+                $items[] = [
+                    'shelf_id' => $r['shelf_id'],
+                    'zone' => $zone,
+                    'product_id' => $pid,
+                    'product_name' => $nameMap[$pid] ?? '',
+                    'counted_qty' => $counted,
+                    'system_qty' => $sys,
+                    'diff' => $sys === null ? null : $counted - $sys,
+                    'checked_by' => $r['checked_by'],
+                    'checked_at' => $r['checked_at'],
+                ];
+            }
+
+            usort($items, function ($a, $b) {
+                return strnatcasecmp($a['shelf_id'], $b['shelf_id']) ?: strnatcasecmp($a['product_id'], $b['product_id']);
+            });
+
+            $total = count($items);
+            if ($total > $limit) $items = array_slice($items, 0, $limit);
+
+            echo json_encode(['success' => true, 'items' => $items, 'total' => $total]);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        break;
+
+    case 'check_dashboard_delete_shelf':
+        // Xóa toàn bộ kết quả kiểm kê của 1 vị trí để cho phép kiểm kê lại. Chỉ Admin.
+        require_role(['Admin']);
+        ensure_check_inventory_schema($pdo);
+
+        $sid = strtoupper(trim((string) ($_POST['shelf_id'] ?? '')));
+        if (strpos($sid, 'B032-') === 0) {
+            $sid = substr($sid, 5);
+        }
+        if ($sid === '') {
+            echo json_encode(['success' => false, 'message' => 'Thiếu mã vị trí']);
+            break;
+        }
+
+        try {
+            $stmt = $pdo->prepare("DELETE FROM check_inventory WHERE shelf_id = ?");
+            $stmt->execute([$sid]);
+            $deleted = (int) $stmt->rowCount();
+
+            echo json_encode([
+                'success' => true,
+                'shelf_id' => $sid,
+                'deleted_rows' => $deleted,
+                'message' => $deleted > 0
+                    ? 'Đã xóa kết quả kiểm kê của vị trí ' . $sid . '. Vị trí có thể kiểm kê lại.'
+                    : 'Vị trí ' . $sid . ' chưa có kết quả kiểm kê nào để xóa.',
+            ]);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        break;
+
+    case 'check_dashboard_export_history_xlsx':
+        // Xuất lịch sử kiểm kê (check_inventory + products + shelves) theo tháng đã chọn,
+        // paste vào template assets/inventory_check.xlsx từ dòng 16, lưu file mới vào
+        // assets/database/ kèm hậu tố thời điểm xuất (không ghi đè template gốc).
+        require_role(['Admin','Leader','Manager','Staff']);
+        ensure_check_inventory_schema($pdo);
+
+        $month = trim((string) ($_POST['month'] ?? $_GET['month'] ?? ''));
+        if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $month)) {
+            echo json_encode(['success' => false, 'message' => 'Tháng không hợp lệ. Định dạng YYYY-MM.']);
+            break;
+        }
+
+        try {
+            $startDt = new DateTime($month . '-01 00:00:00');
+            $endDt = (clone $startDt)->modify('+1 month');
+
+            $stmt = $pdo->prepare(
+                "SELECT ci.session_id, ci.shelf_id, ci.product_id, ci.quantity, ci.checked_by, ci.checked_at,
+                        ci.note, ci.raw_qr,
+                        COALESCE(p.product_name, '') AS product_name,
+                        COALESCE(p.unit, '') AS unit,
+                        COALESCE(s.level0_val, '') AS level0_val
+                 FROM check_inventory ci
+                 LEFT JOIN products p ON UPPER(TRIM(p.product_id)) = UPPER(TRIM(ci.product_id))
+                 LEFT JOIN shelves s ON UPPER(TRIM(s.shelf_id)) = UPPER(TRIM(ci.shelf_id))
+                 WHERE ci.checked_at >= ? AND ci.checked_at < ?
+                 ORDER BY ci.checked_at ASC, ci.id ASC"
+            );
+            $stmt->execute([$startDt->format('Y-m-d H:i:s'), $endDt->format('Y-m-d H:i:s')]);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            if (!count($rows)) {
+                echo json_encode(['success' => false, 'message' => 'Không có dữ liệu kiểm kê trong tháng ' . $month . '.']);
+                break;
+            }
+
+            set_time_limit(300);
+            ini_set('memory_limit', '1024M');
+            require_once __DIR__ . '/assets/vendor/autoload.php';
+
+            $templatePath = __DIR__ . '/assets/inventory_check.xlsx';
+            if (!file_exists($templatePath)) {
+                throw new Exception('Không tìm thấy file mẫu assets/inventory_check.xlsx');
+            }
+
+            $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReader('Xlsx');
+            $spreadsheet = $reader->load($templatePath);
+            $sheet = $spreadsheet->getActiveSheet();
+
+            $startRow = 16;
+            $dataRows = [];
+            $stt = 1;
+            foreach ($rows as $r) {
+                $checkedAtExcel = \PhpOffice\PhpSpreadsheet\Shared\Date::PHPToExcel(new DateTime($r['checked_at']));
+                $dataRows[] = [
+                    $stt,                                       // B: STT
+                    'A00120',                                   // C: mã bộ phận (cố định)
+                    (string) $r['session_id'],                  // D: mã phiếu kiểm kê
+                    'SMC_4',                                    // E: nhà máy (cố định)
+                    (string) $r['level0_val'],                  // F: dãy kệ
+                    (string) $r['shelf_id'],                    // G: mã vị trí đầy đủ
+                    (string) $r['product_id'],                  // H: mã hàng hóa
+                    (string) $r['product_name'],                // I: tên hàng hóa
+                    (int) $r['quantity'],                       // J: số lượng
+                    (string) $r['unit'],                        // K: đơn vị
+                    (string) $r['checked_by'],                  // L: người kiểm
+                    $checkedAtExcel,                            // M: thời điểm kiểm
+                    (string) ($r['note'] ?? ''),                // N: note
+                    (string) ($r['raw_qr'] ?? ''),              // O: QR code
+                ];
+                $stt++;
+            }
+
+            $sheet->fromArray($dataRows, null, 'B' . $startRow);
+            $lastRow = $startRow + count($dataRows) - 1;
+
+            // Ép kiểu chuỗi cho các cột có nguy cơ mất số 0 ở đầu nếu bị hiểu nhầm thành số (VD msnv).
+            foreach (['F', 'L'] as $col) {
+                for ($row = $startRow; $row <= $lastRow; $row++) {
+                    $cell = $sheet->getCell($col . $row);
+                    $sheet->setCellValueExplicit($col . $row, (string) $cell->getValue(), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                }
+            }
+
+            // Định dạng ngày giờ cho cột M (Thời điểm kiểm)
+            $sheet->getStyle('M' . $startRow . ':M' . $lastRow)->getNumberFormat()->setFormatCode('m/d/yyyy h:mm');
+
+            $exportDir = __DIR__ . '/assets/database/';
+            if (!is_dir($exportDir)) @mkdir($exportDir, 0777, true);
+            if (!is_writable($exportDir)) {
+                throw new Exception('Thư mục lưu file không có quyền ghi: ' . $exportDir);
+            }
+
+            $filename = 'inventory_check_' . date('Ymd_His') . '.xlsx';
+            $filepath = $exportDir . $filename;
+
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $writer->save($filepath);
+
+            if (!file_exists($filepath) || filesize($filepath) === 0) {
+                throw new Exception('Không tạo được file xuất.');
+            }
+
+            echo json_encode([
+                'success' => true,
+                'filename' => $filename,
+                'path' => 'assets/database/' . $filename,
+                'rows' => count($dataRows),
+                'month' => $month,
+            ]);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'message' => 'Lỗi xuất file: ' . $e->getMessage()]);
         }
         break;
 

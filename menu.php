@@ -13,7 +13,7 @@ $categoryGrouping = [
     'In ấn' => ['print', 'print_case', 'print_pallet'],
     'Cấu hình & Quản lý' => ['layout', 'shelves', 'products', 'data_export', 'wms_import', 'data_import', 'admin'],
     'Bảo trì' => ['system_check'],
-    'Đang phát triển' => ['check_box', 'check_inventory', 'packing_ver_2'],
+    'Đang phát triển' => ['check_box', 'check_inventory', 'check_dashboard', 'packing_ver_2'],
 ];
 ?>
 

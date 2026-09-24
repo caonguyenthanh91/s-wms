@@ -22,7 +22,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'], true)) {
             <div class="pda-title mt-0 text-sm">Quét QR mã vị trí</div>
             <button type="button" class="ci-help-toggle" onclick="ciToggleHelp('ci-step1-help')" title="Trợ giúp"><i class="fas fa-info-circle"></i></button>
         </div>
-        <div id="ci-step1-help" class="ci-help-box hidden">Có thể lưu nhiều đợt. Lần sau quét lại vị trí, hệ thống hiện các mã hàng chưa kiểm đủ để kiểm tiếp.</div>
+        <div id="ci-step1-help" class="ci-help-box hidden">Mỗi vị trí chỉ được kiểm kê 1 lần. Sau khi đã lưu kết quả, quét lại vị trí này sẽ bị chặn.</div>
 
         <div class="relative mt-2">
             <input type="text" id="ci-loc-input" class="pda-input" placeholder="Quét QR mã vị trí" autocomplete="off" maxlength="120">
@@ -87,7 +87,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'], true)) {
 
         <div class="ci-scan-actions mt-3">
             <button type="button" id="ci-btn-bulk" onclick="ciBulkConfirm()" class="ci-bulk-btn"
-                title="Xác nhận hàng loạt: dùng khi hàng ở trên cao, khó quét từng thùng. Chấp nhận kết quả kiểm kê = toàn bộ tồn hệ thống của vị trí. Cần mật khẩu.">
+                title="Xác nhận hàng loạt: dùng khi hàng ở trên cao, khó quét từng thùng. Chấp nhận kết quả kiểm kê = toàn bộ tồn hệ thống của vị trí. Không dùng cho kệ lẻ (mã chứa chữ B).">
                 <i class="fas fa-layer-group"></i>
             </button>
             <button type="button" class="pda-btn pda-btn-success flex-1" id="ci-btn-save" onclick="ciSave()" disabled>
@@ -98,18 +98,20 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'], true)) {
         <!-- ============ Bên dưới: danh sách đã quét & tiến độ ============ -->
         <div class="ci-below-fold">
             <div class="pda-subtitle">Danh sách đã quét (chờ lưu)</div>
-            <div class="mt-2 border border-gray-200 rounded-lg overflow-hidden">
+            <div class="text-[11px] text-slate-500 mt-1">Cột "Quy đổi" là giá trị sẽ lưu vào lịch sử — kiểm tra kỹ số thùng trước khi nhấn Lưu, đặc biệt với Xác nhận hàng loạt.</div>
+            <div class="mt-2 border border-gray-200 rounded-lg overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead class="bg-gray-100">
                         <tr>
                             <th class="p-2 text-left text-xs font-bold text-gray-700">STT</th>
                             <th class="p-2 text-left text-xs font-bold text-gray-700">MÃ HÀNG</th>
                             <th class="p-2 text-right text-xs font-bold text-gray-700">SL</th>
+                            <th class="p-2 text-left text-xs font-bold text-gray-700">QUY ĐỔI</th>
                             <th class="p-2 text-center text-xs font-bold text-gray-700">XÓA</th>
                         </tr>
                     </thead>
                     <tbody id="ci-box-list">
-                        <tr><td colspan="4" class="p-2 text-center text-slate-500 text-xs">Chưa quét thùng nào</td></tr>
+                        <tr><td colspan="5" class="p-2 text-center text-slate-500 text-xs">Chưa quét thùng nào</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -134,9 +136,9 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'], true)) {
         </div>
     </div>
 
-    <!-- Lịch sử -->
-    <div class="pda-card p-2 mt-2">
-        <div class="pda-subtitle">Lịch sử kiểm kê gần nhất</div>
+    <!-- Lịch sử (chỉ hiện ở bước 1 - bước 2 dành không gian cho bảng quét) -->
+    <div id="ci-history-card" class="pda-card p-2 mt-2">
+        <div class="pda-subtitle">Lịch sử kiểm kê gần nhất (của bạn)</div>
         <div class="pda-table-wrap mt-2">
             <table class="w-full pda-table">
                 <thead>
@@ -296,6 +298,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'], true)) {
         font-size: 15px;
         cursor: pointer;
     }
+    .ci-bulk-btn:disabled { background: #cbd5e1; cursor: not-allowed; }
 
     .ci-below-fold {
         margin-top: 12px;
@@ -367,6 +370,7 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'], true)) {
     .ci-modal-actions { text-align: right; margin-top: 4px; }
     .ci-modal-btn { display: inline-block; border: none; border-radius: 8px; padding: 10px 20px; font-weight: 700; font-size: 14px; cursor: pointer; margin-left: 8px; }
     .ci-modal-btn-primary { background: #0284c7; color: #fff; }
+    .ci-modal-btn-ghost { background: #e2e8f0; color: #1e293b; }
     .ci-badge { display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: 10px; font-weight: 700; }
     .ci-badge-match { background: #dcfce7; color: #166534; }
     .ci-badge-pending { background: #e2e8f0; color: #475569; }
@@ -395,12 +399,37 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'], true)) {
     </div>
 </div>
 
+<div id="ci-presave-modal" class="ci-modal-overlay" style="display:none;">
+    <div id="ci-presave-content" class="ci-modal-box warning">
+        <h2>⚠️ Có mã hàng có thể lệch tồn</h2>
+        <p class="text-xs" style="color:#64748b; margin-bottom:6px;">Vị trí: <span id="ci-presave-loc" class="font-bold"></span></p>
+        <p style="font-size:13px;">Danh sách dưới đây chưa khớp tồn hệ thống nếu lưu ngay bây giờ. Kiểm tra lại số lượng/quét thêm nếu cần, hoặc vẫn lưu theo số hiện có.</p>
+        <div id="ci-presave-body"></div>
+        <div class="ci-modal-actions">
+            <button type="button" class="ci-modal-btn ci-modal-btn-ghost" onclick="ciPresaveCancel()">Xác nhận lại</button>
+            <button type="button" class="ci-modal-btn ci-modal-btn-primary" onclick="ciPresaveProceed()">Vẫn lưu</button>
+        </div>
+    </div>
+</div>
+
+<div id="ci-bulkconfirm-modal" class="ci-modal-overlay" style="display:none;">
+    <div id="ci-bulkconfirm-content" class="ci-modal-box warning">
+        <h2>⚠️ Xác nhận hàng loạt</h2>
+        <p id="ci-bulkconfirm-message" style="white-space:pre-wrap; font-size:14px; line-height:1.5;"></p>
+        <div class="ci-modal-actions">
+            <button type="button" class="ci-modal-btn ci-modal-btn-ghost" onclick="ciBulkConfirmCancel()">Hủy</button>
+            <button type="button" class="ci-modal-btn ci-modal-btn-primary" onclick="ciBulkConfirmProceed()">Đồng ý</button>
+        </div>
+    </div>
+</div>
+
 <script>
 let ciState = {
     sessionId: '',
     shelfId: '',
     shelfName: '',
-    systemInventory: [],   // [{product_id, product_name, quantity}]
+    systemInventory: [],   // [{product_id, product_name, quantity, box_nom}]
+    boxNomMap: {},         // {product_id: box_nom|null}  định lượng số lượng/thùng của từng mã hàng
     priorCounted: {},      // {product_id: counted_qty}  cộng dồn các lượt đã lưu trước đó
     list: [],              // [{productId, qty, raw}]  các lần quét CHƯA lưu
     currentParsed: null,
@@ -451,7 +480,8 @@ function ciShowAlert(message, type) {
 function ciCloseAlert() { $('#ci-alert-modal').css('display', 'none'); }
 function ciCloseRecon() {
     $('#ci-recon-modal').css('display', 'none');
-    setTimeout(function() { $('#ci-box-input').focus(); }, 60);
+    // Sau khi lưu luôn quay về bước 1 -> focus ô quét vị trí để quét tiếp vị trí kế tiếp.
+    setTimeout(function() { $('#ci-loc-input').focus(); }, 60);
 }
 
 /* ---------- Tiến độ / đối chiếu ---------- */
@@ -556,41 +586,43 @@ function ciConfirmLocation() {
             return;
         }
 
+        // Ràng buộc: 1 vị trí chỉ được kiểm kê 1 lần sau khi đã lưu kết quả.
+        // Nếu vị trí đã có lịch sử kiểm kê -> chặn hẳn, không cho vào bước 2.
+        if (res.checked_before) {
+            ciShowAlert(
+                'Vị trí ' + res.shelf_id + ' đã được kiểm kê' +
+                (res.last_checked_at ? ' lúc ' + res.last_checked_at + (res.last_checked_by ? ' bởi ' + res.last_checked_by : '') : '') +
+                '.\n\nMỗi vị trí chỉ được kiểm kê 1 lần sau khi đã lưu kết quả. Không thể kiểm kê lại vị trí này.',
+                'warning'
+            );
+            ciSetStatus('Vị trí đã kiểm kê — không thể kiểm lại', 'text-red-700');
+            $('#ci-loc-input').val('').focus();
+            return;
+        }
+
         ciState.sessionId = ciGenSessionId();
         ciState.shelfId = res.shelf_id;
         ciState.shelfName = res.shelf_name || '';
         ciState.systemInventory = Array.isArray(res.system_inventory) ? res.system_inventory : [];
-        ciState.priorCounted = {};
-        (res.counted || []).forEach(function(c) {
-            ciState.priorCounted[String(c.product_id).toUpperCase()] = parseInt(c.counted_qty || 0, 10);
+        ciState.boxNomMap = {};
+        ciState.systemInventory.forEach(function(r) {
+            const pid = String(r.product_id).toUpperCase();
+            ciState.boxNomMap[pid] = (r.box_nom !== null && r.box_nom !== undefined && r.box_nom !== '') ? parseInt(r.box_nom, 10) : null;
         });
+        ciState.priorCounted = {};
         ciState.list = [];
         ciState.currentParsed = null;
 
         $('#ci-step-1').hide();
         $('#ci-step-2').show();
+        $('#ci-history-card').hide();
+        $('#ci-box-input').prop('disabled', false);
+        $('#ci-btn-bulk').prop('disabled', false);
         ciRenderBoxList();
         ciUpdateSummary();
         ciSetScanMode(false);
-
-        const prog = ciComputeProgress();
-        const pending = prog.filter(function(r) { return r.status === 'pending' || r.status === 'short'; });
-        if (res.checked_before) {
-            const pnames = pending.map(function(r) { return r.productId + ' (còn ' + r.remaining + ')'; });
-            ciSetStatus('Đã kiểm 1 phần — còn ' + pending.length + ' mã.', 'text-amber-700');
-            ciShowAlert(
-                'Vị trí ' + res.shelf_id + ' đã được kiểm kê trước đó' +
-                (res.last_checked_at ? ' (gần nhất ' + res.last_checked_at + ' bởi ' + (res.last_checked_by || '?') + ')' : '') + '.\n\n' +
-                (pnames.length
-                    ? 'Các mã hàng CHƯA kiểm đủ:\n- ' + pnames.join('\n- ')
-                    : 'Tất cả mã hàng đã kiểm đủ. Bạn có thể kiểm lại nếu cần.'),
-                'warning'
-            );
-        } else {
-            ciSetStatus('Đang kiểm tại ' + ciState.shelfId, 'text-sky-700');
-        }
+        ciSetStatus('Đang kiểm tại ' + ciState.shelfId, 'text-sky-700');
         setTimeout(function() { $('#ci-box-input').focus(); }, 60);
-        console.log('[kiểm kê] bắt đầu', ciState.shelfId, 'prior=', ciState.priorCounted);
     }).fail(function() {
         ciState.busy = false;
         ciShowError('#ci-step1-error', 'Không kết nối được API kiểm kê.');
@@ -683,6 +715,25 @@ function ciParseBoxFromInput() {
     ciProcessBoxScan(ciParseBoxQr($('#ci-box-input').val()), false);
 }
 
+// Quy đổi số lượng thành "X box * Y pcs (+ Z pcs)" - PHẢI khớp với check_inventory_build_note()
+// bên api.php để người dùng xem trước đúng giá trị sẽ được lưu vào check_inventory.note.
+// - BULK-CONFIRM + có box_nom hợp lệ -> chia theo box_nom.
+// - Còn lại (quét từng thùng, hoặc bulk không rõ box_nom) -> đúng 1 thùng thực tế.
+function ciBuildNotePreview(productId, qty, raw) {
+    const isBulk = String(raw || '').toUpperCase() === 'BULK-CONFIRM';
+    const boxNomRaw = ciState.boxNomMap[String(productId).toUpperCase()];
+    const boxNom = (boxNomRaw !== null && boxNomRaw !== undefined && !isNaN(boxNomRaw)) ? parseInt(boxNomRaw, 10) : null;
+
+    if (isBulk && boxNom && boxNom > 0) {
+        const fullBoxes = Math.floor(qty / boxNom);
+        const remainder = qty % boxNom;
+        if (fullBoxes > 0 && remainder > 0) return fullBoxes + ' box * ' + boxNom + ' pcs + ' + remainder + ' pcs';
+        if (fullBoxes > 0) return fullBoxes + ' box * ' + boxNom + ' pcs';
+        return qty + ' pcs';
+    }
+    return '1 box * ' + qty + ' pcs';
+}
+
 function ciAddItem(productId, qty, raw) {
     ciState.list.push({ productId: productId, qty: qty, raw: raw || '' });
     ciRenderBoxList();
@@ -712,24 +763,41 @@ function ciRemoveItem(index) {
 }
 
 /* ---------- Xác nhận hàng loạt (hàng trên cao, khó quét) ---------- */
-const CI_BULK_PASSWORD = '0398802109';
 
 function ciBulkConfirm() {
     if (ciState.busy) return;
     if (!ciState.shelfId) { ciShowError('#ci-step2-error', 'Chưa chọn vị trí.'); return; }
+
+    // Ràng buộc: kệ lẻ (mã vị trí chứa chữ "B") không được dùng xác nhận hàng loạt,
+    // luôn phải quét từng thùng thực tế.
+    if (ciState.shelfId.toUpperCase().indexOf('B') !== -1) {
+        ciShowAlert('Bạn đang kiểm kê kệ lẻ, không được dùng chức năng này', 'warning');
+        return;
+    }
 
     if (!ciState.systemInventory.length) {
         ciShowAlert('Vị trí ' + ciState.shelfId + ' không có tồn kho hệ thống nên không thể xác nhận hàng loạt.', 'warning');
         return;
     }
 
-    const pw = window.prompt('Nhập mật khẩu xác nhận hàng loạt cho vị trí ' + ciState.shelfId + ':', '');
-    if (pw === null) return; // người dùng bấm huỷ
-    if (pw.trim() !== CI_BULK_PASSWORD) {
-        ciShowAlert('Mật khẩu không đúng. Không thể xác nhận hàng loạt.', 'error');
-        return;
-    }
+    $('#ci-bulkconfirm-message').text(
+        'Bạn sắp xác nhận TOÀN BỘ tồn hệ thống của vị trí ' + ciState.shelfId + ' là kết quả kiểm kê, KHÔNG quét từng thùng thực tế.\n\n' +
+        'Chỉ dùng khi hàng ở trên cao, khó quét từng thùng. Vị trí sẽ bị khóa (không thể kiểm lại) ngay sau khi lưu. Bạn có chắc chắn muốn tiếp tục?'
+    );
+    $('#ci-bulkconfirm-modal').css('display', 'block');
+}
 
+function ciBulkConfirmCancel() {
+    $('#ci-bulkconfirm-modal').css('display', 'none');
+    setTimeout(function() { $('#ci-box-input').focus(); }, 60);
+}
+
+function ciBulkConfirmProceed() {
+    $('#ci-bulkconfirm-modal').css('display', 'none');
+    ciBulkConfirmApply();
+}
+
+function ciBulkConfirmApply() {
     // Đưa toàn bộ mã hàng có tồn vào danh sách theo đúng SL tồn hệ thống,
     // chỉ bù phần còn thiếu so với số đã kiểm (đã lưu + đang chờ lưu).
     const listMap = ciCurrentListMap();
@@ -774,15 +842,17 @@ function ciRenderBoxList() {
     const tbody = $('#ci-box-list');
     tbody.empty();
     if (!ciState.list.length) {
-        tbody.html('<tr><td colspan="4" class="p-2 text-center text-slate-500 text-xs">Chưa quét thùng nào</td></tr>');
+        tbody.html('<tr><td colspan="5" class="p-2 text-center text-slate-500 text-xs">Chưa quét thùng nào</td></tr>');
         return;
     }
     ciState.list.forEach(function(it, idx) {
+        const note = ciBuildNotePreview(it.productId, it.qty, it.raw);
         tbody.append(
             '<tr class="border-b hover:bg-gray-50">' +
             '<td class="p-2 text-xs text-slate-600">' + (idx + 1) + '</td>' +
             '<td class="p-2 text-xs font-mono font-bold">' + it.productId + '</td>' +
             '<td class="p-2 text-right text-xs font-semibold">' + it.qty + '</td>' +
+            '<td class="p-2 text-xs text-slate-600 whitespace-nowrap">' + note + '</td>' +
             '<td class="p-2 text-center"><button type="button" onclick="ciRemoveItem(' + idx + ')" class="text-red-500 text-sm font-bold hover:text-red-700">✕</button></td>' +
             '</tr>'
         );
@@ -795,6 +865,47 @@ function ciSave() {
     if (ciState.busy) return;
     if (!ciState.list.length) { ciShowError('#ci-step2-error', 'Chưa có lần quét nào để lưu.'); return; }
 
+    // Cảnh báo trước khi lưu nếu còn mã hàng có nguy cơ lệch tồn (chưa đủ/dư/ngoài hệ thống)
+    // -> cho người dùng chọn "Xác nhận lại" (quay lại kiểm tra) hoặc "Vẫn lưu".
+    const risky = ciComputeProgress().filter(function(r) { return r.status !== 'match'; });
+    if (risky.length > 0) {
+        ciShowPresaveWarning(risky);
+        return;
+    }
+
+    ciSaveConfirmed();
+}
+
+function ciShowPresaveWarning(rows) {
+    $('#ci-presave-loc').text(ciState.shelfId || '-');
+    let html = '<table class="ci-recon-table"><thead><tr>' +
+        '<th>Mã hàng</th><th>Hệ thống</th><th>Sẽ ghi nhận</th><th>Còn lại</th><th>TT</th></tr></thead><tbody>';
+    rows.forEach(function(r) {
+        html += '<tr class="ci-row-' + r.status + '">' +
+            '<td class="ci-cell-pid">' + r.productId + '</td>' +
+            '<td>' + (r.system === null ? '—' : r.system) + '</td>' +
+            '<td>' + r.counted + '</td>' +
+            '<td>' + (r.remaining === null ? '—' : r.remaining) + '</td>' +
+            '<td>' + (CI_STATUS_LABEL[r.status] || '') + '</td>' +
+            '</tr>';
+    });
+    html += '</tbody></table>';
+    $('#ci-presave-body').html(html);
+    $('#ci-presave-modal').css('display', 'block');
+}
+
+function ciPresaveCancel() {
+    $('#ci-presave-modal').css('display', 'none');
+    ciSetStatus('Kiểm tra lại danh sách trước khi lưu.', 'text-amber-700');
+    setTimeout(function() { $('#ci-box-input').focus(); }, 60);
+}
+
+function ciPresaveProceed() {
+    $('#ci-presave-modal').css('display', 'none');
+    ciSaveConfirmed();
+}
+
+function ciSaveConfirmed() {
     ciState.busy = true;
     ciUpdateSummary();
     ciSetStatus('Đang lưu lịch sử quét...', 'text-sky-700');
@@ -811,33 +922,28 @@ function ciSave() {
             ciShowError('#ci-step2-error', (res && res.message) ? res.message : 'Lưu thất bại.');
             ciSetStatus('Lưu thất bại', 'text-red-700');
             ciUpdateSummary();
+            // Server chặn vì vị trí đã được kiểm kê từ trước (VD: quét trùng 2 tab/2 máy) -> trả về bước 1.
+            if (res && res.already_checked) {
+                ciShowAlert(res.message || 'Vị trí đã được kiểm kê trước đó.', 'warning');
+                ciResetToStep1(true);
+            }
             return;
         }
 
-        // Cập nhật số đã kiểm cộng dồn từ kết quả server, xóa danh sách chờ lưu
-        const recon = res.reconciliation || [];
-        ciState.priorCounted = {};
-        recon.forEach(function(r) {
-            ciState.priorCounted[String(r.product_id).toUpperCase()] = parseInt(r.counted_qty || 0, 10);
-        });
-        ciState.list = [];
-        ciState.currentParsed = null;
-        $('#ci-qty-input').val('').prop('disabled', true);
-        $('#ci-btn-add').prop('disabled', true);
-        $('#ci-current-product').text('-');
-        ciRenderBoxList();
-        ciUpdateSummary();
+        // Lưu xong -> vị trí bị khóa vĩnh viễn (1 vị trí chỉ kiểm kê 1 lần). Ghi kết quả vào lịch sử
+        // rồi trả về bước 1 ngay để sẵn sàng quét vị trí tiếp theo.
         ciLoadHistory();
+        ciResetToStep1(true);
 
         // Chỉ hiển thị cảnh báo - không chặn
         ciShowReconModal(res);
         const pending = res.pending_count || 0;
         if (pending > 0) {
-            ciSetStatus('Đã lưu. Còn ' + pending + ' mã chưa kiểm đủ tại ' + res.shelf_id + '.', 'text-amber-700');
+            ciSetStatus('Đã lưu vị trí ' + res.shelf_id + '. Còn ' + pending + ' mã chưa đủ so với hệ thống. Quét vị trí tiếp theo.', 'text-amber-700');
         } else if ((res.mismatch_count || 0) > 0) {
-            ciSetStatus('Đã lưu. Có mã lệch tồn - xem bảng đối chiếu.', 'text-amber-700');
+            ciSetStatus('Đã lưu vị trí ' + res.shelf_id + '. Có mã lệch tồn - xem bảng đối chiếu. Quét vị trí tiếp theo.', 'text-amber-700');
         } else {
-            ciSetStatus('Đã lưu. Toàn bộ mã hàng khớp tồn hệ thống.', 'text-green-700');
+            ciSetStatus('Đã lưu vị trí ' + res.shelf_id + '. Toàn bộ mã hàng khớp tồn hệ thống. Quét vị trí tiếp theo.', 'text-green-700');
         }
     }, 'json').fail(function() {
         ciState.busy = false;
@@ -872,7 +978,7 @@ function ciShowReconModal(res) {
     });
     html += '</tbody></table>';
     if (mismatch > 0) {
-        html += '<p style="font-size:12px; color:#64748b;">Dữ liệu đã được lưu. Bạn có thể quét tiếp các mã còn thiếu rồi lưu lại, hoặc đổi vị trí.</p>';
+        html += '<p style="font-size:12px; color:#64748b;">Dữ liệu đã được lưu và vị trí đã bị khóa (chỉ kiểm kê 1 lần). Vui lòng báo Leader nếu số lượng lệch để xử lý.</p>';
     }
     $('#ci-recon-body').html(html);
     $('#ci-recon-modal').css('display', 'block');
@@ -883,12 +989,14 @@ function ciResetToStep1(focusInput) {
     ciState.shelfId = '';
     ciState.shelfName = '';
     ciState.systemInventory = [];
+    ciState.boxNomMap = {};
     ciState.priorCounted = {};
     ciState.list = [];
     ciState.currentParsed = null;
 
     $('#ci-step-2').hide();
     $('#ci-step-1').show();
+    $('#ci-history-card').show();
     ciRenderBoxList();
     $('#ci-progress-body').html('<tr><td colspan="5" class="p-2 text-center text-slate-500 text-xs">Chưa có dữ liệu</td></tr>');
     $('#ci-pinned-shelf').text('-');
@@ -914,7 +1022,7 @@ function ciResetToStep1(focusInput) {
 /* ---------- Lịch sử ---------- */
 
 function ciLoadHistory() {
-    $.getJSON('api.php?action=check_inventory_history', { limit: 15 }, function(res) {
+    $.getJSON('api.php?action=check_inventory_history', { limit: 50 }, function(res) {
         if (!res || !res.success) return;
         ciState.history = res.sessions || [];
         ciRenderHistory();
@@ -984,7 +1092,7 @@ window.handleQRScannerScan = function(targetId, scannedValue) {
 
 $(document).ready(function() {
     // Đưa modal ra thẳng body để không bị cắt bởi layout/transform của trang
-    $('#ci-alert-modal, #ci-recon-modal').appendTo('body');
+    $('#ci-alert-modal, #ci-recon-modal, #ci-bulkconfirm-modal, #ci-presave-modal').appendTo('body');
 
     ciResetToStep1(true);
     ciLoadHistory();
@@ -994,6 +1102,10 @@ $(document).ready(function() {
             ciCloseAlert();
         } else if (e.key === 'Escape' && $('#ci-recon-modal').css('display') !== 'none') {
             ciCloseRecon();
+        } else if (e.key === 'Escape' && $('#ci-bulkconfirm-modal').css('display') !== 'none') {
+            ciBulkConfirmCancel();
+        } else if (e.key === 'Escape' && $('#ci-presave-modal').css('display') !== 'none') {
+            ciPresaveCancel();
         }
     });
 });
