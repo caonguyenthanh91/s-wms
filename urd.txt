@@ -1,0 +1,274 @@
+URD – S-WMS (Smart Warehouse Management System)
+ユーザー要件定義書 – S-WMS（スマート倉庫管理システム）
+
+Quy ước: [U] = người dùng thao tác, [S] = hệ thống xử lý, ✖ = điều kiện dừng/báo lỗi.
+凡例：[U] = 作業者操作、[S] = システム処理、✖ = 停止／エラー条件
+
+Vai trò: Guest < Staff < Leader < Manager < Admin (quyền cấp trên bao gồm cấp dưới).
+権限：Guest < Staff < Leader < Manager < Admin（上位権限は下位権限を含む）
+
+Mọi thao tác thay đổi tồn kho đều ghi vào bảng transactions (IN / OUT / MOVE_IN / MOVE_OUT / ADJUST).
+在庫を変動させる全操作は transactions に記録（IN / OUT / MOVE_IN / MOVE_OUT / ADJUST）
+
+====================================================================
+MODULE 1. NHẬP KHO
+モジュール1. 入庫
+Trạng thái pallet (import_log): PENDING → RECEIVED → IMPORTED
+パレットステータス（import_log）：PENDING（仮入庫）→ RECEIVED（受入済）→ IMPORTED（棚入れ済）
+====================================================================
+
+1.0 In tem Pallet (Leader)                                  [print_pallet]
+1.0 パレットラベル発行（Leader）
+  1. [U] Chọn số lượng tem pallet cần in.
+     [U] 発行枚数を選択
+  2. [S] Sinh mã pallet duy nhất (không trùng import_temp) → in tem QR.
+     [S] 一意のパレットNoを採番（import_tempと重複不可）→ QRラベル印刷
+
+1.1 Nhận hàng vào Pallet (Staff)                            [import]
+1.1 パレット積付（仮入庫）（Staff）
+  1. [U] Quét QR tem pallet.
+     [U] パレットラベルQRをスキャン
+  2. [S] Kiểm tra trạng thái pallet.
+     [S] パレットステータスを確認
+       ✖ Pallet đã RECEIVED / IMPORTED → không cho nhập thêm.
+       ✖ RECEIVED／IMPORTED済 → 追加積付不可
+  3. [U] Quét QR thùng hàng (mã hàng + số lượng).
+     [U] 箱ラベルQRをスキャン（品番＋数量）
+  4. [S] Kiểm tra mã hàng có trong master sản phẩm.
+     [S] 品番マスタ存在チェック
+       ✖ Mã hàng không tồn tại → báo lỗi, dừng.
+       ✖ 品番未登録 → エラー停止
+  5. [S] Lưu dòng vào import_temp; đánh dấu pallet = PENDING.
+     [S] import_tempに登録、パレット＝PENDING
+  6. Lặp bước 3–5 đến khi đầy pallet. Kết thúc.
+     パレット満載まで手順3～5を繰り返し、完了
+
+1.2 Nhận Pallet (Staff – tại kho tổng)                      [pallet_receive]
+1.2 パレット受入（Staff／本倉庫）
+  1. [U] Quét QR tem pallet.
+     [U] パレットラベルQRをスキャン
+  2. [S] Hiển thị danh sách mã hàng, số thùng, tổng số lượng trên pallet.
+     [S] 品番・箱数・合計数量を表示
+       ✖ Pallet chưa được tạo ở bước 1.1 → báo lỗi.
+       ✖ 1.1未実施のパレット → エラー
+       ✖ Pallet đã RECEIVED / IMPORTED → báo đã nhận.
+       ✖ RECEIVED／IMPORTED済 → 受入済エラー
+  3. [U] Đối chiếu thực tế → bấm Xác nhận.
+     [U] 現物照合 →「確定」
+  4. [S] Ghi trạng thái RECEIVED (người nhận, thời gian).
+     [S] RECEIVEDを記録（受入者・日時）
+
+1.3 Cất kệ – Pallet >>> Kệ (Leader)                         [transfer → inbound]
+1.3 棚入れ – パレット → ロケーション（Leader）
+  1. [U] Chọn/quét pallet ở trạng thái RECEIVED.
+     [U] RECEIVEDのパレットを選択／スキャン
+  2. [U] Quét QR mã vị trí (kệ).
+     [U] ロケーションQRをスキャン
+  3. [S] Kiểm tra kệ tồn tại, đang hoạt động; hiển thị hàng hiện có trên kệ.
+     [S] ロケーション存在・有効チェック、現在庫を表示
+       ✖ Kệ không tồn tại / Deactive → báo lỗi.
+       ✖ ロケーション未登録／無効 → エラー
+  4. [S] Nạp danh sách hàng của pallet sang màn hình Nhập kho.
+     [S] パレット明細を入庫画面へ引継ぎ
+  5. [U] Xác nhận nhập.
+     [U] 入庫確定
+  6. [S] Với từng dòng: cộng tồn inventory (theo kệ + mã hàng + box_id),
+         tăng shelves.current_usage, ghi transactions IN, lưu box_info (nếu có box_id).
+     [S] 明細ごとに在庫加算（ロケーション＋品番＋箱ID）、
+         棚使用量加算、入庫実績（IN）記録、箱情報登録（箱IDありの場合）
+  7. [S] Ghi trạng thái pallet = IMPORTED.
+     [S] パレット＝IMPORTED
+       ✖ Pallet chưa RECEIVED hoặc đã IMPORTED → không cho lên kệ.
+       ✖ 未受入またはIMPORTED済 → 棚入れ不可
+
+1.4 Nhập kho trực tiếp (Leader – luồng phụ, không qua pallet)   [inbound]
+1.4 直接入庫（Leader／サブフロー、パレット経由なし）
+  Quét kệ → quét thùng/mã hàng → nhập số lượng → Xác nhận → cộng tồn + ghi IN.
+  ロケーション → 箱／品番スキャン → 数量入力 → 確定 → 在庫加算＋IN記録
+
+1.5 Giám sát: Import Monitor / Check-in board – tiến độ PENDING / RECEIVED / IMPORTED theo pallet.
+1.5 モニタ：入庫モニタ／チェックインボード – パレット別進捗（PENDING／RECEIVED／IMPORTED）
+
+====================================================================
+MODULE 2. XUẤT KHO
+モジュール2. 出庫
+Dữ liệu gốc: kế hoạch xuất (export_temp) theo Invoice (command) + kiện (case_no).
+元データ：出荷計画（export_temp）＝ インボイス（command）＋ ケースNo（case_no）
+Trạng thái theo export_log: print_case → picking → packing → pickup
+進捗ステータス（export_log）：ラベル発行 → ピッキング → 梱包 → 積込
+====================================================================
+
+2.0 Import kế hoạch xuất (Manager)                          [wms_import / data_import]
+2.0 出荷計画取込（Manager）
+  [U] Upload file Excel kế hoạch → [S] lưu export_temp (invoice, ngày xuất,
+  khách hàng, loại vận chuyển, mã hàng, số lượng, case_no).
+  [U] 計画Excelをアップロード → [S] export_tempに登録（インボイス、出荷日、
+  得意先、輸送区分、品番、数量、ケースNo）
+
+2.1 In phiếu Picking / In tem Packing (Leader)              [print / print_case]
+2.1 ピッキングリスト／ケースラベル発行（Leader）
+  1. [U] Chọn ngày xuất → chọn Invoice.
+     [U] 出荷日 → インボイスを選択
+  2. [S] Hiển thị danh sách mã hàng (phiếu picking) hoặc danh sách kiện (tem packing).
+     [S] 品番一覧（ピッキングリスト）またはケース一覧（ケースラベル）を表示
+  3. [U] Bấm In.
+     [U]「印刷」
+  4. [S] In phiếu picking theo mã hàng: QR = [INVOICE]$[MÃ HÀNG]$[SỐ LƯỢNG].
+         In tem kiện: QR = [command]$[case_no]$... ; ghi log print_case.
+     [S] 品番別ピッキングリスト：QR＝[INVOICE]$[品番]$[数量]
+         ケースラベル：QR＝[command]$[case_no]$…、print_caseを記録
+
+2.2 Picking (Staff)                                         [picking]
+2.2 ピッキング（Staff）
+  1. [U] Quét QR phiếu picking.
+     [U] ピッキングリストQRをスキャン
+  2. [S] Kiểm tra mã hàng; gợi ý các vị trí kệ đang có tồn (kèm tồn kho phụ).
+     [S] 品番チェック、在庫ロケーションを提示（サブ倉庫在庫含む）
+       ✖ Mã hàng không tồn tại → dừng.
+       ✖ 品番未登録 → 停止
+  3. [U] Quét QR vị trí kệ.
+     [U] ロケーションQRをスキャン
+       ✖ Kệ sai / không có hàng → cảnh báo.
+       ✖ ロケーション相違／在庫なし → 警告
+  4. [U] Quét QR thùng hàng, nhập số lượng pick.
+     [U] 箱QRスキャン、ピッキング数量入力
+       ✖ Sai mã hàng so với phiếu → yêu cầu quét lại.
+       ✖ 品番相違 → 再スキャン
+       ✖ Số lượng > tồn trên kệ/thùng → dừng.
+       ✖ 数量＞ロケーション／箱在庫 → 停止
+  5. [S] Trừ tồn inventory (đúng thùng nếu có box_id), giảm current_usage,
+         ghi transactions OUT + export_log (picking). Có idempotency key chống ghi trùng khi mất mạng.
+     [S] 在庫引当・減算（箱ID指定時は該当箱）、棚使用量減算、
+         出庫実績（OUT）＋picking記録。通信断時の二重計上防止キーあり
+  6. Lặp 3–5 đến khi đủ số lượng yêu cầu → [S] đối chiếu export_log và báo hoàn tất.
+     指示数量まで手順3～5を繰り返し → [S] 実績照合し完了通知
+
+2.3 Packing (Staff)                                         [packing]
+2.3 梱包（Staff）
+  1. [U] Quét QR tem packing (Invoice + case_no).
+     [U] ケースラベルQRをスキャン（インボイス＋ケースNo）
+  2. [S] Hiển thị danh sách mã hàng / số lượng cần đóng cho kiện.
+     [S] ケース内の品番・梱包数量を表示
+  3. [U] Quét liên tục QR thùng hàng (tự động ghi, không cần bấm xác nhận).
+     [U] 箱QRを連続スキャン（自動記録、確定操作不要）
+  4. [S] Ghi export_log (packing), cập nhật tiến độ kiện.
+     [S] packing記録、ケース進捗を更新
+       ✖ Mã hàng không thuộc invoice/kiện → báo lỗi.
+       ✖ インボイス／ケース対象外の品番 → エラー
+       ✖ Vượt số lượng yêu cầu → báo lỗi.
+       ✖ 指示数量超過 → エラー
+  5. Kiện đủ số lượng → báo hoàn tất, chuyển kiện tiếp theo.
+     ケース完了 → 完了通知、次ケースへ
+
+2.4 Pickup – Bốc hàng lên xe (Staff)                        [pickup]
+2.4 積込（Staff）
+  1. [U] Quét QR tem kiện.
+     [U] ケースラベルQRをスキャン
+  2. [U] Quét QR phiếu Shipping mark ([command 6 ký tự][case 3 ký tự]).
+     [U] シッピングマークQRをスキャン（[command 6桁][ケース 3桁]）
+  3. [S] So khớp tem kiện với shipping mark.
+     [S] ケースラベルとシッピングマークを照合
+       ✖ Không khớp / kiện không thuộc invoice → dừng.
+       ✖ 不一致／インボイス対象外 → 停止
+       ✖ Kiện chưa packing đủ → không cho pickup.
+       ✖ 梱包未完了 → 積込不可
+  4. [S] Ghi export_log (pickup), cập nhật tiến độ pickup của invoice.
+     [S] pickup記録、インボイス別積込進捗を更新
+
+2.5 Xuất kho trực tiếp (Leader – luồng phụ)                 [outbound]
+2.5 直接出庫（Leader／サブフロー）
+  Quét kệ → quét thùng/mã hàng → nhập số lượng → kiểm tra tồn → trừ tồn + ghi OUT.
+  ロケーション → 箱／品番スキャン → 数量入力 → 在庫チェック → 在庫減算＋OUT記録
+
+2.6 Giám sát: Export Monitor / Dashboard – tiến độ picking, packing, pickup theo invoice.
+2.6 モニタ：出庫モニタ／ダッシュボード – インボイス別進捗（ピッキング・梱包・積込）
+
+====================================================================
+MODULE 3. KIỂM KÊ
+モジュール3. 棚卸
+Kết quả mỗi mã: match / short / over / extra / pending
+品番別結果：一致 / 不足 / 過剰 / 帳簿外 / 未棚卸
+====================================================================
+
+3.1 Kiểm kê theo vị trí (Staff)                             [check_inventory]
+3.1 ロケーション別棚卸（Staff）
+  1. [U] Quét QR mã vị trí.
+     [U] ロケーションQRをスキャン
+  2. [S] Kiểm tra vị trí tồn tại, đang hoạt động.
+     [S] ロケーション存在・有効チェック
+       ✖ Vị trí đã được kiểm kê → không cho kiểm lại (mỗi vị trí 1 lần/đợt).
+       ✖ 棚卸済 → 再棚卸不可（1ロケーション1回／期）
+  3. [U] Quét QR từng thùng, nhập/xác nhận số lượng thực tế.
+     [U] 箱QRをスキャン、実数を入力／確認
+  4. [U] Bấm Hoàn tất vị trí.
+     [U]「ロケーション完了」
+  5. [S] Đối chiếu với tồn hệ thống, lưu check_inventory, trả kết quả từng mã:
+         match (khớp) / short (thiếu) / over (dư) / extra (có thực tế, hệ thống không có)
+         / pending (hệ thống có, chưa quét).
+     [S] 帳簿在庫と照合、check_inventoryに登録、品番別結果を表示：
+         match（一致）／short（不足）／over（過剰）／extra（帳簿外の現物）
+         ／pending（帳簿あり・未スキャン）
+
+3.2 Kiểm tra tem thùng (Staff)                              [check_box]
+3.2 箱ラベル照合（Staff）
+  Quét tem thùng → so với tồn → ghi check_log.
+  箱ラベルスキャン → 在庫照合 → check_logに記録
+
+3.3 Dashboard kiểm kê (Leader+)                             [check_dashboard]
+3.3 棚卸ダッシュボード（Leader以上）
+  1. [S] Tổng hợp: số vị trí đã kiểm / tổng, số vị trí sai lệch, theo khu vực.
+     [S] 集計：棚卸済／全ロケーション数、差異ロケーション数（エリア別）
+  2. [U] Lọc danh sách sai lệch theo mã/khu vực.
+     [U] 差異一覧を品番／エリアで絞込み
+  3. [U] Xóa kết quả 1 vị trí để kiểm kê lại (khi cần).
+     [U] 再棚卸のためロケーション結果を削除（必要時）
+  4. [U] Xuất Excel lịch sử kiểm kê theo tháng.
+     [U] 月別棚卸履歴をExcel出力
+  5. [U] Điều chỉnh tồn theo kết quả (inventory_adjustment → ghi transactions ADJUST).
+     [U] 結果に基づき在庫調整（ADJUSTを記録）
+
+====================================================================
+MODULE 4. QUẢN LÝ MASTER DATA
+モジュール4. マスタ管理
+====================================================================
+
+4.1 Sản phẩm (Manager)                                      [products]
+4.1 品番マスタ（Manager）
+  Thêm: nhập product_id, tên, đơn vị, mô tả → [S] kiểm tra product_id không rỗng, duy nhất → lưu.
+  新規：品番・品名・単位・備考を入力 → [S] 品番の必須・重複チェック → 登録
+  Sửa: chọn sản phẩm → cập nhật thông tin.  ✖ Trùng mã → báo đỏ, dừng.
+  変更：品番を選択 → 更新。 ✖ 重複 → 赤色エラー、停止
+
+4.2 Kệ hàng (Manager)                                       [shelves / layout]
+4.2 ロケーションマスタ（Manager）
+  Thêm: nhập mã kệ, tên, cấp (tầng), dung lượng tối đa → [S] kiểm tra trùng, current_usage = 0.
+  新規：ロケーションNo・名称・段・最大容量を入力 → [S] 重複チェック、使用量＝0
+  Sửa / Ngừng hoạt động (Deactive): kệ Deactive không dùng được cho nhập/xuất/kiểm kê.
+  変更／無効化：無効ロケーションは入庫・出庫・棚卸で使用不可
+  Layout: sơ đồ kệ tô màu theo mức sử dụng (trống / đang chứa / đầy).
+  レイアウト：使用率で色分け表示（空き／使用中／満杯）
+
+4.3 Tồn kho (Guest+)                                        [inventory]
+4.3 在庫照会（Guest以上）
+  1. [U] Chọn kiểu tra cứu: mã hàng / vị trí / thùng (box_id) / pallet / invoice / lịch sử.
+     [U] 照会区分を選択：品番／ロケーション／箱ID／パレット／インボイス／履歴
+  2. [U] Nhập hoặc quét mã.
+     [U] コードを入力またはスキャン
+  3. [S] Hiển thị số lượng, vị trí, thùng; pallet đang chờ (import_temp).
+     [S] 数量・ロケーション・箱、仮入庫パレットを表示
+  Đổi kệ (Leader) [change]: quét kệ nguồn → chọn hàng + SL → quét kệ đích →
+    [S] kiểm tra đủ tồn ở kệ nguồn → trừ nguồn, cộng đích, ghi MOVE_OUT + MOVE_IN.
+  ロケーション移動（Leader）：移動元スキャン → 品番＋数量選択 → 移動先スキャン →
+    [S] 移動元在庫チェック → 移動元減算・移動先加算、MOVE_OUT＋MOVE_IN記録
+
+4.4 Lịch sử giao dịch & Xuất dữ liệu (Manager)              [data_export]
+4.4 入出庫履歴・データ出力（Manager）
+  1. [U] Chọn loại dữ liệu (tồn kho, giao dịch IN/OUT/MOVE, sản phẩm, kiểm kê) + khoảng thời gian.
+     [U] データ区分（在庫、入出庫・移動実績、品番、棚卸）＋期間を選択
+  2. [S] Xuất file Excel/CSV theo quyền.
+     [S] 権限に応じてExcel／CSV出力
+
+4.5 Người dùng & phân quyền (Manager/Admin)                 [admin]
+4.5 ユーザー・権限管理（Manager／Admin）
+  Thêm / sửa user, gán vai trò Guest / Staff / Leader / Manager / Admin.
+  ユーザー登録／変更、権限（Guest／Staff／Leader／Manager／Admin）を付与

@@ -66,7 +66,7 @@ $sidebarMenuItems = [
     ['page' => 'print', 'label' => 'In phiếu [Picking]', 'icon' => '🖨️', 'min_role' => 'Leader'],
     ['page' => 'print_case', 'label' => 'In tem [Packing]', 'icon' => '📦', 'min_role' => 'Leader'],
     ['page' => 'print_pallet', 'label' => 'In tem [Pallet]', 'icon' => '📮', 'min_role' => 'Leader'],
-    ['page' => 'layout', 'label' => 'Layout', 'icon' => '📅', 'min_role' => 'Manager'],
+    ['page' => 'layout', 'label' => 'Layout', 'icon' => '🗺️', 'min_role' => 'Leader'],
     ['page' => 'shelves', 'label' => 'Kệ hàng', 'icon' => '🛒', 'min_role' => 'Manager'],
     ['page' => 'products', 'label' => 'Sản phẩm', 'icon' => '🏷️', 'min_role' => 'Manager'],
     ['page' => 'data_export', 'label' => 'Data Export', 'icon' => '📄', 'min_role' => 'Manager'],

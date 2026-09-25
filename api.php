@@ -122,6 +122,20 @@ function ensure_check_inventory_schema(PDO $pdo) {
     } catch (Throwable $e) {}
 }
 
+// Index phục vụ sơ đồ layout (lọc theo khu/dãy trên bảng shelves ~40k dòng).
+function ensure_shelves_level_index(PDO $pdo) {
+    static $checked = false;
+    if ($checked) return;
+    $checked = true;
+
+    try {
+        $stmt = $pdo->query("SHOW INDEX FROM shelves WHERE Key_name = 'idx_shelves_levels'");
+        if (!$stmt->fetch()) {
+            $pdo->exec('ALTER TABLE shelves ADD INDEX idx_shelves_levels (level0_val, level1_val, level2_val, level3_val, level4_val, status)');
+        }
+    } catch (Throwable $e) {}
+}
+
 // Tách mã kệ đầy đủ dạng "SMC_4--P01-02-03-04-05" thành
 // shelf_name = SMC_4, level0_val = P01, level1_val = 02, ... level4_val = 05.
 function parse_shelf_code(string $code): array {
@@ -783,6 +797,50 @@ switch ($action) {
                             FROM shelves
                             WHERE (status != 'Deactive' OR status IS NULL)");
         echo json_encode($stmt->fetch(PDO::FETCH_ASSOC));
+        break;
+
+    case 'layout_rack':
+        // Sơ đồ 2D 1 dãy kệ: level0 (khu) -> level1 (dãy) -> lưới level2 (cột) x level3 (tầng) -> ô level4 (vị trí)
+        // - Không truyền level0: chỉ trả danh sách khu (nhẹ, dùng khi mở trang).
+        // - Có level0: trả danh sách dãy + dữ liệu đúng 1 dãy (level1), không tải cả kho.
+        require_role(['Admin','Leader','Manager']);
+        ensure_shelves_level_index($pdo);
+        $level0 = trim($_GET['level0'] ?? '');
+        $level1 = trim($_GET['level1'] ?? '');
+        $active = "(s.status != 'Deactive' OR s.status IS NULL)";
+        $natural = fn($col) => "LENGTH($col), $col";
+
+        if ($level0 === '') {
+            $level0List = $pdo->query("SELECT DISTINCT s.level0_val FROM shelves s WHERE s.level0_val IS NOT NULL AND s.level0_val <> '' AND $active ORDER BY " . $natural('s.level0_val'))->fetchAll(PDO::FETCH_COLUMN);
+            echo json_encode(['success' => true, 'level0_list' => $level0List]);
+            break;
+        }
+
+        $stmt = $pdo->prepare("SELECT DISTINCT s.level1_val FROM shelves s WHERE s.level0_val = ? AND $active ORDER BY " . $natural('s.level1_val'));
+        $stmt->execute([$level0]);
+        $level1List = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        if ($level1 === '' || !in_array($level1, $level1List, true)) $level1 = $level1List[0] ?? '';
+
+        // Số mã hàng còn tồn (quantity > 0) tại từng vị trí, gom 1 lần cho cả dãy thay vì subquery từng ô
+        $stmt = $pdo->prepare("SELECT s.shelf_id, s.level2_val, s.level3_val, s.level4_val, COALESCE(x.item_count, 0) AS item_count
+                               FROM shelves s
+                               LEFT JOIN (
+                                   SELECT i.shelf_id, COUNT(DISTINCT i.product_id) AS item_count
+                                   FROM shelves s2
+                                   JOIN inventory i ON i.shelf_id = s2.id AND i.quantity > 0
+                                   WHERE s2.level0_val = ? AND s2.level1_val = ?
+                                   GROUP BY i.shelf_id
+                               ) x ON x.shelf_id = s.id
+                               WHERE s.level0_val = ? AND s.level1_val = ? AND $active");
+        $stmt->execute([$level0, $level1, $level0, $level1]);
+        $cells = $stmt->fetchAll(PDO::FETCH_NUM); // [shelf_id, level2, level3, level4, item_count] cho payload gọn
+
+        echo json_encode([
+            'success' => true,
+            'level0' => $level0, 'level1' => $level1,
+            'level1_list' => $level1List,
+            'cells' => $cells,
+        ]);
         break;
 
     case 'get_shelves':
