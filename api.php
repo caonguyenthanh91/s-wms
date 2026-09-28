@@ -260,6 +260,16 @@ function ensure_inventory_schema(PDO $pdo) {
     if ($checked) return;
     $checked = true;
 
+    // Lịch sử nhập/xuất (transactions) ghi kèm box_id nếu QR có box_id (index 8), NULL nếu không.
+    try {
+        $col = $pdo->query("SHOW COLUMNS FROM transactions LIKE 'box_id'")->fetchAll();
+        if (!$col) {
+            $pdo->exec("ALTER TABLE transactions ADD COLUMN box_id VARCHAR(50) NULL DEFAULT NULL AFTER quantity, ADD INDEX idx_transactions_box_id (box_id)");
+        }
+    } catch (Exception $e) {
+        error_log('[ensure_inventory_schema] transactions.box_id: ' . $e->getMessage());
+    }
+
     // Cột sinh box_key = IFNULL(box_id, '') để có thể đánh UNIQUE KEY theo từng thùng.
     // Tồn kho cũ chưa gắn box thì box_id = NULL -> box_key = '' (một "bucket" chung/vị trí).
     try {
@@ -302,6 +312,28 @@ function ensure_inventory_schema(PDO $pdo) {
         $newIdx = $pdo->query("SHOW INDEX FROM inventory WHERE Key_name = 'uk_inventory_shelf_product_box'")->fetchAll();
         if (!$newIdx) {
             $pdo->exec("ALTER TABLE inventory ADD UNIQUE KEY uk_inventory_shelf_product_box (shelf_id, product_id, box_key)");
+        }
+    } catch (Throwable $e) {}
+
+    // UNIQUE KEY trên box_id: 1 thùng vật lý chỉ được tồn tại ở ĐÚNG 1 dòng inventory (1 vị trí)
+    // trong toàn bộ hệ thống, không riêng theo shelf_id/product_id. NULL vẫn cho phép nhiều dòng
+    // (MySQL coi các NULL là phân biệt nhau trong UNIQUE KEY) nên không ảnh hưởng luồng cũ.
+    // Nếu dữ liệu hiện tại đang có box_id trùng ở nhiều vị trí (do bug cũ ở transfer_products),
+    // KHÔNG tự động gộp (không biết vị trí thật đúng là đâu) mà bỏ qua việc thêm ràng buộc và ghi
+    // log để admin tự rà soát + xử lý dữ liệu trước.
+    try {
+        $dupBox = $pdo->query(
+            "SELECT box_id, COUNT(*) AS c, GROUP_CONCAT(shelf_id) AS shelves, GROUP_CONCAT(id) AS ids
+             FROM inventory WHERE box_id IS NOT NULL GROUP BY box_id HAVING COUNT(*) > 1"
+        )->fetchAll(PDO::FETCH_ASSOC);
+        if ($dupBox) {
+            error_log('[ensure_inventory_schema] box_id trùng ở nhiều dòng, BỎ QUA thêm UNIQUE KEY uk_inventory_box_id: '
+                . json_encode($dupBox));
+        } else {
+            $boxIdx = $pdo->query("SHOW INDEX FROM inventory WHERE Key_name = 'uk_inventory_box_id'")->fetchAll();
+            if (!$boxIdx) {
+                $pdo->exec("ALTER TABLE inventory ADD UNIQUE KEY uk_inventory_box_id (box_id)");
+            }
         }
     } catch (Throwable $e) {}
 }
@@ -1439,7 +1471,7 @@ switch ($action) {
             break;
         }
 
-        $stmt = $pdo->prepare("SELECT s.id as shelf_pk, p.product_id, p.product_name, i.quantity,
+        $stmt = $pdo->prepare("SELECT i.id as inv_id, i.box_id, s.id as shelf_pk, p.product_id, p.product_name, i.quantity,
                               (SELECT GROUP_CONCAT(DISTINCT s2.shelf_id ORDER BY s2.shelf_id SEPARATOR ', ')
                                  FROM inventory i2
                                  JOIN shelves s2 ON i2.shelf_id = s2.id
@@ -1485,7 +1517,10 @@ switch ($action) {
         require_role(['Admin', 'Leader', 'Manager']);
         $current_shelf_id_code = strtoupper($_POST['current_shelf_id'] ?? '');
         $new_shelf_id_code = strtoupper($_POST['new_shelf_id'] ?? '');
-        $products_to_transfer = json_decode($_POST['products_to_transfer'] ?? '[]', true); // Array of {product_id, quantity}
+        // Array of {inv_id, product_id, quantity}. inv_id xác định ĐÚNG 1 dòng inventory cụ thể
+        // (phân biệt dòng box_id NULL với từng dòng theo thùng của cùng 1 mã hàng tại cùng 1 kệ) -
+        // không suy luận theo product_id đơn thuần như trước (gây trừ nhầm trên mọi dòng khớp).
+        $products_to_transfer = json_decode($_POST['products_to_transfer'] ?? '[]', true);
 
         if (empty($current_shelf_id_code) || empty($new_shelf_id_code) || empty($products_to_transfer)) {
             echo json_encode(['success' => false, 'message' => 'Dữ liệu không hợp lệ.']);
@@ -1514,64 +1549,88 @@ switch ($action) {
                 throw new Exception("Kệ nguồn và kệ đích không được trùng nhau!");
             }
 
-            // Prepare product data and validate quantities
-            $product_pks = [];
+            // 2. Khóa + validate từng dòng inventory cụ thể theo inv_id (thuộc đúng kệ nguồn).
+            //    Không tin box_id/product_id client gửi lên - luôn đọc lại từ DB theo inv_id.
+            $rowsToMove = [];
             foreach ($products_to_transfer as $item) {
-                $product_code = strtoupper($item['product_id']);
-                $qty_to_transfer = (int)$item['quantity'];
+                $inv_id = (int)($item['inv_id'] ?? 0);
+                $qty_to_transfer = (int)($item['quantity'] ?? 0);
+                if ($inv_id <= 0 || $qty_to_transfer <= 0) continue;
 
-                if ($qty_to_transfer <= 0) continue;
+                $stmt = $pdo->prepare("SELECT id, product_id, box_id, quantity FROM inventory WHERE id = ? AND shelf_id = ? FOR UPDATE");
+                $stmt->execute([$inv_id, $current_shelf_pk]);
+                $invRow = $stmt->fetch(PDO::FETCH_ASSOC);
+                if (!$invRow) throw new Exception("Không tìm thấy dòng tồn kho (inv_id=$inv_id) trên kệ nguồn ($current_shelf_id_code)!");
 
-                // Get product PK
-                $stmt = $pdo->prepare("SELECT id FROM products WHERE product_id = ?");
-                $stmt->execute([$product_code]);
-                $product = $stmt->fetch(PDO::FETCH_ASSOC);
-                if (!$product) throw new Exception("Sản phẩm $product_code không tồn tại trong hệ thống!");
-                $product_pks[$product_code] = $product['id'];
+                $stmt = $pdo->prepare("SELECT product_id FROM products WHERE id = ?");
+                $stmt->execute([$invRow['product_id']]);
+                $productCode = $stmt->fetchColumn();
 
-                // Get current quantity on source shelf and validate
-                $stmt = $pdo->prepare("SELECT quantity FROM inventory WHERE shelf_id = ? AND product_id = ?");
-                $stmt->execute([$current_shelf_pk, $product_pks[$product_code]]);
-                $current_inv = $stmt->fetch(PDO::FETCH_ASSOC);
-                if (!$current_inv || $current_inv['quantity'] < $qty_to_transfer) {
-                    throw new Exception("Số lượng sản phẩm $product_code trên kệ nguồn ($current_shelf_id_code) không đủ để chuyển ($qty_to_transfer yêu cầu, {$current_inv['quantity']} hiện có)!");
+                if ($invRow['quantity'] < $qty_to_transfer) {
+                    throw new Exception("Số lượng sản phẩm $productCode trên kệ nguồn ($current_shelf_id_code) không đủ để chuyển ($qty_to_transfer yêu cầu, {$invRow['quantity']} hiện có)!");
                 }
+
+                // Thùng (box_id khác NULL) là 1 đơn vị vật lý -> chỉ cho phép chuyển NGUYÊN thùng,
+                // không tách 1 phần số lượng sang kệ khác (sẽ làm sai lệch định danh thùng).
+                if ($invRow['box_id'] !== null && $qty_to_transfer != $invRow['quantity']) {
+                    throw new Exception("Thùng {$invRow['box_id']} ($productCode) phải chuyển NGUYÊN số lượng ({$invRow['quantity']}), không được chuyển một phần!");
+                }
+
+                $rowsToMove[] = [
+                    'inv_id' => $invRow['id'],
+                    'product_pk' => (int)$invRow['product_id'],
+                    'product_code' => $productCode,
+                    'box_id' => $invRow['box_id'],
+                    'row_quantity' => (int)$invRow['quantity'],
+                    'qty_to_transfer' => $qty_to_transfer,
+                ];
             }
 
-            // Perform transfers
-            foreach ($products_to_transfer as $item) {
-                $product_code = strtoupper($item['product_id']);
-                $qty_to_transfer = (int)$item['quantity'];
-                $p_pk = $product_pks[$product_code];
+            if (empty($rowsToMove)) {
+                throw new Exception('Không có sản phẩm hợp lệ để điều chuyển.');
+            }
 
-                if ($qty_to_transfer <= 0) continue;
+            // 3. Thực hiện chuyển từng dòng.
+            foreach ($rowsToMove as $row) {
+                $p_pk = $row['product_pk'];
+                $qty_to_transfer = $row['qty_to_transfer'];
+                $box_id = $row['box_id'];
 
-                // Decrement quantity on current shelf
-                $stmt = $pdo->prepare("UPDATE inventory SET quantity = quantity - ? WHERE shelf_id = ? AND product_id = ?");
-                $stmt->execute([$qty_to_transfer, $current_shelf_pk, $p_pk]);
+                if ($box_id !== null) {
+                    // Chuyển nguyên thùng: xoá hẳn dòng gốc (không để lại dòng box_id=0 tồn ở kệ cũ,
+                    // tránh xung đột với UNIQUE KEY uk_inventory_box_id khi thùng "tái xuất hiện" ở kệ mới).
+                    $stmt = $pdo->prepare("DELETE FROM inventory WHERE id = ?");
+                    $stmt->execute([$row['inv_id']]);
+                } else {
+                    $stmt = $pdo->prepare("UPDATE inventory SET quantity = quantity - ? WHERE id = ?");
+                    $stmt->execute([$qty_to_transfer, $row['inv_id']]);
+                }
 
                 // Update current shelf usage
                 $stmt = $pdo->prepare("UPDATE shelves SET current_usage = current_usage - ? WHERE id = ?");
                 $stmt->execute([$qty_to_transfer, $current_shelf_pk]);
 
                 // Record OUT transaction
-                $stmt = $pdo->prepare("INSERT INTO transactions (product_id, shelf_id, quantity, type, created_by, created_at) VALUES (?, ?, ?, 'OUT', ?, NOW())");
-                $stmt->execute([$p_pk, $current_shelf_pk, $qty_to_transfer, $created_by]);
+                $stmt = $pdo->prepare("INSERT INTO transactions (product_id, shelf_id, quantity, type, created_by, box_id, created_at) VALUES (?, ?, ?, 'OUT', ?, ?, NOW())");
+                $stmt->execute([$p_pk, $current_shelf_pk, $qty_to_transfer, $created_by, $box_id]);
 
-                // Increment/Insert quantity on new shelf (atomic, tránh sinh dòng trùng)
+                // Increment/Insert quantity on new shelf, GIỮ NGUYÊN box_id (atomic, tránh sinh dòng trùng).
+                // Dựa vào uk_inventory_shelf_product_box (shelf_id, product_id, box_key) để upsert đúng
+                // bucket - và uk_inventory_box_id đảm bảo box_id này không thể tồn tại ở nơi khác nữa
+                // (dòng gốc đã bị xoá ở bước trên, trong cùng transaction).
                 $stmt = $pdo->prepare(
-                    "INSERT INTO inventory (shelf_id, product_id, quantity) VALUES (?, ?, ?)
+                    "INSERT INTO inventory (shelf_id, product_id, quantity, box_id) VALUES (?, ?, ?, ?)
                      ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)"
                 );
-                $stmt->execute([$new_shelf_pk, $p_pk, $qty_to_transfer]);
+                $stmt->execute([$new_shelf_pk, $p_pk, $qty_to_transfer, $box_id]);
 
                 // Update new shelf usage
                 $stmt = $pdo->prepare("UPDATE shelves SET current_usage = current_usage + ? WHERE id = ?");
                 $stmt->execute([$qty_to_transfer, $new_shelf_pk]);
 
                 // Record IN transaction
-                $stmt = $pdo->prepare("INSERT INTO transactions (product_id, shelf_id, quantity, type, created_by, created_at) VALUES (?, ?, ?, 'IN', ?, NOW())");
-                $stmt->execute([$p_pk, $new_shelf_pk, $qty_to_transfer, $created_by]);
+                $stmt = $pdo->prepare("INSERT INTO transactions (product_id, shelf_id, quantity, type, created_by, box_id, created_at) VALUES (?, ?, ?, 'IN', ?, ?, NOW())");
+                $stmt->execute([$p_pk, $new_shelf_pk, $qty_to_transfer, $created_by, $box_id]);
             }
 
             $pdo->commit();
@@ -1678,6 +1737,19 @@ switch ($action) {
                 'message' => $e->getMessage()
             ]);
         }
+        break;
+
+    case 'check_box_inbound':
+        // Kiểm tra thùng đã từng nhập kho chưa (dùng khi quét QR ở trang nhập kho).
+        $bid = trim($_GET['box_id'] ?? '');
+        $row = null;
+        if ($bid !== '') {
+            $stmt = $pdo->prepare("SELECT s.shelf_id AS shelf_code, i.quantity FROM inventory i
+                                   LEFT JOIN shelves s ON s.id = i.shelf_id WHERE i.box_id = ? LIMIT 1");
+            $stmt->execute([$bid]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+        echo json_encode(['success' => true, 'exists' => !!$row, 'data' => $row]);
         break;
 
     case 'check_product':
@@ -1799,9 +1871,26 @@ switch ($action) {
             if (!$product) throw new Exception("Mã sản phẩm $product_id không tồn tại trong hệ thống!");
             $p_pk = $product['id'];
 
-            // INSERT ... ON DUPLICATE KEY UPDATE để thao tác atomic, tránh race condition.
-            // Khóa chống trùng là uk_inventory_shelf_product_box (shelf_id, product_id, box_key),
-            // với box_key = IFNULL(box_id,''): 1 dòng cho tồn cũ (box_id NULL) + 1 dòng cho mỗi box_id.
+            $user = current_user();
+            $created_by = $user['username'] ?? 'system';
+
+            // box_id != NULL: 1 thùng chỉ được NHẬP KHO ĐÚNG 1 LẦN. Mọi dòng inventory mang box_id
+            // (kể cả đã xuất hết, quantity = 0) đều là bằng chứng thùng đã từng nhập -> từ chối.
+            // Sau khi nhập, thùng chỉ được đổi vị trí (transfer_products) hoặc trừ tồn (outbound),
+            // không bao giờ được cộng thêm tồn.
+            if ($box_id !== null) {
+                $stmt = $pdo->prepare("SELECT s.shelf_id AS shelf_code, i.quantity FROM inventory i
+                                       LEFT JOIN shelves s ON s.id = i.shelf_id
+                                       WHERE i.box_id = ? LIMIT 1 FOR UPDATE");
+                $stmt->execute([$box_id]);
+                $existingBoxRow = $stmt->fetch(PDO::FETCH_ASSOC);
+                if ($existingBoxRow) {
+                    throw new Exception("Thùng $box_id đã được nhập kho trước đó (vị trí {$existingBoxRow['shelf_code']}, tồn hiện tại {$existingBoxRow['quantity']}). Không được nhập lại - chỉ được đổi vị trí hoặc xuất kho.");
+                }
+            }
+
+            // Upsert theo uk_inventory_shelf_product_box: box_id NULL -> cộng dồn bucket chung;
+            // box_id có giá trị -> chắc chắn là dòng mới (đã chặn trùng ở trên).
             $stmt = $pdo->prepare(
                 "INSERT INTO inventory (shelf_id, product_id, quantity, box_id) VALUES (?, ?, ?, ?)
                  ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)"
@@ -1811,21 +1900,18 @@ switch ($action) {
             $stmt = $pdo->prepare("UPDATE shelves SET current_usage = current_usage + ? WHERE id = ?");
             $stmt->execute([$qty, $s_pk]);
 
-            $user = current_user();
-            $created_by = $user['username'] ?? 'system';
-            $stmt = $pdo->prepare("INSERT INTO transactions (product_id, shelf_id, quantity, type, created_by, created_at) VALUES (?, ?, ?, 'IN', ?, NOW())");
-            $stmt->execute([$p_pk, $s_pk, $qty, $created_by]);
+            $stmt = $pdo->prepare("INSERT INTO transactions (product_id, shelf_id, quantity, type, created_by, box_id, created_at) VALUES (?, ?, ?, 'IN', ?, ?, NOW())");
+            $stmt->execute([$p_pk, $s_pk, $qty, $created_by, $box_id]);
 
             // Có box_id => ghi/đăng ký thùng vào box_info.
-            // qty: cộng dồn. Metadata (weight, lot_no, invoice_no, order_no, bundle_no, supplier,
-            // input_date): ghi đè bằng giá trị mới nhất từ QR khi quét lại.
+            // Thùng chỉ nhập 1 lần nên qty ghi đè (không cộng dồn) nếu box_info đã được đăng ký sẵn.
             if ($box_id !== null) {
                 $stmt = $pdo->prepare(
                     "INSERT INTO box_info
                         (box_id, product_id, qty, weight, lot_no, invoice_no, order_no, bundle_no, supplier, input_date, created_by)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                      ON DUPLICATE KEY UPDATE
-                        qty = qty + VALUES(qty),
+                        qty = VALUES(qty),
                         weight = VALUES(weight),
                         lot_no = VALUES(lot_no),
                         invoice_no = VALUES(invoice_no),
@@ -1882,6 +1968,7 @@ switch ($action) {
         ];
 
         try {
+            ensure_inventory_schema($pdo);
             $pdo->beginTransaction();
 
             if ($qty <= 0) {
@@ -1967,8 +2054,8 @@ switch ($action) {
 
             $user = current_user();
             $created_by = $user['username'] ?? 'system';
-            $stmt = $pdo->prepare("INSERT INTO transactions (product_id, shelf_id, quantity, type, created_by, created_at) VALUES (?, ?, ?, 'OUT', ?, NOW())");
-            $stmt->execute([$p_pk, $s_pk, $qty, $created_by]);
+            $stmt = $pdo->prepare("INSERT INTO transactions (product_id, shelf_id, quantity, type, created_by, box_id, created_at) VALUES (?, ?, ?, 'OUT', ?, ?, NOW())");
+            $stmt->execute([$p_pk, $s_pk, $qty, $created_by, ($box_id !== '' ? $box_id : null)]);
 
             $transactionTime = date('Y-m-d H:i:s');
             $pdo->commit();
@@ -2103,8 +2190,8 @@ switch ($action) {
 
             $user = current_user();
             $created_by = $user['username'] ?? 'system';
-            $stmt = $pdo->prepare("INSERT INTO transactions (product_id, shelf_id, quantity, type, created_by, created_at) VALUES (?, ?, ?, 'OUT', ?, NOW())");
-            $stmt->execute([$p_pk, $s_pk, $qty, $created_by]);
+            $stmt = $pdo->prepare("INSERT INTO transactions (product_id, shelf_id, quantity, type, created_by, box_id, created_at) VALUES (?, ?, ?, 'OUT', ?, ?, NOW())");
+            $stmt->execute([$p_pk, $s_pk, $qty, $created_by, ($box_id !== '' ? $box_id : null)]);
 
             if ($is_picking && $command) {
                 $stmt = $pdo->prepare("INSERT INTO export_log (command, case_no, product_id, quantity, created_by, status, idempotency_key, created_at) VALUES (?, ?, ?, ?, ?, 'picking', ?, NOW())");
@@ -2167,16 +2254,47 @@ switch ($action) {
                     break;
 
                 case 'shelf':
-                    $stmt = $pdo->prepare("SELECT p.product_id, p.product_name, s.shelf_id, SUM(i.quantity) AS quantity, 'INVENTORY' AS source
+                    ensure_products_box_nom_schema($pdo);
+                    $stmt = $pdo->prepare("SELECT p.product_id, p.product_name, p.box_nom, s.shelf_id, i.quantity, NULLIF(TRIM(i.box_id), '') AS box_id
                                            FROM inventory i
                                            JOIN products p ON p.id = i.product_id
                                            JOIN shelves s ON s.id = i.shelf_id
-                                           WHERE s.shelf_id = ?
-                                           GROUP BY p.product_id, p.product_name, s.shelf_id
-                                           HAVING SUM(i.quantity) > 0
+                                           WHERE s.shelf_id = ? AND i.quantity > 0
                                            ORDER BY p.product_id");
                     $stmt->execute([$q]);
-                    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    $grouped = [];
+                    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                        $key = $r['product_id'];
+                        if (!isset($grouped[$key])) {
+                            $grouped[$key] = ['product_id' => $r['product_id'], 'product_name' => $r['product_name'], 'shelf_id' => $r['shelf_id'],
+                                              'quantity' => 0, 'source' => 'INVENTORY', 'box_nom' => $r['box_nom'], 'boxes' => [], 'loose' => 0];
+                        }
+                        $qty = (int) $r['quantity'];
+                        $grouped[$key]['quantity'] += $qty;
+                        if ($r['box_id'] !== null) {
+                            $grouped[$key]['boxes'][$qty] = ($grouped[$key]['boxes'][$qty] ?? 0) + 1; // số thùng theo từng mức số lượng
+                        } else {
+                            $grouped[$key]['loose'] += $qty;
+                        }
+                    }
+                    foreach ($grouped as &$g) {
+                        // Số thùng: (1) đếm theo box_id thực tế, (2) phần không có box_id quy đổi theo products.box_nom, (3) không có box_nom -> 1 box * tồn
+                        $parts = [];
+                        krsort($g['boxes']);
+                        foreach ($g['boxes'] as $qty => $count) $parts[] = "{$count} box * {$qty} pcs";
+                        if ($g['loose'] > 0) $parts[] = check_inventory_build_note($g['loose'], $g['box_nom'], true);
+                        $g['box_note'] = implode(' + ', $parts);
+                        // Tổng số thùng: thùng thực tế + thùng quy đổi (phần lẻ không đủ 1 thùng vẫn tính là 1 thùng)
+                        $boxCount = array_sum($g['boxes']);
+                        if ($g['loose'] > 0) {
+                            $nom = (int) ($g['box_nom'] ?? 0);
+                            $boxCount += $nom > 0 ? (int) ceil($g['loose'] / $nom) : 1;
+                        }
+                        $g['box_count'] = $boxCount;
+                        unset($g['boxes'], $g['loose'], $g['box_nom']);
+                    }
+                    unset($g);
+                    $rows = array_values($grouped);
                     break;
 
                 case 'box':
@@ -2238,7 +2356,7 @@ switch ($action) {
                     if (!preg_match('/^\d{4}-\d{2}$/', $month)) $month = date('Y-m');
                     $from = $month . '-01 00:00:00';
                     $to = date('Y-m-d H:i:s', strtotime($from . ' +1 month'));
-                    $stmt = $pdo->prepare("SELECT p.product_id, p.product_name, s.shelf_id, t.type, t.quantity, t.created_by, t.created_at
+                    $stmt = $pdo->prepare("SELECT p.product_id, p.product_name, s.shelf_id, t.type, t.quantity, t.box_id, t.created_by, t.created_at
                                            FROM transactions t
                                            JOIN products p ON p.id = t.product_id
                                            LEFT JOIN shelves s ON s.id = t.shelf_id

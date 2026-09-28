@@ -41,6 +41,10 @@ if (!in_array($role, ['Leader', 'Manager', 'Admin'])) {
             <span class="flex items-center gap-1.5"><span class="w-4 h-4 rounded inline-block" style="background:#bbf7d0"></span> Dưới 10 mã hàng</span>
             <span class="flex items-center gap-1.5"><span class="w-4 h-4 rounded inline-block" style="background:#fef08a"></span> Từ 10 mã hàng trở lên</span>
             <span class="ml-auto text-gray-500" id="rack-stats"></span>
+            <button type="button" id="btn-view" title="Đổi hướng nhìn: đảo thứ tự kệ và vị trí trái ↔ phải"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold transition">
+                🔄 Change view: <span id="view-label" class="font-mono"></span>
+            </button>
         </div>
     </div>
 
@@ -69,6 +73,13 @@ $(document).ready(function() {
 
     const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const natSort = (a, b) => String(a).localeCompare(String(b), undefined, { numeric: true });
+    // Hướng nhìn: 'asc' = kệ & vị trí tăng dần từ trái qua phải, 'desc' = nhìn từ phía đối diện (giảm dần)
+    let viewDir = 'asc';
+    try { viewDir = localStorage.getItem('layout_view_dir') === 'desc' ? 'desc' : 'asc'; } catch (e) {}
+    const dirSort = (a, b) => viewDir === 'asc' ? natSort(a, b) : natSort(b, a);
+    const updateViewLabel = () => $('#view-label').text(viewDir === 'asc' ? '1 → 9' : '9 → 1');
+    let lastCells = [];
+
     const posClass = n => n <= 0 ? 'pos-empty' : (n < 10 ? 'pos-low' : 'pos-high');
 
     // Mở trang: chỉ tải danh sách khu, chưa tải sơ đồ
@@ -100,6 +111,7 @@ $(document).ready(function() {
     function resetRack() {
         current = { level0: '', level1: '' };
         level1List = [];
+        lastCells = [];
         $('#rack-title').text('—');
         $('#rack-index').text('');
         $('#btn-prev, #btn-next').prop('disabled', true);
@@ -118,7 +130,8 @@ $(document).ready(function() {
         $('#rack-empty').addClass('hidden');
 
         // Gom vị trí theo (cột level2, tầng level3)
-        const cols = [...new Set(cells.map(c => c.level2_val))].sort(natSort);
+        lastCells = cells;
+        const cols = [...new Set(cells.map(c => c.level2_val))].sort(dirSort);
         const rows = [...new Set(cells.map(c => c.level3_val))].sort(natSort).reverse(); // tầng cao ở trên
         const map = {};
         let maxPos = 1, empty = 0;
@@ -138,7 +151,7 @@ $(document).ready(function() {
         rows.forEach(r => {
             html += `<div class="axis whitespace-nowrap">Tầng ${esc(String(r).replace(/^0+(?=\d)/, ''))}</div>`;
             cols.forEach(c => {
-                const list = (map[c + '|' + r] || []).sort((a, b) => natSort(a.level4_val, b.level4_val));
+                const list = (map[c + '|' + r] || []).sort((a, b) => dirSort(a.level4_val, b.level4_val));
                 if (!list.length) { html += '<div></div>'; return; }
                 html += `<div class="rack-cell" style="grid-template-columns: repeat(${Math.min(list.length, perRow)}, minmax(0, 1fr))">`
                      + list.map(p => {
@@ -159,12 +172,19 @@ $(document).ready(function() {
     $('#level0-select').on('change', function() { load($(this).val(), ''); });
     $('#btn-prev').on('click', () => go(-1));
     $('#btn-next').on('click', () => go(1));
+    $('#btn-view').on('click', function() {
+        viewDir = viewDir === 'asc' ? 'desc' : 'asc';
+        try { localStorage.setItem('layout_view_dir', viewDir); } catch (e) {}
+        updateViewLabel();
+        if (lastCells.length) render(lastCells);
+    });
     $(document).on('keydown', function(e) {
         if ($(e.target).is('input, select, textarea')) return;
         if (e.key === 'ArrowLeft') go(-1);
         if (e.key === 'ArrowRight') go(1);
     });
 
+    updateViewLabel();
     resetRack();
     loadZones();
 });

@@ -33,6 +33,7 @@
                                     <input type="checkbox" id="select_all_products" class="form-checkbox h-4 w-4 text-blue-600 transition duration-150 ease-in-out">
                                 </th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mã SP</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thùng</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kệ lẻ</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tồn kho</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Số lượng chuyển</th>
@@ -130,16 +131,26 @@ $(document).ready(function() {
                     $('#current_shelf_name').text(`Kệ nguồn: ${shelfId}`); // Display shelf ID for confirmation
                     $('#current_shelf_products_container').show();
                     currentShelfProducts.forEach(function(product) {
+                        const hasBox = !!product.box_id;
+                        const boxLabel = hasBox
+                            ? `<span class="font-mono text-blue-700">📦 ${product.box_id}</span>`
+                            : '<span class="text-gray-400">—</span>';
+                        // Thùng (box_id khác NULL) là 1 đơn vị vật lý: bắt buộc chuyển NGUYÊN thùng,
+                        // không cho sửa số lượng - khớp với ràng buộc phía backend (transfer_products).
+                        const qtyInput = hasBox
+                            ? `<input type="number" class="transfer-qty-input w-24 border-gray-300 rounded-md shadow-sm bg-gray-100" value="${product.quantity}" min="1" max="${product.quantity}" data-inv-id="${product.inv_id}" readonly title="Thùng phải chuyển nguyên số lượng">`
+                            : `<input type="number" class="transfer-qty-input w-24 border-gray-300 rounded-md shadow-sm" value="${product.quantity}" min="1" max="${product.quantity}" data-inv-id="${product.inv_id}">`;
                         const row = `
                             <tr>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    <input type="checkbox" class="product-checkbox h-4 w-4 text-blue-600 transition duration-150 ease-in-out" data-product-id="${product.product_id}" data-quantity="${product.quantity}" checked>
+                                    <input type="checkbox" class="product-checkbox h-4 w-4 text-blue-600 transition duration-150 ease-in-out" data-inv-id="${product.inv_id}" data-product-id="${product.product_id}" data-box-id="${product.box_id || ''}" data-quantity="${product.quantity}" checked>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${product.product_id}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm">${boxLabel}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${product.odd_shelves || '-'}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${product.quantity}</td>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    <input type="number" class="transfer-qty-input w-24 border-gray-300 rounded-md shadow-sm" value="${product.quantity}" min="1" max="${product.quantity}" data-product-id="${product.product_id}">
+                                    ${qtyInput}
                                 </td>
                             </tr>
                         `;
@@ -176,8 +187,9 @@ $(document).ready(function() {
         checkTransferButtonState();
     });
 
-    // Handle quantity input change
+    // Handle quantity input change (bỏ qua input readonly của dòng có box_id)
     $(document).on('input', '.transfer-qty-input', function() {
+        if ($(this).prop('readonly')) return;
         const maxQty = parseInt($(this).attr('max'));
         let currentVal = parseInt($(this).val());
         if (isNaN(currentVal) || currentVal < 1) {
@@ -241,9 +253,9 @@ $(document).ready(function() {
     function validateTransferQuantities() {
         let isValid = true;
         $('.product-checkbox:checked').each(function() {
-            const productId = $(this).data('product-id');
+            const invId = $(this).data('inv-id');
             const maxQty = parseInt($(this).data('quantity'));
-            const transferQtyInput = $(`.transfer-qty-input[data-product-id="${productId}"]`);
+            const transferQtyInput = $(`.transfer-qty-input[data-inv-id="${invId}"]`);
             const transferQty = parseInt(transferQtyInput.val());
 
             if (isNaN(transferQty) || transferQty <= 0 || transferQty > maxQty) {
@@ -266,9 +278,10 @@ $(document).ready(function() {
 
         const productsToTransfer = [];
         $('.product-checkbox:checked').each(function() {
+            const invId = $(this).data('inv-id');
             const productId = $(this).data('product-id');
-            const transferQty = parseInt($(`.transfer-qty-input[data-product-id="${productId}"]`).val());
-            productsToTransfer.push({ product_id: productId, quantity: transferQty });
+            const transferQty = parseInt($(`.transfer-qty-input[data-inv-id="${invId}"]`).val());
+            productsToTransfer.push({ inv_id: invId, product_id: productId, quantity: transferQty });
         });
 
         if (productsToTransfer.length === 0) {

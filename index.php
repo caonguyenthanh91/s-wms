@@ -238,6 +238,7 @@ $customCssVersion = file_exists($customCssPath) ? (string) filemtime($customCssP
     <script src="<?php echo $assetBaseUrl; ?>assets/js/html5-qrcode.min.js"></script>
     <script src="<?php echo $assetBaseUrl; ?>assets/js/qrcode.min.js"></script>
     <script src="<?php echo $assetBaseUrl; ?>assets/js/app.js"></script>
+    <script src="<?php echo $assetBaseUrl; ?>assets/js/input-clear.js"></script>
     <div id="qr-scanner-modal" class="fixed inset-0 bg-black bg-opacity-70 hidden z-[9999] items-center justify-center p-4">
         <div class="bg-white rounded-lg shadow-xl w-full max-w-md">
             <div class="flex justify-between items-center px-4 py-3 border-b">

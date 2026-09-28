@@ -24,8 +24,9 @@
                 <div class="space-y-2">
                     <label for="lookup-q" id="lookup-label" class="block text-xs font-semibold text-gray-500 uppercase tracking-wide"></label>
                     <div class="relative">
-                        <input type="text" id="lookup-q" autocomplete="off"
-                               class="w-full pl-4 pr-10 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none uppercase font-mono text-sm transition">
+                        <input type="text" id="lookup-q" autocomplete="off" data-no-clear
+                               class="w-full pl-4 pr-16 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none uppercase font-mono text-sm transition">
+                        <button type="button" id="lookup-clear" title="Xóa" class="hidden absolute right-9 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-600 text-xs font-bold leading-6 text-center">✕</button>
                         <button type="button" id="lookup-qr" title="Quét QR" class="absolute right-3 top-1/2 -translate-y-1/2 text-blue-600 hover:text-blue-800">
                             <i class="fas fa-qrcode"></i>
                         </button>
@@ -130,7 +131,7 @@ function setType(type) {
     const t = LOOKUP_TYPES[type];
     $('.lk-tab').removeClass('active').filter(`[data-type="${type}"]`).addClass('active');
     $('#lookup-label').text(t.label);
-    $('#lookup-q').attr('placeholder', t.placeholder).val('').focus();
+    $('#lookup-q').attr('placeholder', t.placeholder).val('').trigger('input').focus();
     $('#lookup-month-wrap').toggleClass('hidden', type !== 'history');
     clearResult('Nhập từ khóa để bắt đầu tra cứu.');
 }
@@ -167,7 +168,35 @@ const RENDERERS = {
             `<tr><td class="${TD}" colspan="2">TỔNG TỒN</td><td class="${TD} text-right text-blue-700">${fmtQty(total)}</td><td></td></tr>`
         );
     },
-    shelf(res) { RENDERERS.product(res); },
+    shelf(res) {
+        const rows = res.rows;
+        const total = rows.reduce((s, r) => s + Number(r.quantity || 0), 0);
+        const totalBox = rows.reduce((s, r) => s + Number(r.box_count || 0), 0);
+        const boxCell = r => `<span class="text-xs font-mono text-gray-600 whitespace-nowrap">${esc(r.box_note || '—')}</span>`;
+        renderTable(
+            [{ text: 'Mã hàng' }, { text: 'Tên hàng', cls: 'hidden sm:table-cell' }, { text: 'Số lượng', cls: 'text-right' },
+             { text: 'Số thùng', cls: 'hidden sm:table-cell' }, { text: 'Nhập / Xuất', cls: 'text-center' }],
+            rows.map(r => `<tr class="hover:bg-gray-50">
+                <td class="${TD}">
+                    <div class="font-mono font-bold text-gray-800">${esc(r.product_id)}</div>
+                    <div class="sm:hidden text-xs text-gray-500">${esc(r.product_name || '')}</div>
+                </td>
+                <td class="${TD} hidden sm:table-cell text-gray-600">${esc(r.product_name || '—')}</td>
+                <td class="${TD} text-right">
+                    <div class="font-semibold">${fmtQty(r.quantity)}</div>
+                    <div class="sm:hidden mt-0.5">${boxCell(r)}</div>
+                </td>
+                <td class="${TD} hidden sm:table-cell">${boxCell(r)}</td>
+                <td class="${TD} text-center whitespace-nowrap">${actionCell(r)}</td>
+            </tr>`),
+            `<tr><td class="${TD}">TỔNG TỒN</td><td class="hidden sm:table-cell"></td>
+                <td class="${TD} text-right text-blue-700">
+                    <div>${fmtQty(total)} pcs</div>
+                    <div class="sm:hidden text-xs text-gray-600">${fmtQty(totalBox)} box</div>
+                </td>
+                <td class="${TD} hidden sm:table-cell text-gray-700">${fmtQty(totalBox)} box</td><td></td></tr>`
+        );
+    },
     box(res) {
         const b = res.meta.box;
         if (b) {
@@ -248,7 +277,7 @@ function runLookup() {
     let q = $('#lookup-q').val();
     q = (lookupType === 'product' || lookupType === 'history') ? resolveProductId(q) : q.trim().toUpperCase();
     if (!q) return;
-    $('#lookup-q').val(q);
+    $('#lookup-q').val(q).trigger('input');
 
     const params = { type: lookupType, q };
     if (lookupType === 'history') params.month = $('#lookup-month').val();
@@ -271,6 +300,11 @@ $(document).ready(function() {
 
     $('#lookup-tabs').on('click', '.lk-tab', function() { setType($(this).data('type')); });
     $('#lookup-btn').on('click', runLookup);
+    $('#lookup-q').on('input change', function() { $('#lookup-clear').toggleClass('hidden', !$(this).val()); });
+    $('#lookup-clear').on('click', function() {
+        $('#lookup-q').val('').trigger('input').focus();
+        clearResult('Nhập từ khóa để bắt đầu tra cứu.');
+    });
     $('#lookup-q').on('keydown', function(e) { if (e.which === 13) { e.preventDefault(); runLookup(); } });
     $('#lookup-month').on('change', function() { if ($('#lookup-q').val().trim()) runLookup(); });
     $('#lookup-qr').on('click', function() { openQRScannerModal('lookup-q', LOOKUP_TYPES[lookupType].label); });

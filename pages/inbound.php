@@ -370,7 +370,22 @@ function handleQRProductPayload(rawValue) {
     inboundCurrentBoxMeta = parsed.boxId ? (parsed.boxMeta || null) : null;
     inboundLastParsedBoxProductId = parsed.productId;
 
-    validateProduct(parsed.productId, function() {
+    // Thùng chỉ được nhập kho 1 lần: chặn nếu đã có trong danh sách chờ hoặc đã từng nhập (DB).
+    const rejectBox = function(msg) {
+        inboundCurrentBoxId = null;
+        inboundCurrentBoxMeta = null;
+        inboundLastParsedBoxProductId = null;
+        $('#product_id').val('').addClass('border-red-500').focus();
+        $('#qty-input').val('');
+        lastHandledQRRaw = '';
+        showModal(msg, 'error');
+    };
+    if (parsed.boxId && inboundItems.some(i => i.box_id === parsed.boxId)) {
+        rejectBox(`Thùng ${parsed.boxId} đã có trong danh sách chờ nhập!`);
+        return true;
+    }
+
+    const proceed = function() { validateProduct(parsed.productId, function() {
         if (mySeq !== inboundScanSeq) return; // đã có lượt quét mới hơn xử lý thay
 
         $('#product_id').val(parsed.productId);
@@ -388,7 +403,18 @@ function handleQRProductPayload(rawValue) {
 
         $('#product_id').val(parsed.productId).select();
         $('#qty-input').val('');
-    });
+    }); };
+
+    if (!parsed.boxId) { proceed(); return true; }
+    $.getJSON('api.php?action=check_box_inbound', { box_id: parsed.boxId }, function(res) {
+        if (mySeq !== inboundScanSeq) return;
+        if (res && res.exists) {
+            const d = res.data || {};
+            rejectBox(`Thùng ${parsed.boxId} đã được nhập kho trước đó (vị trí ${d.shelf_code || '?'}, tồn ${d.quantity}). Không được nhập lại - chỉ được đổi vị trí hoặc xuất kho.`);
+        } else {
+            proceed();
+        }
+    }).fail(proceed); // lỗi mạng: để backend inbound_submit chặn
 
     return true;
 }
