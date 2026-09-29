@@ -1,161 +1,126 @@
-<div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
-    <!-- BÊN TRÁI: ĐĂNG KÝ MÃ KỆ MỚI -->
-    <section>
-        <div class="bg-white p-6 rounded-lg shadow-md h-fit">
-            <h3 class="text-lg font-bold mb-4 text-gray-800 flex items-center">
-                <span class="mr-2">📍</span> Đăng ký Mã Kệ mới
+<div class="max-w-2xl mx-auto">
+    <div class="bg-white rounded-2xl shadow-lg ring-1 ring-gray-100 overflow-hidden">
+        <!-- Header -->
+        <div class="px-6 py-5 bg-gradient-to-r from-slate-700 to-slate-900 text-white">
+            <h3 class="text-xl font-bold flex items-center gap-2">
+                <span>📍</span> Quản lý Mã Vị Trí (Kệ)
             </h3>
-            <form id="add-shelf-form" class="space-y-4">
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Level 0 (Mặc định)</label>
-                        <input type="text" name="level0_val" id="l0" value="B032" readonly class="w-full bg-gray-50 border p-2 rounded text-sm font-mono">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Level 1 (Chữ cái)</label>
-                        <input type="text" name="level1_val" id="l1" required maxlength="1" pattern="[A-Za-z]" placeholder="VD: A" class="w-full border p-2 rounded text-sm font-mono uppercase">
-                    </div>
-                </div>
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Level 2 (Số - 2 ký tự)</label>
-                        <input type="text" name="level2_val" id="l2" required maxlength="2" pattern="[0-9]{2}" placeholder="VD: 01" class="w-full border p-2 rounded text-sm font-mono">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Level 3 (Số - 2 ký tự)</label>
-                        <input type="text" name="level3_val" id="l3" required maxlength="2" pattern="[0-9]{2}" placeholder="VD: 01" class="w-full border p-2 rounded text-sm font-mono">
-                    </div>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Level 4 (Không bắt buộc)</label>
-                    <input type="text" name="level4_val" id="l4" placeholder="VD: Ghi chú" class="w-full border p-2 rounded text-sm">
-                </div>
-
-                <div class="p-3 bg-blue-50 rounded border border-blue-200">
-                    <label class="block text-[10px] font-bold text-blue-500 uppercase">Mã vị trí sẽ tạo:</label>
-                    <input type="text" name="shelf_id" id="generated_shelf_id" readonly required
-                           class="w-full bg-transparent border-none p-0 text-lg font-bold text-blue-800 outline-none font-mono">
-                </div>
-
-                <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Sức chứa (Capacity)</label>
-                    <input type="number" name="capacity" value="100" class="w-full border p-2 rounded text-sm">
-                </div>
-                
-                <button type="submit" class="w-full bg-slate-800 text-white py-3 rounded font-bold hover:bg-black transition">
-                    LƯU CẤU HÌNH KỆ
-                </button>
-                <p id="form-message" class="mt-3 text-center text-sm"></p>
-            </form>
+            <p class="text-slate-300 text-sm mt-1">Nhập mã kệ đầy đủ (VD: <span class="font-mono">SMC_4--P01-02-03-04-05</span>) và nhấn <kbd class="px-1.5 py-0.5 bg-white/20 rounded text-xs font-mono">Enter</kbd>.</p>
         </div>
-    </section>
 
-    <!-- BÊN PHẢI: TRA CỨU MÃ KỆ -->
-    <section>
-        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
-            <h3 class="text-lg font-bold mb-4 text-gray-800 flex items-center">
-                <span class="mr-2">🔍</span> Tra cứu thông tin kệ
-            </h3>
-            <div class="flex gap-2">
-                <input type="text" id="search-shelf-id-input" placeholder="Nhập mã kệ (VD: A-01-01)..." 
-                       class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none uppercase font-mono text-sm">
-                <button onclick="searchByShelf()" class="bg-green-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-green-700 transition text-sm">
-                    Tìm kiếm
-                </button>
+        <form id="shelf-form" class="p-6 space-y-5" autocomplete="off">
+            <!-- Mã kệ -->
+            <div>
+                <label for="shelf_id" class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Mã Kệ (Full) *</label>
+                <div class="relative">
+                    <input type="text" id="shelf_id" name="shelf_id" required placeholder="Nhập mã kệ rồi nhấn Enter..."
+                           class="w-full pl-4 pr-24 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none uppercase font-mono text-base transition">
+                    <button type="button" id="btn-reset-shelf" class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-xs px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold transition">
+                        Đổi mã
+                    </button>
+                </div>
+                <div id="shelf-status" class="hidden mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"></div>
             </div>
-        </div>
 
-        <div id="shelf-results-container" class="bg-white rounded-lg shadow-md overflow-hidden hidden">
-            <div class="p-4 border-b bg-green-50">
-                <h4 class="font-bold text-green-800 uppercase font-mono">Kệ: <span id="res-shelf-id"></span></h4>
-            </div>
-            <table class="w-full text-left border-collapse text-sm">
-                <thead>
-                    <tr class="bg-gray-100 text-gray-600 uppercase text-[10px] font-bold">
-                        <th class="p-3 border-b">Mã Sản Phẩm</th>
-                        <th class="p-3 border-b text-right">Số lượng</th>
-                    </tr>
-                </thead>
-                <tbody id="shelf-inventory-results"></tbody>
-            </table>
-        </div>
-        <div id="shelf-no-results" class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded hidden text-sm text-yellow-700">
-            Kệ này hiện đang trống hoặc không tồn tại.
-        </div>
-    </section>
+            <fieldset id="detail-fields" disabled class="space-y-5 transition disabled:opacity-50">
+                <!-- Thông tin tách từ mã kệ -->
+                <div class="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <div class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-3">Thông tin tách từ mã kệ</div>
+                    <div class="grid grid-cols-3 sm:grid-cols-6 gap-3 text-center">
+                        <div class="col-span-3 sm:col-span-1">
+                            <div class="text-[10px] text-gray-400 uppercase">Tên kệ</div>
+                            <div id="p-shelf_name" class="font-mono font-bold text-gray-800 truncate">—</div>
+                        </div>
+                        <div><div class="text-[10px] text-gray-400 uppercase">Level 0</div><div id="p-level0_val" class="font-mono font-bold text-gray-800">—</div></div>
+                        <div><div class="text-[10px] text-gray-400 uppercase">Level 1</div><div id="p-level1_val" class="font-mono font-bold text-gray-800">—</div></div>
+                        <div><div class="text-[10px] text-gray-400 uppercase">Level 2</div><div id="p-level2_val" class="font-mono font-bold text-gray-800">—</div></div>
+                        <div><div class="text-[10px] text-gray-400 uppercase">Level 3</div><div id="p-level3_val" class="font-mono font-bold text-gray-800">—</div></div>
+                        <div><div class="text-[10px] text-gray-400 uppercase">Level 4</div><div id="p-level4_val" class="font-mono font-bold text-gray-800">—</div></div>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="capacity" class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Sức Chứa (Capacity) *</label>
+                    <input type="number" id="capacity" name="capacity" required min="1" step="1" value="100"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm transition">
+                </div>
+
+                <button type="submit" id="btn-submit"
+                        class="w-full py-3 px-4 rounded-xl font-bold text-white bg-gray-400 shadow-md transition">
+                    LƯU
+                </button>
+            </fieldset>
+
+            <p id="form-message" class="text-center text-sm font-medium min-h-[1.25rem]"></p>
+        </form>
+    </div>
 </div>
 
 <script>
 $(document).ready(function() {
-    // Tự động tạo mã kệ khi nhập các level
-    $('#l1, #l2, #l3, #l4').on('input', function() {
-        const l1 = $('#l1').val().toUpperCase();
-        const l2 = $('#l2').val();
-        const l3 = $('#l3').val();
-        const l4 = $('#l4').val().trim();
-        
-        if (l1 && l2 && l3) {
-            let fullId = `${l1}-${l2}-${l3}`;
-            if (l4) fullId += `-${l4}`;
-            $('#generated_shelf_id').val(fullId);
+    const PARTS = ['shelf_name', 'level0_val', 'level1_val', 'level2_val', 'level3_val', 'level4_val'];
+    let mode = null; // 'add' | 'update'
+
+    function setMessage(text, ok) {
+        $('#form-message').removeClass('text-green-600 text-red-600')
+            .addClass(ok ? 'text-green-600' : 'text-red-600').text(text || '');
+    }
+
+    function resetForm() {
+        mode = null;
+        $('#shelf-form')[0].reset();
+        PARTS.forEach(k => $('#p-' + k).text('—'));
+        $('#shelf_id').prop('readonly', false).removeClass('bg-gray-100 text-gray-500').focus();
+        $('#btn-reset-shelf, #shelf-status').addClass('hidden');
+        $('#detail-fields').prop('disabled', true);
+        $('#btn-submit').text('LƯU').attr('class', 'w-full py-3 px-4 rounded-xl font-bold text-white bg-gray-400 shadow-md transition');
+    }
+
+    function applyMode(exists, parsed, data) {
+        mode = exists ? 'update' : 'add';
+        $('#shelf_id').prop('readonly', true).addClass('bg-gray-100 text-gray-500');
+        $('#btn-reset-shelf').removeClass('hidden');
+        $('#detail-fields').prop('disabled', false);
+        PARTS.forEach(k => $('#p-' + k).text(parsed[k] || '—'));
+
+        const status = $('#shelf-status').removeClass('hidden bg-yellow-100 text-yellow-800 bg-green-100 text-green-800');
+        const btn = $('#btn-submit');
+        if (exists) {
+            status.addClass('bg-yellow-100 text-yellow-800').html('<span>●</span> Mã kệ đã đăng ký');
+            btn.text('CẬP NHẬT').attr('class', 'w-full py-3 px-4 rounded-xl font-bold text-white bg-amber-500 hover:bg-amber-600 shadow-md transition');
+            $('#capacity').val(data.capacity || 100);
         } else {
-            $('#generated_shelf_id').val('');
+            status.addClass('bg-green-100 text-green-800').html('<span>●</span> Mã kệ chưa đăng ký');
+            btn.text('ĐĂNG KÝ').attr('class', 'w-full py-3 px-4 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 shadow-md transition');
+            $('#capacity').val(100);
         }
+        $('#capacity').focus();
+    }
+
+    function checkShelf() {
+        const sid = $('#shelf_id').val().trim().toUpperCase();
+        if (!sid) return;
+        $('#shelf_id').val(sid);
+        setMessage('');
+        $.getJSON('api.php?action=get_shelf_detail', { shelf_id: sid }, function(res) {
+            if (res.success) applyMode(res.exists, res.parsed, res.data);
+            else setMessage(res.message || 'Không kiểm tra được mã kệ.', false);
+        }).fail(function() { setMessage('Lỗi kết nối máy chủ.', false); });
+    }
+
+    $('#shelf_id').on('keydown', function(e) {
+        if (e.which === 13) { e.preventDefault(); if (!mode) checkShelf(); }
     });
+    $('#btn-reset-shelf').on('click', function() { setMessage(''); resetForm(); });
 
-    $('#search-shelf-id-input').on('keypress', function(e) { if(e.which == 13) searchByShelf(); });
-
-    $('#add-shelf-form').submit(function(e) {
+    $('#shelf-form').submit(function(e) {
         e.preventDefault();
-        const sid = $('#generated_shelf_id').val();
-        const messageDiv = $('#form-message');
-        messageDiv.removeClass('text-green-600 text-red-600').text('');
-
-        // Check duplicate trước khi lưu
-        $.post('api.php?action=check_shelf', { shelf_id: sid }, function(check) {
-            if (check.success) {
-                messageDiv.text('⚠️ Lỗi: Mã kệ này đã tồn tại trong hệ thống!').addClass('text-red-600');
-            } else {
-                // Nếu chưa tồn tại thì tiến hành lưu
-                $.post('api.php?action=add_shelf', $('#add-shelf-form').serialize(), function(res) {
-                    if(res.success) {
-                        messageDiv.html('<span class="text-green-600 font-bold">✅ Đã thêm kệ thành công!</span>');
-                        $('#add-shelf-form')[0].reset();
-                        $('#generated_shelf_id').val(''); // Xóa thủ công mã đã tạo
-                        $('#l0').val('B032'); // Reset level0 mặc định
-                    } else {
-                        messageDiv.text(res.message).addClass('text-red-600');
-                    }
-                }, 'json');
-            }
-        }, 'json');
+        if (!mode) { checkShelf(); return; }
+        const action = mode === 'update' ? 'update_shelf' : 'add_shelf';
+        $.post('api.php?action=' + action, $(this).serialize(), function(res) {
+            setMessage(res.message, res.success);
+            if (res.success) resetForm();
+        }, 'json').fail(function() { setMessage('Lỗi kết nối máy chủ.', false); });
     });
 });
-
-function searchByShelf() {
-    const sid = $('#search-shelf-id-input').val().trim();
-    if (!sid) return;
-
-    $('#shelf-results-container, #shelf-no-results').addClass('hidden');
-
-    $.getJSON('api.php?action=get_inventory_by_shelf', { shelf_id: sid }, function(data) {
-        if (data && data.length > 0) {
-            $('#res-shelf-id').text(sid.toUpperCase());
-            const tbody = $('#shelf-inventory-results');
-            tbody.empty();
-
-            data.forEach(item => {
-                tbody.append(`
-                    <tr class="hover:bg-gray-50 border-b">
-                        <td class="p-3 font-mono font-bold text-gray-700">${item.product_id}</td>
-                        <td class="p-3 text-right font-medium">${item.quantity}</td>
-                    </tr>
-                `);
-            });
-            $('#shelf-results-container').removeClass('hidden');
-        } else {
-            $('#shelf-no-results').removeClass('hidden');
-        }
-    });
-}
 </script>

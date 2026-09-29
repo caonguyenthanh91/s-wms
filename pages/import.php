@@ -323,17 +323,23 @@ function checkPallet() {
     const palletId = $('#pallet-input').val().trim().toUpperCase();
     if (!palletId) return;
 
-    // Ở bước nhận hàng (Import), chúng ta cho phép quay lại pallet cũ nếu cần nhận thêm, 
-    // hoặc kiểm tra tính duy nhất nếu là pallet mới hoàn toàn.
-    // Tuy nhiên theo yêu cầu "duy nhất", tôi sẽ kiểm tra sự tồn tại.
-    
-    $('#display-pallet').text(palletId);
-    $('#step-1').addClass('hidden');
-    $('#step-2').removeClass('hidden');
-    $('#product_id').focus();
-    $('#pallet-error').addClass('hidden');
+    // Pallet đã được nhận tại kho tổng (RECEIVED) hoặc đã lên kệ (IMPORTED) thì không cho dùng lại ở bước Import.
+    $.getJSON('api.php?action=check_pallet_import_status', { pallet_id: palletId }, function(res) {
+        if (!res.success) {
+            showErrorModal(res.message || 'Pallet này không thể sử dụng để nhận hàng.');
+            return;
+        }
 
-    loadCurrentPalletItems(palletId);
+        $('#display-pallet').text(palletId);
+        $('#step-1').addClass('hidden');
+        $('#step-2').removeClass('hidden');
+        $('#product_id').focus();
+        $('#pallet-error').addClass('hidden');
+
+        loadCurrentPalletItems(palletId);
+    }).fail(function() {
+        showErrorModal('Lỗi kết nối máy chủ, vui lòng thử lại.');
+    });
 }
 
 function loadCurrentPalletItems(palletId) {
@@ -482,6 +488,7 @@ async function submitImport() {
 }
 
 $(document).ready(function() {
+    attachScanOnlyGuard('#pallet-input');
     updateImportScanModeUI();
     updateImportCounters();
 

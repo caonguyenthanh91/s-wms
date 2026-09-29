@@ -1,0 +1,90 @@
+HƯỚNG DẪN: draw.io > Arrange > Insert > Advanced > Mermaid...
+Copy TỪNG khối (từ dòng "flowchart" đến hết khối, không copy dòng ===) rồi bấm Insert.
+
+==================== 1. NHẬP KHO ====================
+flowchart TD
+    A([Bắt đầu]) --> B[Quét QR tem Pallet]
+    B --> C{Pallet đã RECEIVED<br/>hoặc IMPORTED?}
+    C -- Có --> X1[/Báo lỗi: không nhập thêm/]
+    C -- Không --> D[Quét QR thùng hàng]
+    D --> E{Mã hàng có trong<br/>master sản phẩm?}
+    E -- Không --> X2[/Báo lỗi mã hàng/] --> D
+    E -- Có --> F[Lưu import_temp<br/>Pallet = PENDING]
+    F --> G{Còn thùng?}
+    G -- Có --> D
+    G -- Không --> H[Nhận Pallet: quét tem Pallet]
+    H --> I{Pallet PENDING?}
+    I -- Không --> X3[/Báo lỗi trạng thái/]
+    I -- Có --> J[Đối chiếu danh sách hàng<br/>Xác nhận nhận]
+    J --> K[Pallet = RECEIVED]
+    K --> L[Cất kệ: chọn Pallet + quét QR kệ]
+    L --> M{Kệ tồn tại<br/>và hoạt động?}
+    M -- Không --> X4[/Báo lỗi kệ/] --> L
+    M -- Có --> N[Xác nhận nhập kho]
+    N --> O[Cộng tồn inventory<br/>Tăng current_usage<br/>Ghi transactions IN]
+    O --> P[Pallet = IMPORTED]
+    P --> Z([Kết thúc])
+
+==================== 2. XUẤT KHO ====================
+flowchart TD
+    A([Bắt đầu]) --> B[Import kế hoạch xuất<br/>theo Invoice]
+    B --> C[In phiếu Picking theo mã hàng<br/>In tem Packing theo kiện]
+    C --> D[Picking: quét QR phiếu picking]
+    D --> E[Quét QR vị trí kệ]
+    E --> F{Kệ có hàng?}
+    F -- Không --> X1[/Cảnh báo sai vị trí/] --> E
+    F -- Có --> G[Quét thùng + nhập số lượng]
+    G --> H{Đúng mã hàng và<br/>SL ≤ tồn kho?}
+    H -- Không --> X2[/Báo lỗi, quét lại/] --> G
+    H -- Có --> I[Trừ tồn inventory<br/>Ghi transactions OUT<br/>Ghi export_log picking]
+    I --> J{Đủ SL phiếu?}
+    J -- Chưa --> E
+    J -- Đủ --> K[Packing: quét tem kiện]
+    K --> L[Quét liên tục thùng hàng]
+    L --> M{Thuộc kiện và<br/>không vượt SL?}
+    M -- Không --> X3[/Báo lỗi/] --> L
+    M -- Có --> N[Ghi export_log packing]
+    N --> O{Kiện đủ SL?}
+    O -- Chưa --> L
+    O -- Đủ --> P[Pickup: quét tem kiện<br/>+ quét Shipping mark]
+    P --> Q{Khớp và kiện<br/>đã packing đủ?}
+    Q -- Không --> X4[/Dừng, báo lỗi/] --> P
+    Q -- Có --> R[Ghi export_log pickup]
+    R --> S{Còn kiện?}
+    S -- Có --> P
+    S -- Không --> Z([Kết thúc])
+
+==================== 3. KIỂM KÊ ====================
+flowchart TD
+    A([Bắt đầu]) --> B[Quét QR vị trí]
+    B --> C{Vị trí hợp lệ?}
+    C -- Không --> X1[/Báo lỗi vị trí/] --> B
+    C -- Có --> D{Đã kiểm kê<br/>trong đợt?}
+    D -- Có --> X2[/Không cho kiểm lại/] --> B
+    D -- Không --> E[Quét thùng + nhập SL thực tế]
+    E --> F{Còn thùng?}
+    F -- Có --> E
+    F -- Không --> G[Hoàn tất vị trí]
+    G --> H[Đối chiếu tồn hệ thống<br/>Lưu check_inventory]
+    H --> I{Tất cả khớp?}
+    I -- Có --> K([Kết thúc vị trí])
+    I -- Không --> J[Dashboard: xem sai lệch<br/>short / over / extra / pending]
+    J --> L{Xử lý}
+    L -- Kiểm lại --> M[Xóa kết quả vị trí] --> B
+    L -- Điều chỉnh --> N[Điều chỉnh tồn<br/>Ghi transactions] --> K
+
+==================== 4. MASTER DATA ====================
+flowchart TD
+    A([Bắt đầu]) --> B{Chọn chức năng}
+    B -- Sản phẩm --> P1[Nhập product_id, tên, ĐVT]
+    P1 --> P2{Mã rỗng<br/>hoặc trùng?}
+    P2 -- Có --> PX[/Báo lỗi đỏ/] --> P1
+    P2 -- Không --> P3[Lưu products] --> Z([Kết thúc])
+    B -- Kệ hàng --> S1[Nhập mã kệ, tên, tầng, sức chứa]
+    S1 --> S2{Mã kệ trùng?}
+    S2 -- Có --> SX[/Báo lỗi/] --> S1
+    S2 -- Không --> S3[Lưu shelves<br/>current_usage = 0] --> Z
+    B -- Tồn kho --> T1[Chọn kiểu tra cứu:<br/>mã hàng / kệ / thùng / pallet / invoice]
+    T1 --> T2[Quét hoặc nhập mã] --> T3[Hiển thị SL + vị trí] --> Z
+    B -- Lịch sử giao dịch --> H1[Chọn loại dữ liệu + thời gian]
+    H1 --> H2[Xuất Excel/CSV] --> Z

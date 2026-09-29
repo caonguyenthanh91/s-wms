@@ -275,14 +275,21 @@ let pickingState = {
     selectedShelf: null,
     shelfConfirmed: false,
     productConfirmed: false,
+    currentBoxId: '', // box_id vừa quét từ tem thùng ('' = luồng cũ, trừ tồn box_id IS NULL)
     busy: false,
     history: []
 };
 
 let boxQrScanTimer = null;
+let lastHandledBoxQrRaw = ''; // chống chốt trùng khi debounce/Enter/scanner-modal cùng xử lý 1 chuỗi
 let isContinuousPickScan = false;
 let pickBoxList = [];
 let allowPickAnyShelf = false;
+let currentPickBatchId = null;
+
+function generatePickBatchId() {
+    return 'PICK-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+}
 
 function showModal(message, type = 'error', title = null) {
     const titles = {
@@ -295,6 +302,47 @@ function showModal(message, type = 'error', title = null) {
     $('#error-modal-message').text(message);
     $('#error-modal-content').removeClass('error success warning').addClass(type);
     $('#error-modal').css('display', 'flex');
+}
+
+function submitOutboundWithRetry(shelf_id, product_id, quantity, command, case_no, is_picking, idempotency_key, box_id = '', maxRetries = 3) {
+    return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        function attemptSubmit() {
+            $.post('api.php?action=outbound_submit', {
+                shelf_id: shelf_id,
+                product_id: product_id,
+                quantity: quantity,
+                command: command,
+                case_no: case_no,
+                is_picking: is_picking,
+                idempotency_key: idempotency_key,
+                box_id: box_id || ''
+            }, function(res) {
+                if (res.success) {
+                    resolve(res);
+                } else {
+                    if (retryCount < maxRetries) {
+                        retryCount++;
+                        const delay = Math.pow(2, retryCount) * 500;
+                        setTimeout(attemptSubmit, delay);
+                    } else {
+                        reject(new Error(res.message || 'Không thể trừ tồn item này.'));
+                    }
+                }
+            }).fail(function(xhr, status, error) {
+                if (retryCount < maxRetries) {
+                    retryCount++;
+                    const delay = Math.pow(2, retryCount) * 500;
+                    setTimeout(attemptSubmit, delay);
+                } else {
+                    reject(new Error('Lỗi kết nối khi trừ tồn. Vui lòng kiểm tra kết nối mạng.'));
+                }
+            });
+        }
+
+        attemptSubmit();
+    });
 }
 
 function showErrorModal(message) {
@@ -400,12 +448,15 @@ function updatePickBoxListDisplay() {
     let totalQty = 0;
     pickBoxList.forEach(function(item, index) {
         totalQty += item.qty;
+        const boxLabel = item.boxId
+            ? `<span class="block text-[10px] text-emerald-700 font-mono">📦 ${item.boxId}</span>`
+            : '<span class="block text-[10px] text-slate-400">— không thùng —</span>';
         tbody.append(`
             <tr class="border-b hover:bg-gray-50">
-                <td class="p-2 text-xs text-slate-600">${index + 1}</td>
-                <td class="p-2 text-xs font-mono font-bold">${item.productId}</td>
-                <td class="p-2 text-right text-xs font-semibold">${item.qty}</td>
-                <td class="p-2 text-center">
+                <td class="p-2 text-xs text-slate-600 align-top">${index + 1}</td>
+                <td class="p-2 text-xs font-mono font-bold">${item.productId}${boxLabel}</td>
+                <td class="p-2 text-right text-xs font-semibold align-top">${item.qty}</td>
+                <td class="p-2 text-center align-top">
                     <button type="button" onclick="removePickBoxItem(${index})" class="text-red-500 text-sm font-bold hover:text-red-700">✕</button>
                 </td>
             </tr>
@@ -445,11 +496,11 @@ function updatePickSubmitButton() {
     }, 0);
     const totalWithPicked = pickingState.pickedQty + totalQty;
 
-    // Enable button nếu tổng bằng yêu cầu hoặc nếu là thùng cuối (nhỏ hơn yêu cầu nhưng không còn vị trí)
-    const isExactMatch = totalWithPicked === pickingState.requiredQty;
-    const isLastBox = totalWithPicked < pickingState.requiredQty && pickingState.selectedShelf && parseFloat(pickingState.selectedShelf.qty || 0) <= totalQty;
-
-    $('#btn-submit-pick').prop('disabled', !(isExactMatch || isLastBox));
+    // Cho phép xác nhận trừ tồn bất cứ khi nào đang có hàng trong danh sách,
+    // không bắt buộc phải đủ 100% hoặc hết tồn vị trí mới được nhấn OK.
+    // Lý do: với lot hàng lớn, nhân viên cần xác nhận trừ tồn theo nhiều đợt.
+    // Chỉ chặn khi tổng sẽ vượt quá số lượng cần pick.
+    $('#btn-submit-pick').prop('disabled', totalWithPicked > pickingState.requiredQty);
 }
 
 function setStepState(currentStep) {
@@ -478,13 +529,22 @@ function sortShelvesByQtyAndCode(rows) {
             return {
                 shelf_id: normalizeQrText(row.shelf_id),
                 shelf_name: row.shelf_name || '',
-                qty: parseFloat(row.qty || 0)
+                qty: parseFloat(row.qty || 0),
+                first_box_id: row.first_box_id ? String(row.first_box_id).trim() : ''
             };
         })
         .filter(function(row) {
             return row.shelf_id && row.qty > 0;
         })
         .sort(function(a, b) {
+            // FIFO: vị trí có box_id lên trước, sắp theo box_id cũ nhất (yymmdd trong mã).
+            var aHasBox = !!a.first_box_id;
+            var bHasBox = !!b.first_box_id;
+            if (aHasBox !== bHasBox) return aHasBox ? -1 : 1;
+            if (aHasBox && bHasBox && a.first_box_id !== b.first_box_id) {
+                return a.first_box_id.localeCompare(b.first_box_id, undefined, { numeric: true });
+            }
+            // Không có box_id: giữ hành vi cũ - tồn thấp nhất trước, rồi theo mã vị trí.
             if (a.qty === b.qty) {
                 return a.shelf_id.localeCompare(b.shelf_id, undefined, { numeric: true });
             }
@@ -515,6 +575,9 @@ function renderShelfList() {
 
         const btnLabel = canSelect ? 'Chọn vị trí này' : 'Chỉ chọn khi lên đầu danh sách';
         const shelfName = shelf.shelf_name && shelf.shelf_name !== shelf.shelf_id ? ` - ${shelf.shelf_name}` : '';
+        const boxLine = shelf.first_box_id
+            ? `<div class="text-[11px] mt-1 text-emerald-700 font-mono">FIFO · thùng cũ nhất: ${shelf.first_box_id}</div>`
+            : '';
 
         list.append(`
             <button type="button" class="${cls}" onclick="selectShelf('${shelf.shelf_id}')">
@@ -528,6 +591,7 @@ function renderShelfList() {
                         <div class="text-xl font-black text-slate-900">${shelf.qty}</div>
                     </div>
                 </div>
+                ${boxLine}
                 <div class="text-xs mt-1 ${canSelect ? 'text-sky-700' : 'text-slate-500'}">${btnLabel}</div>
             </button>
         `);
@@ -537,6 +601,7 @@ function renderShelfList() {
 function resetStep2And3Inputs() {
     pickingState.shelfConfirmed = false;
     pickingState.productConfirmed = false;
+    pickingState.currentBoxId = '';
     pickBoxList = [];
 
     $('#shelf-qr-input').val('');
@@ -644,6 +709,7 @@ function resetPickingJob(clearInput) {
         selectedShelf: null,
         shelfConfirmed: false,
         productConfirmed: false,
+        currentBoxId: '',
         busy: false,
         history: []
     };
@@ -863,6 +929,24 @@ function processShelfQrScan(scanned, fromScanner) {
     return true;
 }
 
+// box_id dạng [TEXT]-[yymmdd]-[num], TEXT có thể chứa . _ - (vd LOT-260828-1, AL.EXT-211228-001).
+var BOX_ID_PATTERN = /^[A-Za-z0-9._-]+-\d{6}-\d+$/;
+
+function extractBoxIdFromParts(parts) {
+    // box_id nằm ở index 8. Index 0..7 theo chuẩn QR đã thiết đặt trước đó -> KHÔNG dò tới,
+    // để QR cũ (không có box_id ở index 8) không bị phá vỡ luồng picking.
+    var candidate = (parts[8] || '').trim().toUpperCase();
+    if (candidate && BOX_ID_PATTERN.test(candidate)) return candidate;
+    // Dự phòng: quét từ index 8 trở đi (phòng lệch cột do số ký tự '$'), vẫn không đụng index 0..7.
+    for (var i = 8; i < parts.length; i++) {
+        var token = (parts[i] || '').trim().toUpperCase();
+        if (BOX_ID_PATTERN.test(token)) return token;
+    }
+    // Chấp nhận index 8 nếu trông giống mã định danh (có gạch nối + chữ số) dù không khớp regex chặt.
+    if (candidate && /-/.test(candidate) && /\d/.test(candidate)) return candidate;
+    return null;
+}
+
 function parseBoxQr(rawValue) {
     const raw = normalizeQrText(rawValue);
     if (!raw || raw.indexOf('$') === -1) return null;
@@ -873,21 +957,32 @@ function parseBoxQr(rawValue) {
 
     if (parts.length < 4) return null;
 
+    // Vị trí cố định: mã hàng = index 1, số lượng = index 3.
+    // Không quét số từ cuối chuỗi (QR tem thùng có field số phía sau: ...$-$1$0$<ngày>$<mã>$0).
     const productId = (parts[1] || '').toUpperCase();
     if (!productId) return null;
 
-    let qtyToken = '';
-    for (let i = parts.length - 1; i >= 3; i--) {
-        if (/^\d+$/.test(parts[i])) {
-            qtyToken = parts[i];
-            break;
+    let qty = NaN;
+    if (/^\d+$/.test(parts[3] || '')) {
+        qty = parseInt(parts[3], 10);
+    } else {
+        for (let i = 3; i < parts.length; i++) {
+            if (/^\d+$/.test(parts[i]) && parseInt(parts[i], 10) > 0) {
+                qty = parseInt(parts[i], 10);
+                break;
+            }
         }
     }
 
-    const qty = parseInt(qtyToken, 10);
-    if (isNaN(qty) || qty <= 0) return null;
+    const boxId = extractBoxIdFromParts(parts);
 
-    return { productId, qty };
+    if (isNaN(qty) || qty <= 0) {
+        console.log('[picking box QR] parse FAIL =>', { raw: raw, parts: parts, productId: productId, qty: qty, boxId: boxId });
+        return null;
+    }
+    console.log('[picking box QR] product_id =', productId, '| quantity =', qty, '| box_id =', boxId);
+
+    return { productId, qty, boxId };
 }
 
 function getMaxPickAllowedNow() {
@@ -903,8 +998,30 @@ function parseBoxQrAndSuggestQty() {
         return;
     }
 
+    // Enter / nút "Đọc QR thùng" là tín hiệu CHẮC CHẮN người dùng coi là đã quét xong
+    // (không phụ thuộc số field đã gõ) -> luôn xử lý, không để dedup của lượt debounce
+    // trước đó (nếu có, trên cùng chuỗi) chặn lại.
+    lastHandledBoxQrRaw = '';
     const parsed = parseBoxQr($('#box-qr-input').val());
     return processBoxQrScan(parsed, false);
+}
+
+// Dùng riêng cho lượt tự-động phát hiện qua debounce 'input' (không chắc chắn đã quét xong
+// bằng Enter) - có dedup theo đúng nội dung để tránh chốt lặp cùng 1 chuỗi.
+function handleBoxQrRawFromDebounce(rawValue) {
+    const raw = normalizeQrText(rawValue);
+    if (!raw || raw === lastHandledBoxQrRaw) return false;
+
+    const parsed = parseBoxQr(raw);
+    if (!parsed) return false;
+
+    lastHandledBoxQrRaw = raw;
+    const handled = processBoxQrScan(parsed, false);
+    // Trả dedup về rỗng ngay sau khi xử lý xong (dù thành công hay lỗi) - dedup ở đây chỉ nhằm
+    // chặn các lượt trigger LẶP LẠI gần như tức thì cho đúng 1 chuỗi y hệt (VD: 2 timer debounce
+    // chồng nhau), không nhằm chặn việc quét lại thùng sau này.
+    lastHandledBoxQrRaw = '';
+    return handled;
 }
 
 function processBoxQrScan(parsed, fromScanner) {
@@ -925,6 +1042,9 @@ function processBoxQrScan(parsed, fromScanner) {
         }
         return false;
     }
+
+    // Ghi nhận box_id của tem vừa quét ('' = tem cũ chưa đăng ký box -> trừ tồn luồng cũ).
+    pickingState.currentBoxId = parsed.boxId || '';
 
     if (parsed.productId !== pickingState.productId) {
         const msg = `✓ Cần: ${pickingState.productId}\n✗ Quét: ${parsed.productId}\n\nVui lòng quét lại đúng mã hàng!`;
@@ -962,11 +1082,14 @@ function processBoxQrScan(parsed, fromScanner) {
     // Remaining shelf stock after deducting items in the list
     const remainingShelfStock = initialShelfQty - totalQtyInList;
 
-    // Validate 1: Cảnh báo nếu đã đủ số cần pick (thêm thùng này sẽ vượt quá cần)
-    if (pickedQty + totalQtyInList + parsed.qty > requiredQty) {
-        const msg = `❌ ĐỦ SỐ LƯỢNG CẦN PICK RỒI!\n\nĐã pick: ${pickedQty} items\nDanh sách: ${totalQtyInList} items\nThùng này: ${parsed.qty} items\nTổng sẽ là: ${pickedQty + totalQtyInList + parsed.qty} items\nCần: ${requiredQty} items\n\nBạn đã đủ số lượng cần pick rồi. Không thể quét thêm!`;
-        showModal(msg, 'error', '❌ ĐỦ LƯỢNG RỒI!');
-        showError('#step3-error', `❌ Đủ số lượng rồi! Thêm nữa sẽ vượt. (${pickedQty + totalQtyInList + parsed.qty} > ${requiredQty})`);
+    // Check if we need to adjust quantity (auto-cap to remaining need)
+    const remainingNeedAfterList = requiredQty - pickedQty - totalQtyInList;
+    const qtyToTake = Math.min(parsed.qty, remainingNeedAfterList);
+
+    // Validate 1: Nếu đã đủ số cần pick, thông báo nhưng vẫn cho phép lấy số lượng còn thiếu
+    if (remainingNeedAfterList <= 0) {
+        const msg = `⚠️ ĐÃ ĐỦ SỐ LƯỢNG CẦN PICK!\n\nĐã pick: ${pickedQty} items\nDanh sách: ${totalQtyInList} items\nCần: ${requiredQty} items\n\nBạn đã đủ số lượng cần pick. Nhấn OK để hoàn tất.`;
+        showModal(msg, 'warning', '⚠️ ĐỦ LƯỢNG RỒI!');
         $('#box-qr-input').prop('disabled', true);
         $('#btn-parse-box').prop('disabled', true);
         setWorkflowStatus('Đủ số lượng cần pick rồi! Vui lòng xác nhận để hoàn tất.', 'text-orange-700');
@@ -974,6 +1097,12 @@ function processBoxQrScan(parsed, fromScanner) {
             window.resetQRScannerModalState();
         }
         return false;
+    }
+
+    // Validate 1b: Nếu thùng quét có số lượng lớn hơn số cần, tự động điều chỉnh
+    if (qtyToTake < parsed.qty) {
+        const msg = `ℹ️ SỐ LƯỢNG ĐÃ ĐƯỢC ĐIỀU CHỈNH\n\nThùng này có: ${parsed.qty} items\nSố cần pick còn lại: ${remainingNeedAfterList} items\n\n✓ Hệ thống sẽ lấy ${qtyToTake} items để đủ đúng yêu cầu.`;
+        showModal(msg, 'success', 'ℹ️ ĐIỀU CHỈNH SỐ LƯỢNG');
     }
 
     // Validate 2: Cảnh báo nếu vượt quá tồn kho tại vị trí này
@@ -990,13 +1119,18 @@ function processBoxQrScan(parsed, fromScanner) {
         return false;
     }
 
-    const suggestedQty = Math.min(parsed.qty, maxAllowed);
+    const suggestedQty = Math.min(qtyToTake, maxAllowed);
 
     pickingState.productConfirmed = true;
     hideError('#step3-error');
     $('#step3-max-qty').text(maxAllowed);
     $('#pick-qty-input').prop('disabled', false).val(suggestedQty).focus().select();
     $('#box-qr-input').val('');
+
+    // Thông báo nếu đây là thùng cuối cùng
+    if (suggestedQty + pickedQty + totalQtyInList === requiredQty) {
+        setWorkflowStatus('✓ Thùng này sẽ hoàn tất lệnh picking!', 'text-green-700');
+    }
 
     if (fromScanner && typeof window.closeQRScannerModal === 'function') {
         window.closeQRScannerModal();
@@ -1005,7 +1139,7 @@ function processBoxQrScan(parsed, fromScanner) {
     // Mode liên tục: tự động thêm vào danh sách
     if (isContinuousPickScan) {
         // Thêm vào danh sách
-        pickBoxList.push({ productId: parsed.productId, qty: suggestedQty });
+        pickBoxList.push({ productId: parsed.productId, qty: suggestedQty, boxId: parsed.boxId || '' });
         updatePickBoxListDisplay();
         updatePickBoxListCounter();
 
@@ -1013,8 +1147,16 @@ function processBoxQrScan(parsed, fromScanner) {
         $('#pick-qty-input').val('');
         $('#box-qr-input').val('').focus();
         pickingState.productConfirmed = false;
+        pickingState.currentBoxId = '';
 
-        setWorkflowStatus('Đã thêm vào danh sách. Tiếp tục quét thùng tiếp theo.', 'text-green-700');
+        // Thông báo nếu đây là thùng cuối cùng
+        if (pickedQty + totalQtyInList + suggestedQty === requiredQty) {
+            setWorkflowStatus('✓ Đã đủ số lượng! Nhấn OK để hoàn tất.', 'text-green-700');
+            $('#box-qr-input').prop('disabled', true);
+            $('#btn-parse-box').prop('disabled', true);
+        } else {
+            setWorkflowStatus('Đã thêm vào danh sách. Tiếp tục quét thùng tiếp theo.', 'text-green-700');
+        }
         return true;
     }
 
@@ -1150,14 +1292,15 @@ function addPickBoxItemFromInput() {
         return false;
     }
 
-    // Thêm vào danh sách
-    pickBoxList.push({ productId: pickingState.productId, qty: qty });
+    // Thêm vào danh sách (giữ box_id của tem vừa quét)
+    pickBoxList.push({ productId: pickingState.productId, qty: qty, boxId: pickingState.currentBoxId || '' });
     updatePickBoxListDisplay();
 
     // Reset input
     $('#pick-qty-input').val('');
     $('#box-qr-input').val('').focus();
     pickingState.productConfirmed = false;
+    pickingState.currentBoxId = '';
     hideError('#step3-error');
 
     setWorkflowStatus('Đã thêm vào danh sách. Tiếp tục quét thùng tiếp theo.', 'text-green-700');
@@ -1190,18 +1333,18 @@ function submitPickAndDeductStock() {
     }
 
     pickingState.busy = true;
+    currentPickBatchId = generatePickBatchId();
     $('#btn-submit-pick').prop('disabled', true);
     hideError('#step3-error');
     setWorkflowStatus('Đang trừ tồn và ghi giao dịch...', 'text-sky-700');
 
     const selectedShelfId = pickingState.selectedShelf.shelf_id;
     let successCount = 0;
-    let failureMessage = '';
+    let failedItems = [];
 
-    // Trừ tồn lần lượt cho mỗi thùng
-    const processItems = function(index) {
+    // Trừ tồn lần lượt cho mỗi thùng với retry logic
+    async function processItems(index) {
         if (index >= pickBoxList.length) {
-            // Hoàn thành trừ tồn cho tất cả items
             if (successCount === pickBoxList.length) {
                 // Update state
                 pickingState.pickedQty += totalQty;
@@ -1264,8 +1407,9 @@ function submitPickAndDeductStock() {
                 pickingState.busy = false;
             } else {
                 // Có lỗi xảy ra
-                showError('#step3-error', failureMessage || 'Không thể trừ tồn một số thùng.');
-                setWorkflowStatus('Trừ tồn thất bại', 'text-red-700');
+                const msg = `Không thể trừ tồn ${failedItems.length} thùng hàng. Các thùng thất bại: ${failedItems.join(', ')}`;
+                showError('#step3-error', msg);
+                setWorkflowStatus('Trừ tồn thất bại - kiểm tra kết nối mạng', 'text-red-700');
                 $('#btn-submit-pick').prop('disabled', false);
                 pickingState.busy = false;
             }
@@ -1273,28 +1417,51 @@ function submitPickAndDeductStock() {
         }
 
         const item = pickBoxList[index];
-        $.post('api.php?action=outbound_submit', {
+        const idempotencyKey = `${currentPickBatchId}-${index}`;
+
+        console.log('[picking trừ tồn] =>', {
             shelf_id: selectedShelfId,
             product_id: item.productId,
             quantity: item.qty,
-            command: pickingState.command,
-            case_no: '001',
-            is_picking: pickingState.command ? 1 : 0
-        }, function(res) {
-            if (res.success) {
-                successCount++;
-                processItems(index + 1);
-            } else {
-                failureMessage = res.message || `Không thể trừ tồn item ${item.productId}.`;
-                processItems(index + 1);
-            }
-        }).fail(function() {
-            failureMessage = 'Lỗi kết nối khi trừ tồn.';
-            processItems(index + 1);
+            box_id: item.boxId || '',
+            command: pickingState.command
         });
-    };
+
+        try {
+            const res = await submitOutboundWithRetry(
+                selectedShelfId,
+                item.productId,
+                item.qty,
+                pickingState.command,
+                '001',
+                pickingState.command ? 1 : 0,
+                idempotencyKey,
+                item.boxId || '',
+                3
+            );
+            successCount++;
+            await processItems(index + 1);
+        } catch (error) {
+            failedItems.push(`${item.productId}(${item.qty})`);
+            await processItems(index + 1);
+        }
+    }
 
     processItems(0);
+}
+
+function verifyExportLogReconciliation(batchId) {
+    return new Promise((resolve) => {
+        $.getJSON('api.php?action=verify_export_log', {
+            command: pickingState.command,
+            product_id: pickingState.productId,
+            batch_id: batchId
+        }, function(res) {
+            resolve(res);
+        }).fail(function() {
+            resolve({ success: false, log_recorded: false });
+        });
+    });
 }
 
 function finishCurrentPickingOrder() {
@@ -1305,11 +1472,30 @@ function finishCurrentPickingOrder() {
     const isComplete = pickingState.pickedQty >= pickingState.requiredQty;
     const status = isComplete ? 'success' : 'warning';
     const title = isComplete ? '✅ HOÀN TẤT' : '⚠️ HOÀN TẤT (CHƯA ĐỦ)';
-    const msg = `Mã hàng: ${pickingState.productId}\nĐã pick: ${pickingState.pickedQty} items\nCần pick: ${pickingState.requiredQty} items\n\nQuay lại màn hình chờ phiếu picking tiếp theo.`;
-    showModal(msg, status, title);
 
-    setWorkflowStatus(`Đã hoàn tất lệnh ${pickingState.productId} (${pickingState.pickedQty}/${pickingState.requiredQty}).`, 'text-green-700');
-    resetPickingJob(true);
+    let msg = `Mã hàng: ${pickingState.productId}\nĐã pick: ${pickingState.pickedQty} items\nCần pick: ${pickingState.requiredQty} items`;
+
+    // Nếu là picking command, thêm verification message
+    if (pickingState.command && currentPickBatchId) {
+        msg += '\n\n⏳ Đang xác minh log...';
+        showModal(msg, status, title);
+
+        verifyExportLogReconciliation(currentPickBatchId).then(function(verifyRes) {
+            if (verifyRes.success && verifyRes.log_recorded) {
+                msg = `Mã hàng: ${pickingState.productId}\nĐã pick: ${pickingState.pickedQty} items\nCần pick: ${pickingState.requiredQty} items\n✅ Export log đã được ghi (${verifyRes.log_count} record)\n\nQuay lại màn hình chờ phiếu picking tiếp theo.`;
+            } else {
+                msg = `Mã hàng: ${pickingState.productId}\nĐã pick: ${pickingState.pickedQty} items\nCần pick: ${pickingState.requiredQty} items\n⚠️ Không thể xác minh export log. Vui lòng báo cáo cho Leader!\n\nQuay lại màn hình chờ phiếu picking tiếp theo.`;
+            }
+            showModal(msg, status, title);
+            setWorkflowStatus(`Đã hoàn tất lệnh ${pickingState.productId} (${pickingState.pickedQty}/${pickingState.requiredQty}).`, 'text-green-700');
+            resetPickingJob(true);
+        });
+    } else {
+        msg += '\n\nQuay lại màn hình chờ phiếu picking tiếp theo.';
+        showModal(msg, status, title);
+        setWorkflowStatus(`Đã hoàn tất lệnh ${pickingState.productId} (${pickingState.pickedQty}/${pickingState.requiredQty}).`, 'text-green-700');
+        resetPickingJob(true);
+    }
 }
 
 $('#invoice-input').on('keydown', function(e) {
@@ -1340,7 +1526,13 @@ $('#box-qr-input').on('keydown', function(e) {
     }
 });
 
-// Tự động parse và fill số lượng khi quét thùng hàng
+// Tự động parse và fill số lượng khi quét thùng hàng.
+// QR tem thùng hiện có 2 dạng chạy song song: dạng cũ (~8 field, KHÔNG có box_id) và dạng mới
+// (~16 field, box_id ở index 8). Ngưỡng "đã gõ xong" phải nằm SAU field box_id của dạng mới để
+// không bao giờ chốt khi box_id còn đang gõ dở (đã gặp bug mất box_id ở inbound.php) - dạng cũ
+// (không có box_id, tối đa ~8 field) sẽ không tự-chốt qua đường debounce này (isLikelyComplete
+// luôn false), vẫn xử lý được nhờ Enter hoặc nút "Đọc QR thùng" (xem parseBoxQrAndSuggestQty),
+// không phụ thuộc ngưỡng field ở đây.
 $('#box-qr-input').on('input', function() {
     const rawValue = $(this).val();
     if (!rawValue || rawValue.indexOf('$') === -1) return;
@@ -1348,14 +1540,11 @@ $('#box-qr-input').on('input', function() {
     clearTimeout(boxQrScanTimer);
     boxQrScanTimer = setTimeout(function() {
         const finalRaw = $('#box-qr-input').val();
-        const isLikelyComplete = finalRaw.endsWith('$') || finalRaw.split('$').length >= 4;
+        const isLikelyComplete = finalRaw.endsWith('$') || finalRaw.split('$').length >= 10;
         if (isLikelyComplete) {
-            const parsed = parseBoxQr(finalRaw);
-            if (parsed) {
-                processBoxQrScan(parsed, false);
-            }
+            handleBoxQrRawFromDebounce(finalRaw);
         }
-    }, 100);
+    }, 150);
 });
 
 window.handleQRScannerScan = function(targetId, scannedValue) {
@@ -1368,6 +1557,9 @@ window.handleQRScannerScan = function(targetId, scannedValue) {
 
     if (targetId === 'box-qr-input') {
         $('#box-qr-input').val(normalizedValue);
+        // Kết quả trả về từ modal quét camera là 1 lượt quét trọn vẹn, chắc chắn đã xong
+        // -> không để dedup của debounce 'input' (nếu lỡ có) chặn lại.
+        lastHandledBoxQrRaw = '';
         return processBoxQrScan(parseBoxQr(normalizedValue), true);
     }
 

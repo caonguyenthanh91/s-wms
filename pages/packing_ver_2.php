@@ -74,8 +74,16 @@ if (!in_array($role, ['Staff', 'Leader', 'Manager', 'Admin'])) {
             </button>
         </div>
 
+        <div id="product-verify-wrap" class="relative mt-3 hidden">
+            <input type="text" id="product-verify-input" class="pda-input" placeholder="Quét mã hàng từ máy đọc OCR để đối chiếu" disabled>
+            <button type="button" onclick="openQRScannerModal('product-verify-input', 'Đối chiếu mã hàng')" class="absolute right-3 top-1/2 -translate-y-1/2 text-orange-600">
+                <i class="fas fa-qrcode text-lg"></i>
+            </button>
+        </div>
+        <div id="product-verify-hint" class="mt-2 text-xs text-amber-600 font-bold hidden"></div>
+
         <div class="mt-2 text-xs text-slate-600">
-            Quét đúng mã thuộc invoice sẽ tự động ghi log trạng thái <span class="font-bold">packing</span>, không cần bấm xác nhận.
+            Quét QR thùng để lấy mã hàng &amp; số lượng, sau đó quét mã hàng từ máy đọc OCR để đối chiếu. Chỉ khi khớp mã hàng mới ghi log trạng thái <span class="font-bold">packing</span>.
         </div>
 
         <div class="mt-3 flex gap-2">
@@ -223,15 +231,21 @@ let packingState = {
     scanCount: 0,
     busy: false,
     lastHandledQRRaw: '',
-    qrScanTimer: null
+    qrScanTimer: null,
+    pendingBox: null,
+    verifyScanTimer: null
 };
 
-function showModal(message, type = 'error', title = null) {
+let modalCloseCallback = null;
+
+function showModal(message, type = 'error', title = null, onClose = null) {
     const titles = {
         error: '❌ Lỗi',
         success: '✅ Thành công',
         warning: '⚠️ Cảnh báo'
     };
+
+    modalCloseCallback = typeof onClose === 'function' ? onClose : null;
 
     $('#error-modal-title').text(title || titles[type]);
     $('#error-modal-message').text(message);
@@ -245,6 +259,11 @@ function showErrorModal(message) {
 
 function closeErrorModal() {
     $('#error-modal').css('display', 'none');
+    const callback = modalCloseCallback;
+    modalCloseCallback = null;
+    if (typeof callback === 'function') {
+        callback();
+    }
 }
 
 function normalizeQrText(text) {
@@ -434,30 +453,19 @@ function parseBoxQr(rawValue) {
 
     if (parts.length < 4) return null;
 
-    // Vị trí cố định: mã hàng = index 1, số lượng = index 3 (chuẩn QR thùng hiện tại,
-    // kể cả QR mới có thêm box_id ở index 8 trở đi - các index đó chưa dùng ở packing).
-    // Không quét số từ cuối chuỗi: QR mới có nhiều field số phía sau box_id
-    // (...$0$0$0$0$<ngày>$0$<mã case>) dễ bắt nhầm thành số lượng.
     const productId = (parts[1] || '').toUpperCase();
     if (!productId) return null;
 
-    let qty = NaN;
-    if (/^\d+$/.test(parts[3] || '')) {
-        qty = parseInt(parts[3], 10);
-    } else {
-        for (let i = 3; i < parts.length; i++) {
-            if (/^\d+$/.test(parts[i]) && parseInt(parts[i], 10) > 0) {
-                qty = parseInt(parts[i], 10);
-                break;
-            }
+    let qtyToken = '';
+    for (let i = parts.length - 1; i >= 3; i--) {
+        if (/^\d+$/.test(parts[i])) {
+            qtyToken = parts[i];
+            break;
         }
     }
 
-    if (isNaN(qty) || qty <= 0) {
-        console.log('[packing box QR] parse FAIL =>', { raw: raw, parts: parts, productId: productId, qty: qty });
-        return null;
-    }
-    console.log('[packing box QR] product_id =', productId, '| quantity =', qty);
+    const qty = parseInt(qtyToken, 10);
+    if (isNaN(qty) || qty <= 0) return null;
 
     return { productId, qty, raw };
 }
@@ -594,15 +602,20 @@ function resetPackingJob(clearInvoiceInput) {
         scanCount: 0,
         busy: false,
         lastHandledQRRaw: '',
-        qrScanTimer: null
+        qrScanTimer: null,
+        pendingBox: null,
+        verifyScanTimer: null
     };
 
     hideError('#step1-error');
     hideError('#step2-error');
     showInfo('#step1-info', '');
     showInfo('#step2-info', '');
+    showInfo('#product-verify-hint', '');
 
     $('#box-qr-input').val('').prop('disabled', true);
+    $('#product-verify-input').val('').prop('disabled', true);
+    $('#product-verify-wrap').addClass('hidden');
     $('#invoice-pending-wrap').addClass('hidden');
     $('#invoice-pending-list').empty();
     $('#invoice-pending-summary').text('');
@@ -618,13 +631,21 @@ function resetPackingJob(clearInvoiceInput) {
     }
 }
 
-function processBoxScan(parsed, fromScanner) {
+// Bước chờ đối chiếu: sau khi quét QR thùng, tạm giữ mã hàng + số lượng
+// và bắt buộc quét lại mã hàng từ máy đọc OCR trước khi ghi log packing.
+function stageBoxScan(parsed, fromScanner) {
     if (packingState.busy) {
         return false;
     }
 
     if (!packingState.invoiceCode) {
         showError('#step2-error', 'Cần quét invoice ở bước 1 trước.');
+        return false;
+    }
+
+    if (packingState.pendingBox) {
+        showError('#step2-error', 'Đang chờ đối chiếu mã hàng của thùng trước. Quét mã hàng từ máy đọc OCR.');
+        $('#product-verify-input').focus();
         return false;
     }
 
@@ -636,6 +657,7 @@ function processBoxScan(parsed, fromScanner) {
         return false;
     }
 
+    // Đối chiếu mã hàng + số lượng của QR thùng ngay khi quét xong (trước khi qua bước OCR)
     const line = packingState.items.find(function(item) {
         return item.product_id === parsed.productId;
     });
@@ -663,6 +685,73 @@ function processBoxScan(parsed, fromScanner) {
         if (fromScanner && typeof window.resetQRScannerModalState === 'function') {
             window.resetQRScannerModalState();
         }
+        return false;
+    }
+
+    // QR thùng hợp lệ -> tạm giữ, chuyển sang bước đối chiếu OCR trên tem
+    packingState.pendingBox = {
+        productId: parsed.productId,
+        qty: parsed.qty,
+        raw: parsed.raw,
+        fromScanner: !!fromScanner
+    };
+
+    hideError('#step2-error');
+    $('#box-qr-input').prop('disabled', true);
+    $('#product-verify-wrap').removeClass('hidden');
+    $('#product-verify-input').val('').prop('disabled', false).focus();
+    showInfo('#product-verify-hint', `Đã quét thùng: ${parsed.productId} (SL ${parsed.qty}). Quét mã hàng trên tem (OCR) để đối chiếu.`);
+    setWorkflowStatus('Chờ đối chiếu mã hàng OCR', 'text-amber-700');
+
+    if (fromScanner && typeof window.closeQRScannerModal === 'function') {
+        window.closeQRScannerModal();
+    }
+
+    return true;
+}
+
+function handleProductVerifyScan() {
+    if (packingState.busy) return;
+
+    const pending = packingState.pendingBox;
+    if (!pending) return;
+
+    const scanned = normalizeQrText($('#product-verify-input').val());
+    if (!scanned) return;
+
+    if (scanned !== pending.productId) {
+        // Sai mã hàng trên tem -> chặn ô OCR lại, bắt buộc nhấn OK mới được quét tiếp
+        $('#product-verify-input').prop('disabled', true);
+        showError('#step2-error', `Không khớp mã hàng. Cần: ${pending.productId} — Đã quét: ${scanned}`);
+        setWorkflowStatus('Sai mã hàng đối chiếu OCR', 'text-red-700');
+        showModal(
+            `Mã hàng trên tem không khớp với mã hàng của thùng.\n\nCần: ${pending.productId}\nĐã quét: ${scanned}`,
+            'error',
+            'Không khớp mã hàng',
+            function() {
+                $('#product-verify-input').val('').prop('disabled', false).focus();
+            }
+        );
+        return;
+    }
+
+    // Khớp mã hàng ở cả 2 bước (QR thùng + OCR tem) -> tiếp tục luồng ghi log như ban đầu
+    hideError('#step2-error');
+    showInfo('#product-verify-hint', '');
+    $('#product-verify-input').val('').prop('disabled', true);
+    $('#product-verify-wrap').addClass('hidden');
+    $('#box-qr-input').prop('disabled', false);
+
+    packingState.pendingBox = null;
+    processBoxScan({ productId: pending.productId, qty: pending.qty, raw: pending.raw }, pending.fromScanner);
+}
+
+function processBoxScan(parsed, fromScanner) {
+    if (packingState.busy) {
+        return false;
+    }
+
+    if (!packingState.invoiceCode || !parsed) {
         return false;
     }
 
@@ -752,20 +841,15 @@ $('#box-qr-input').on('input', function() {
         const finalRaw = normalizeQrText($('#box-qr-input').val());
         if (!finalRaw || finalRaw === packingState.lastHandledQRRaw) return;
 
-        // Ngưỡng >=10 đồng bộ với picking.php/outbound.php: đảm bảo đã gõ qua khỏi field box_id
-        // (index 8, dù packing chưa dùng) trước khi coi là "đã quét xong" - tránh chốt sớm giữa
-        // chừng khi máy quét có khoảng dừng ký tự, gây phát sinh 1 lượt packing ảo cho cùng 1
-        // thùng. Tem cũ (~8 field, không box_id) không tự-chốt qua ngưỡng này, vẫn xử lý được
-        // nhờ Enter (xem handler keydown bên dưới).
-        const isLikelyComplete = finalRaw.endsWith('$') || finalRaw.split('$').length >= 10;
+        const isLikelyComplete = finalRaw.endsWith('$') || finalRaw.split('$').length >= 7;
         if (!isLikelyComplete) return;
 
         const parsed = parseBoxQr(finalRaw);
         if (!parsed) return;
 
         packingState.lastHandledQRRaw = finalRaw;
-        processBoxScan(parsed, false);
-    }, 150);
+        stageBoxScan(parsed, false);
+    }, 110);
 });
 
 $('#box-qr-input').on('keydown', function(e) {
@@ -776,8 +860,30 @@ $('#box-qr-input').on('keydown', function(e) {
         if (raw) {
             packingState.lastHandledQRRaw = raw;
         }
-        processBoxScan(parsed, false);
+        stageBoxScan(parsed, false);
     }
+});
+
+$('#product-verify-input').on('keydown', function(e) {
+    if (e.which === 13) {
+        e.preventDefault();
+        clearTimeout(packingState.verifyScanTimer);
+        handleProductVerifyScan();
+    }
+});
+
+$('#product-verify-input').on('input', function() {
+    if (!packingState.pendingBox) return;
+    const scanned = normalizeQrText($(this).val());
+    if (!scanned) return;
+    clearTimeout(packingState.verifyScanTimer);
+    packingState.verifyScanTimer = setTimeout(function() {
+        // Chỉ tự đối chiếu khi đã gõ đủ độ dài mã hàng cần khớp (tránh báo lỗi giữa chừng)
+        const current = normalizeQrText($('#product-verify-input').val());
+        if (packingState.pendingBox && current.length >= packingState.pendingBox.productId.length) {
+            handleProductVerifyScan();
+        }
+    }, 150);
 });
 
 window.handleQRScannerScan = function(targetId, scannedValue) {
@@ -792,7 +898,13 @@ window.handleQRScannerScan = function(targetId, scannedValue) {
     if (targetId === 'box-qr-input') {
         $('#box-qr-input').val(normalizedValue);
         packingState.lastHandledQRRaw = normalizedValue;
-        return processBoxScan(parseBoxQr(normalizedValue), true);
+        return stageBoxScan(parseBoxQr(normalizedValue), true);
+    }
+
+    if (targetId === 'product-verify-input') {
+        $('#product-verify-input').val(normalizedValue);
+        handleProductVerifyScan();
+        return true;
     }
 
     return false;

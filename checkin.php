@@ -1,5 +1,5 @@
 <?php
-// S-WMS Export Monitor - Bảng tiến độ xuất hàng full-screen cho màn hình TV lớn.
+// S-WMS Checkin Monitor - Bảng tiến độ nhập hàng full-screen cho màn hình TV lớn.
 // Không cần đăng nhập (Guest). Tự động tải lại dữ liệu mỗi 5 phút và cuộn danh sách tự động.
 require_once __DIR__ . '/config/session_init.php';
 
@@ -19,7 +19,7 @@ $fontAwesomeCssVersion = file_exists($fontAwesomeCssPath) ? (string) filemtime($
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>S-WMS Export Monitor · Bảng tiến độ xuất hàng</title>
+    <title>S-WMS Checkin Monitor · Bảng tiến độ nhập hàng</title>
     <link rel="icon" type="image/png" sizes="16x16" href="<?php echo $assetBaseUrl; ?>assets/img/icon.png">
     <link rel="stylesheet" href="<?php echo $assetBaseUrl; ?>assets/css/all.min.css?v=<?php echo $fontAwesomeCssVersion; ?>">
     <script src="<?php echo $assetBaseUrl; ?>assets/js/jquery.min.js"></script>
@@ -157,9 +157,10 @@ $fontAwesomeCssVersion = file_exists($fontAwesomeCssPath) ? (string) filemtime($
             content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
             background: var(--accent);
         }
-        .kpi.k-picking::before { background: var(--amber); }
-        .kpi.k-packing::before { background: var(--accent); }
-        .kpi.k-pickup::before { background: var(--green); }
+        .kpi.k-pending::before { background: var(--red); }
+        .kpi.k-received::before { background: var(--amber); }
+        .kpi.k-imported::before { background: var(--green); }
+        .kpi.k-backlog::before { background: var(--accent); }
         .kpi-icon {
             font-size: clamp(1.2rem, 1.8vw, 1.9rem);
             color: var(--text-dim); width: 1.6em; text-align: center;
@@ -210,49 +211,14 @@ $fontAwesomeCssVersion = file_exists($fontAwesomeCssPath) ? (string) filemtime($
         @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
 
         .cell-cmd { font-size: clamp(1rem, 1.5vw, 1.6rem); font-weight: 800; letter-spacing: 0.03em; font-family: "Consolas", "Menlo", monospace; }
-        .cell-cmd .cust { display:block; font-size: 0.62em; color: var(--text-dim); font-weight: 600; letter-spacing: 0.04em; margin-top: 0.15rem; }
         .cell-date { font-size: clamp(0.8rem, 1.1vw, 1.15rem); color: var(--text-dim); font-weight: 600; }
 
-        .chip {
-            display: inline-flex; align-items: center; gap: 0.4em;
-            padding: 0.25em 0.7em; border-radius: 999px;
-            font-size: clamp(0.72rem, 1vw, 1.05rem); font-weight: 700; letter-spacing: 0.05em;
-        }
-        .chip-sea { background: rgba(56,189,248,0.16); color: var(--accent); }
-        .chip-air { background: rgba(99,102,241,0.18); color: #818cf8; }
-
-        /* progress cell */
-        .prog { display: flex; flex-direction: column; gap: 0.35rem; }
-        .prog-head { display: flex; align-items: baseline; gap: 0.15rem; font-weight: 800; }
-        .prog-done { font-size: clamp(1.05rem, 1.7vw, 1.9rem); }
-        .prog-sep { font-size: clamp(0.85rem, 1.2vw, 1.3rem); color: var(--text-faint); }
-        .prog-total { font-size: clamp(0.85rem, 1.2vw, 1.3rem); color: var(--text-dim); }
-        .prog-bar { height: clamp(6px, 0.7vw, 10px); border-radius: 999px; background: var(--track); overflow: hidden; }
-        .prog-fill { height: 100%; border-radius: 999px; transition: width 0.6s ease; }
-        .prog-remain { font-size: clamp(0.64rem, 0.9vw, 0.92rem); font-weight: 600; letter-spacing: 0.02em; }
-
-        .is-done .prog-done { color: var(--green); }
-        .is-done .prog-fill { background: var(--green); }
-        .is-done .prog-remain { color: var(--green); }
-        .is-partial .prog-done { color: var(--amber); }
-        .is-partial .prog-fill { background: var(--amber); }
-        .is-partial .prog-remain { color: var(--amber); }
-        .is-none .prog-done { color: var(--red); }
-        .is-none .prog-fill { background: var(--red); }
-        .is-none .prog-remain { color: var(--red); }
-
-        .cell-pickup-time { font-size: clamp(0.85rem, 1.15vw, 1.25rem); font-weight: 700; color: var(--text-dim); }
-        .cell-pickup-time.done { color: var(--green); }
-
-        .status-pill {
-            display: inline-flex; align-items: center; gap: 0.45em;
-            font-size: clamp(0.7rem, 0.95vw, 1rem); font-weight: 700;
-            padding: 0.3em 0.7em; border-radius: 999px;
-        }
-        .status-pill i { font-size: 0.85em; }
-        .st-done { background: var(--green-soft); color: var(--green); }
-        .st-progress { background: var(--amber-soft); color: var(--amber); }
-        .st-wait { background: var(--red-soft); color: var(--red); }
+        /* stat cell: plain count of pallets for a given stage */
+        .stat-num { font-size: clamp(1.15rem, 1.9vw, 2.1rem); font-weight: 800; line-height: 1; text-align: center; }
+        .stat-num.pending { color: var(--red); }
+        .stat-num.received { color: var(--amber); }
+        .stat-num.imported { color: var(--green); }
+        .stat-num.backlog { color: var(--accent); }
 
         .board-empty {
             display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -288,14 +254,14 @@ $fontAwesomeCssVersion = file_exists($fontAwesomeCssPath) ? (string) filemtime($
     </style>
 </head>
 <body>
-    <!-- Grid template shared by header + rows: Invoice | Date | Type | Picking | Packing | Pickup | Status | Time -->
-    <div id="board" style="--grid: 1.5fr 0.9fr 0.8fr 1.4fr 1.4fr 1.4fr 1fr 0.9fr;">
+    <!-- Grid template shared by header + rows: Ngày | Chủng loại | [Hôm nay] Đang đóng | [Hôm nay] Đã nhận | [Hôm nay] Đã cất kho | [Lũy kế] Nhận chưa cất -->
+    <div id="board" style="--grid: 0.8fr 1.3fr 1.3fr 1.3fr 1.3fr 1.3fr;">
         <div class="board-head">
             <div class="brand">
-                <div class="brand-logo"><i class="fa-solid fa-truck-fast"></i></div>
+                <div class="brand-logo"><i class="fa-solid fa-dolly"></i></div>
                 <div>
-                    <div class="brand-sub">S-WMS Export Monitor</div>
-                    <div class="brand-title">Bảng tiến độ xuất hàng</div>
+                    <div class="brand-sub">S-WMS Checkin Monitor</div>
+                    <div class="brand-title">Bảng tiến độ nhập hàng</div>
                 </div>
             </div>
             <div class="head-right">
@@ -310,46 +276,44 @@ $fontAwesomeCssVersion = file_exists($fontAwesomeCssPath) ? (string) filemtime($
         </div>
 
         <div class="kpi-strip">
-            <div class="kpi">
-                <div class="kpi-icon"><i class="fa-solid fa-file-invoice"></i></div>
+            <div class="kpi k-pending">
+                <div class="kpi-icon"><i class="fa-solid fa-box-open"></i></div>
                 <div class="kpi-body">
-                    <div class="kpi-value" id="kpi-total">0</div>
-                    <div class="kpi-label">Tổng Invoice</div>
+                    <div class="kpi-value" id="kpi-pending">0</div>
+                    <div class="kpi-label">[Hôm nay] Đang đóng Pallet</div>
                 </div>
             </div>
-            <div class="kpi k-picking">
-                <div class="kpi-icon"><i class="fa-solid fa-hand"></i></div>
-                <div class="kpi-body">
-                    <div class="kpi-value" id="kpi-picking">0<small> /0</small></div>
-                    <div class="kpi-label">Picking xong</div>
-                </div>
-            </div>
-            <div class="kpi k-packing">
-                <div class="kpi-icon"><i class="fa-solid fa-box"></i></div>
-                <div class="kpi-body">
-                    <div class="kpi-value" id="kpi-packing">0<small> /0</small></div>
-                    <div class="kpi-label">Packing xong</div>
-                </div>
-            </div>
-            <div class="kpi k-pickup">
+            <div class="kpi k-received">
                 <div class="kpi-icon"><i class="fa-solid fa-truck-ramp-box"></i></div>
                 <div class="kpi-body">
-                    <div class="kpi-value" id="kpi-pickup">0<small> /0</small></div>
-                    <div class="kpi-label">Pickup xong</div>
+                    <div class="kpi-value" id="kpi-received">0</div>
+                    <div class="kpi-label">[Hôm nay] Đã nhận Pallet</div>
+                </div>
+            </div>
+            <div class="kpi k-imported">
+                <div class="kpi-icon"><i class="fa-solid fa-warehouse"></i></div>
+                <div class="kpi-body">
+                    <div class="kpi-value" id="kpi-imported">0</div>
+                    <div class="kpi-label">[Hôm nay] Đã cất kho</div>
+                </div>
+            </div>
+            <div class="kpi k-backlog">
+                <div class="kpi-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <div class="kpi-body">
+                    <div class="kpi-value" id="kpi-backlog">0</div>
+                    <div class="kpi-label">[Lũy kế] Đã nhận chưa cất kho</div>
                 </div>
             </div>
         </div>
 
         <div class="board-panel">
             <div class="board-thead">
-                <div>Invoice / Khách hàng</div>
-                <div>Ngày xuất</div>
-                <div>Vận chuyển</div>
-                <div class="col-num">Picking (SP)</div>
-                <div class="col-num">Packing (kiện)</div>
-                <div class="col-num">Pickup (kiện)</div>
-                <div class="col-num">Trạng thái</div>
-                <div class="col-num">Giờ bốc</div>
+                <div>Ngày</div>
+                <div>Chủng loại</div>
+                <div class="col-num">[Hôm nay] Đang đóng</div>
+                <div class="col-num">[Hôm nay] Đã nhận</div>
+                <div class="col-num">[Hôm nay] Đã cất kho</div>
+                <div class="col-num">[Lũy kế] Nhận chưa cất</div>
             </div>
             <div class="board-scroll" id="board-scroll">
                 <div class="board-track" id="board-track">
@@ -406,46 +370,8 @@ $fontAwesomeCssVersion = file_exists($fontAwesomeCssPath) ? (string) filemtime($
             return pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1);
         }
 
-        function fmtPickupTime(value) {
-            if (!value) return '--';
-            var d = new Date(String(value).replace(' ', 'T'));
-            if (isNaN(d.getTime())) return '--';
-            return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
-        }
-
-        function progClass(done, total) {
-            if (total <= 0) return 'is-none';
-            if (done >= total) return 'is-done';
-            if (done > 0) return 'is-partial';
-            return 'is-none';
-        }
-
-        function progCell(done, total, remainLabel) {
-            var cls = progClass(done, total);
-            var pct = total > 0 ? Math.min(100, Math.round(done / total * 100)) : 0;
-            var remain = Math.max(0, total - done);
-            return '<div class="prog ' + cls + '">' +
-                '<div class="prog-head"><span class="prog-done">' + done + '</span>' +
-                '<span class="prog-sep">/</span><span class="prog-total">' + total + '</span></div>' +
-                '<div class="prog-bar"><div class="prog-fill" style="width:' + pct + '%"></div></div>' +
-                '<div class="prog-remain">' + (remain > 0 ? 'Còn ' + remain + ' ' + remainLabel : '✓ Đủ') + '</div>' +
-                '</div>';
-        }
-
-        function statusPill(pickDone, packDone, pickupDone, totalItems, totalCases) {
-            if (totalItems <= 0 && totalCases <= 0) {
-                return '<span class="status-pill st-wait"><i class="fa-solid fa-hourglass-start"></i> Chờ</span>';
-            }
-            if (pickupDone) {
-                return '<span class="status-pill st-done"><i class="fa-solid fa-circle-check"></i> Hoàn tất</span>';
-            }
-            if (pickDone && packDone) {
-                return '<span class="status-pill st-progress"><i class="fa-solid fa-truck-ramp-box"></i> Chờ bốc</span>';
-            }
-            if (pickDone) {
-                return '<span class="status-pill st-progress"><i class="fa-solid fa-box"></i> Packing</span>';
-            }
-            return '<span class="status-pill st-progress"><i class="fa-solid fa-hand"></i> Picking</span>';
+        function statCell(count, cls) {
+            return '<div class="stat-num ' + cls + '">' + count + '</div>';
         }
 
         function renderRows(rows) {
@@ -454,60 +380,34 @@ $fontAwesomeCssVersion = file_exists($fontAwesomeCssPath) ? (string) filemtime($
 
             if (!rows || !rows.length) {
                 track.html('<div class="board-empty"><i class="fa-solid fa-clipboard-check"></i>' +
-                    '<span>Chưa có Invoice nào trong ngày.</span></div>');
+                    '<span>Chưa có Pallet nào trong ngày.</span></div>');
                 return;
             }
 
             var html = '';
             rows.forEach(function(row) {
-                var totalItems = parseInt(row.total_items, 10) || 0;      // count distinct product_id
-                var pickItems = parseInt(row.picking_items, 10) || 0;     // count distinct product_id done picking
-                var packItems = parseInt(row.packing_items, 10) || 0;     // count distinct case_no done packing
-                var totalCases = parseInt(row.total_cases, 10) || 0;      // count distinct case_no
-                var pickedCases = parseInt(row.picked_cases, 10) || 0;    // count distinct case_no done pickup
-
-                var pickDone = totalItems > 0 && pickItems >= totalItems;       // picking: product_id vs product_id
-                var packDone = totalCases > 0 && packItems >= totalCases;       // packing: case_no vs case_no
-                var pickupDone = totalCases > 0 && pickedCases >= totalCases;   // pickup: case_no vs case_no
-
-                var type = String(row.transport_type || 'SEA').toUpperCase();
-                var chipCls = (type.indexOf('AIR') >= 0) ? 'chip-air' : 'chip-sea';
-                var chipIcon = (type.indexOf('AIR') >= 0) ? 'fa-plane' : 'fa-ship';
-                var cust = String(row.for_product || '').trim();
-
-                var pickupTime = fmtPickupTime(row.last_pickup_at);
+                var pendingToday = parseInt(row.pending_today, 10) || 0;
+                var receivedToday = parseInt(row.received_today, 10) || 0;
+                var importedToday = parseInt(row.imported_today, 10) || 0;
+                var backlogReceived = parseInt(row.backlog_received, 10) || 0;
 
                 html += '<div class="brow">' +
-                    '<div class="cell-cmd">' + escHtml(row.command) +
-                        (cust ? '<span class="cust"><i class="fa-solid fa-user-tag"></i> ' + escHtml(cust) + '</span>' : '') +
-                    '</div>' +
-                    '<div class="cell-date">' + fmtDate(row.export_date) + '</div>' +
-                    '<div><span class="chip ' + chipCls + '"><i class="fa-solid ' + chipIcon + '"></i> ' + escHtml(type) + '</span></div>' +
-                    '<div>' + progCell(pickItems, totalItems, 'SP') + '</div>' +
-                    '<div>' + progCell(packItems, totalCases, 'kiện') + '</div>' +
-                    '<div>' + progCell(pickedCases, totalCases, 'kiện') + '</div>' +
-                    '<div class="col-num" style="text-align:center;">' +
-                        statusPill(pickDone, packDone, pickupDone, totalItems, totalCases) + '</div>' +
-                    '<div class="cell-pickup-time' + (pickupDone ? ' done' : '') + '" style="text-align:center;">' +
-                        escHtml(pickupTime) + '</div>' +
+                    '<div class="cell-date">' + fmtDate(row.date) + '</div>' +
+                    '<div class="cell-cmd">' + escHtml(row.category) + '</div>' +
+                    '<div class="col-num">' + statCell(pendingToday, 'pending') + '</div>' +
+                    '<div class="col-num">' + statCell(receivedToday, 'received') + '</div>' +
+                    '<div class="col-num">' + statCell(importedToday, 'imported') + '</div>' +
+                    '<div class="col-num">' + statCell(backlogReceived, 'backlog') + '</div>' +
                 '</div>';
             });
             track.html(html);
         }
 
-        function renderKpi(rows) {
-            var total = rows.length, pk = 0, pc = 0, pu = 0;
-            rows.forEach(function(row) {
-                var ti = parseInt(row.total_items, 10) || 0;
-                var tc = parseInt(row.total_cases, 10) || 0;
-                if (ti > 0 && (parseInt(row.picking_items, 10) || 0) >= ti) pk++;        // picking: product_id vs product_id
-                if (tc > 0 && (parseInt(row.packing_items, 10) || 0) >= tc) pc++;        // packing: case_no vs case_no
-                if (tc > 0 && (parseInt(row.picked_cases, 10) || 0) >= tc) pu++;         // pickup: case_no vs case_no
-            });
-            $('#kpi-total').text(total);
-            $('#kpi-picking').html(pk + '<small> /' + total + '</small>');
-            $('#kpi-packing').html(pc + '<small> /' + total + '</small>');
-            $('#kpi-pickup').html(pu + '<small> /' + total + '</small>');
+        function renderKpi(kpi) {
+            $('#kpi-pending').text(kpi.pending_today || 0);
+            $('#kpi-received').text(kpi.received_today || 0);
+            $('#kpi-imported').text(kpi.imported_today || 0);
+            $('#kpi-backlog').text(kpi.backlog_received || 0);
         }
 
         function setStatus(text, isError) {
@@ -553,16 +453,16 @@ $fontAwesomeCssVersion = file_exists($fontAwesomeCssPath) ? (string) filemtime($
         /* ===== Load data ===== */
         function loadBoard() {
             var date = toYmd(new Date());
-            $.getJSON('api.php?action=get_monitor_board', { date: date }, function(res) {
+            $.getJSON('api.php?action=get_checkin_board', { date: date }, function(res) {
                 if (!res || !res.success) {
                     setStatus((res && res.message) ? res.message : 'Không thể tải dữ liệu.', true);
                     return;
                 }
                 var rows = res.rows || [];
                 renderRows(rows);
-                renderKpi(rows);
+                renderKpi(res.kpi || {});
                 var now = new Date();
-                setStatus('Trực tiếp · ' + rows.length + ' Invoice trong ngày', false);
+                setStatus('Trực tiếp · ' + rows.length + ' chủng loại trong ngày', false);
                 $('#foot-updated').text('Cập nhật: ' + pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + ':' + pad2(now.getSeconds()));
                 startAutoScroll();
             }).fail(function(xhr) {
@@ -576,12 +476,12 @@ $fontAwesomeCssVersion = file_exists($fontAwesomeCssPath) ? (string) filemtime($
         function applyTheme(theme) {
             document.documentElement.setAttribute('data-theme', theme);
             $('#theme-toggle i').attr('class', theme === 'dark' ? 'fa-solid fa-moon' : 'fa-solid fa-sun');
-            try { localStorage.setItem('swms-monitor-theme', theme); } catch (e) {}
+            try { localStorage.setItem('swms-checkin-theme', theme); } catch (e) {}
         }
 
         $(document).ready(function() {
             var saved = 'dark';
-            try { saved = localStorage.getItem('swms-monitor-theme') || 'dark'; } catch (e) {}
+            try { saved = localStorage.getItem('swms-checkin-theme') || 'dark'; } catch (e) {}
             applyTheme(saved);
 
             $('#theme-toggle').on('click', function() {
