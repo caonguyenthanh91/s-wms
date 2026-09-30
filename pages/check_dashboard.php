@@ -168,6 +168,12 @@ function cdEsc(text) {
         .replace(/'/g, '&#039;');
 }
 
+function cdFmtNum(n) {
+    if (n === null || n === undefined || n === '') return n;
+    const num = Number(n);
+    return isNaN(num) ? n : num.toLocaleString('en-US');
+}
+
 function cdSetStatus(text, isError) {
     const el = $('#cd-status');
     el.text(text || '');
@@ -238,10 +244,10 @@ function cdLoadSummary() {
         }
 
         const t = res.totals || {};
-        $('#cd-kpi-stock').text(t.shelves_with_stock ?? 0);
-        $('#cd-kpi-checked').text(t.shelves_checked ?? 0);
-        $('#cd-kpi-remaining').text(t.shelves_remaining ?? 0);
-        $('#cd-kpi-mismatch').text(t.shelves_mismatch ?? 0);
+        $('#cd-kpi-stock').text(cdFmtNum(t.shelves_with_stock ?? 0));
+        $('#cd-kpi-checked').text(cdFmtNum(t.shelves_checked ?? 0));
+        $('#cd-kpi-remaining').text(cdFmtNum(t.shelves_remaining ?? 0));
+        $('#cd-kpi-mismatch').text(cdFmtNum(t.shelves_mismatch ?? 0));
 
         cdRenderZoneTable(res.by_zone || []);
         cdSetStatus('Cập nhật lúc ' + new Date().toLocaleTimeString('vi-VN'));
@@ -268,12 +274,12 @@ function cdRenderZoneTable(zones) {
 
         html += '<tr class="border-b hover:bg-gray-50">' +
             '<td class="p-2 font-mono font-bold text-gray-800">' + cdEsc(z.zone) + '</td>' +
-            '<td class="p-2 text-right">' + stock + '</td>' +
-            '<td class="p-2 text-right text-emerald-700 font-semibold">' + checked + '</td>' +
-            '<td class="p-2 text-right text-amber-700 font-semibold">' + remaining + '</td>' +
+            '<td class="p-2 text-right">' + cdFmtNum(stock) + '</td>' +
+            '<td class="p-2 text-right text-emerald-700 font-semibold">' + cdFmtNum(checked) + '</td>' +
+            '<td class="p-2 text-right text-amber-700 font-semibold">' + cdFmtNum(remaining) + '</td>' +
             '<td class="p-2 text-right">' +
                 (mismatch > 0
-                    ? '<button type="button" class="text-red-600 font-bold hover:underline" onclick="cdFilterByZone(\'' + zoneAttr.replace(/'/g, "\\'") + '\')">' + mismatch + '</button>'
+                    ? '<button type="button" class="text-red-600 font-bold hover:underline" onclick="cdFilterByZone(\'' + zoneAttr.replace(/'/g, "\\'") + '\')">' + cdFmtNum(mismatch) + '</button>'
                     : '<span class="text-gray-400">0</span>') +
             '</td>' +
             '<td class="p-2">' +
@@ -361,8 +367,8 @@ function cdRenderMismatchPage() {
 
     let html = '';
     pageItems.forEach(function(it) {
-        const diff = (it.diff === null || it.diff === undefined) ? '(ngoài HT)' : (it.diff > 0 ? '+' + it.diff : it.diff);
-        const sys = (it.system_qty === null || it.system_qty === undefined) ? '—' : it.system_qty;
+        const diff = (it.diff === null || it.diff === undefined) ? '(ngoài HT)' : (it.diff > 0 ? '+' + cdFmtNum(it.diff) : cdFmtNum(it.diff));
+        const sys = (it.system_qty === null || it.system_qty === undefined) ? '—' : cdFmtNum(it.system_qty);
         const shelfAttr = cdEsc(it.shelf_id).replace(/'/g, "\\'");
 
         html += '<tr class="border-b hover:bg-gray-50">' +
@@ -370,7 +376,7 @@ function cdRenderMismatchPage() {
             '<td class="p-2 font-mono text-xs text-gray-600">' + cdEsc(it.zone) + '</td>' +
             '<td class="p-2 font-mono font-bold">' + cdEsc(it.product_id) + '</td>' +
             '<td class="p-2 text-xs text-gray-600">' + cdEsc(it.product_name) + '</td>' +
-            '<td class="p-2 text-right font-semibold">' + it.counted_qty + '</td>' +
+            '<td class="p-2 text-right font-semibold">' + cdFmtNum(it.counted_qty) + '</td>' +
             '<td class="p-2 text-right">' + sys + '</td>' +
             '<td class="p-2 text-right font-bold text-red-600">' + diff + '</td>' +
             '<td class="p-2 text-xs">' + cdEsc(it.checked_by) + '</td>' +

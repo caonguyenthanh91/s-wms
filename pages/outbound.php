@@ -652,8 +652,23 @@ function renderShelfBoxBreakdown() {
     </div>`);
 }
 
+// Chặn gửi trùng: double-click / Enter lặp khi request đang chạy.
+let outboundSubmitting = false;
+
 async function submitOutbound() {
+    if (outboundSubmitting) return;
     if (outboundItems.length === 0) return showModal('Danh sách xuất trống!', 'warning');
+    outboundSubmitting = true;
+    const btn = $('#btn-submit-outbound').prop('disabled', true).addClass('opacity-50 cursor-not-allowed');
+    try {
+        await doSubmitOutbound();
+    } finally {
+        outboundSubmitting = false;
+        btn.prop('disabled', false).removeClass('opacity-50 cursor-not-allowed');
+    }
+}
+
+async function doSubmitOutbound() {
     const shelfId = $('#display-shelf').text();
 
     // Lấy tồn realtime: tổng theo mã hàng (luồng cũ) + tách theo thùng (luồng mới).
@@ -711,16 +726,25 @@ async function submitOutbound() {
     }
 
     for (const item of submitItems) {
-        const res = await $.post('api.php?action=outbound_basic_submit', {
-            shelf_id: shelfId,
-            product_id: item.product_id,
-            quantity: item.quantity,
-            box_id: item.box_id || ''
-        });
+        let res;
+        try {
+            res = await $.post('api.php?action=outbound_basic_submit', {
+                shelf_id: shelfId,
+                product_id: item.product_id,
+                quantity: item.quantity,
+                box_id: item.box_id || ''
+            });
+        } catch (e) {
+            res = { success: false, message: 'Lỗi kết nối máy chủ! Kiểm tra lại tồn kho trước khi xuất lại.' };
+        }
         if (!res.success) {
             showModal(buildOutboundSubmitErrorMessage(res), 'error');
             return;
         }
+        // Đã ghi thành công -> bỏ khỏi danh sách để lần bấm lại không xuất trùng.
+        outboundItems = outboundItems.filter(it =>
+            !((it.product_id || '').toUpperCase() === item.product_id && (it.box_id || '') === item.box_id));
+        renderOutboundList();
     }
     showModal('Xuất kho thành công!', 'success');
 }

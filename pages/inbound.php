@@ -157,7 +157,7 @@
         </table>
         </div>
 
-        <button onclick="submitInbound()" class="w-full bg-blue-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-blue-700 shadow-lg">✓ Hoàn Tất Nhập Kho</button>
+        <button id="btn-submit-inbound" onclick="submitInbound()" class="w-full bg-blue-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-blue-700 shadow-lg">✓ Hoàn Tất Nhập Kho</button>
 
         <!-- Danh sách hàng hiện có trên kệ được chuyển xuống dưới cùng -->
         <div id="current-stock" class="mt-4 p-3 bg-blue-50 rounded-lg hidden border-t-2 border-blue-200">
@@ -585,16 +585,31 @@ function removeItem(index) {
     renderItemList();
 }
 
+// Chặn gửi trùng: double-click / Enter lặp khi request đang chạy.
+let inboundSubmitting = false;
+
 async function submitInbound() {
+    if (inboundSubmitting) return;
     if (inboundItems.length === 0) {
         showModal('Danh sách hàng trống!', 'warning');
         return;
     }
+    inboundSubmitting = true;
+    const btn = $('#btn-submit-inbound').prop('disabled', true).addClass('opacity-50 cursor-not-allowed');
+    try {
+        await doSubmitInbound();
+    } finally {
+        inboundSubmitting = false;
+        btn.prop('disabled', false).removeClass('opacity-50 cursor-not-allowed');
+    }
+}
+
+async function doSubmitInbound() {
 
     const shelfId = $('#display-shelf').text();
     let hasError = false;
 
-    for (const item of inboundItems) {
+    for (const item of inboundItems.slice()) {
         try {
             const meta = item.box_id ? (item.box_meta || {}) : {};
             const payload = {
@@ -618,6 +633,9 @@ async function submitInbound() {
                 hasError = true;
                 break;
             }
+            // Đã ghi thành công -> bỏ khỏi danh sách để lần bấm lại không nhập trùng.
+            inboundItems = inboundItems.filter(it => it !== item);
+            renderItemList();
         } catch (e) {
             showModal('Lỗi kết nối máy chủ!', 'error');
             hasError = true;

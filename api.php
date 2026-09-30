@@ -81,6 +81,10 @@ function ensure_export_log_schema(PDO $pdo) {
         if (!isset($columnNames['idempotency_key'])) {
             $pdo->exec('ALTER TABLE export_log ADD COLUMN idempotency_key VARCHAR(255) NULL UNIQUE');
         }
+        if (!isset($columnNames['order_code'])) {
+            $pdo->exec('ALTER TABLE export_log ADD COLUMN order_code VARCHAR(120) NULL DEFAULT NULL AFTER status');
+            $pdo->exec('ALTER TABLE export_log ADD KEY idx_export_log_order_code (order_code)');
+        }
     } catch (Throwable $e) {}
 }
 
@@ -2979,12 +2983,15 @@ switch ($action) {
         }
 
         $stmt = $pdo->prepare(
-            "SELECT SUM(total_qty) AS required_qty
+            "SELECT SUM(total_qty) AS required_qty, MAX(NULLIF(order_code, '')) AS order_code
              FROM export_temp
              WHERE command = ? AND case_no = ? AND product_id = ?"
         );
         $stmt->execute([$command, $caseNo, $productId]);
-        $requiredQty = (int)($stmt->fetchColumn() ?: 0);
+        $requiredRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $requiredQty = (int)($requiredRow['required_qty'] ?? 0);
+        // Chỉ ghi order_code cho packing; picking/pickup để NULL
+        $orderCode = $status === 'packing' ? ($requiredRow['order_code'] ?? null) : null;
 
         if ($requiredQty <= 0) {
             echo json_encode(['success' => false, 'message' => 'Mã hàng không thuộc invoice đã quét']);
@@ -3011,10 +3018,10 @@ switch ($action) {
             $createdBy = $user['username'] ?? 'system';
 
             $stmt = $pdo->prepare(
-                "INSERT INTO export_log (command, case_no, product_id, quantity, created_by, status, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, NOW())"
+                "INSERT INTO export_log (command, case_no, product_id, quantity, created_by, status, order_code, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, NOW())"
             );
-            $stmt->execute([$command, $caseNo, $productId, $qty, $createdBy, $status]);
+            $stmt->execute([$command, $caseNo, $productId, $qty, $createdBy, $status, $orderCode]);
 
             $stmt = $pdo->prepare(
                 "SELECT COALESCE(SUM(quantity), 0)
@@ -4132,6 +4139,100 @@ switch ($action) {
             );
 
             $checkedShelfMismatch = []; // shelf_id => bool (có ít nhất 1 mã hàng lệch)
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $sid = $r['shelf_id'];
+                $counted = (int) round((float) $r['counted_qty']);
+                $sys = $r['system_qty'] !== null ? (int) round((float) $r['system_qty']) : null;
+                $isMatch = ($sys !== null && $counted === $sys);
+                if (!isset($checkedShelfMismatch[$sid])) $checkedShelfMismatch[$sid] = false;
+                if (!$isMatch) $checkedShelfMismatch[$sid] = true;
+            }
+
+            $zones = [];
+            $ensureZone = function ($zone) use (&$zones) {
+                if (!isset($zones[$zone])) {
+                    $zones[$zone] = [
+                        'zone' => $zone,
+                        'shelves_with_stock' => 0,
+                        'shelves_checked' => 0,
+                        'shelves_remaining' => 0,
+                        'shelves_mismatch' => 0,
+                    ];
+                }
+            };
+
+            foreach ($stockByShelf as $sid => $zone) {
+                $ensureZone($zone);
+                $zones[$zone]['shelves_with_stock']++;
+            }
+
+            foreach ($checkedShelfMismatch as $sid => $mismatch) {
+                $zone = $zoneByShelf[$sid] ?? '(Không xác định)';
+                $ensureZone($zone);
+                $zones[$zone]['shelves_checked']++;
+                if ($mismatch) $zones[$zone]['shelves_mismatch']++;
+            }
+
+            foreach ($stockByShelf as $sid => $zone) {
+                if (!isset($checkedShelfMismatch[$sid])) {
+                    $zones[$zone]['shelves_remaining']++;
+                }
+            }
+
+            ksort($zones, SORT_NATURAL | SORT_FLAG_CASE);
+
+            $totals = ['shelves_with_stock' => 0, 'shelves_checked' => 0, 'shelves_remaining' => 0, 'shelves_mismatch' => 0];
+            foreach ($zones as $z) {
+                $totals['shelves_with_stock'] += $z['shelves_with_stock'];
+                $totals['shelves_checked'] += $z['shelves_checked'];
+                $totals['shelves_remaining'] += $z['shelves_remaining'];
+                $totals['shelves_mismatch'] += $z['shelves_mismatch'];
+            }
+
+            echo json_encode([
+                'success' => true,
+                'totals' => $totals,
+                'by_zone' => array_values($zones),
+            ]);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        break;
+
+    case 'get_check_monitor_board':
+        // Public board for the TV monitor - no login required (Guest role in readme).
+        // Dùng đúng logic KPI + chi tiết theo khu vực như check_dashboard_summary, nhưng không yêu cầu đăng nhập
+        // và không trả về danh sách lệch tồn chi tiết (không cần cho màn hình TV).
+        ensure_check_inventory_schema($pdo);
+
+        try {
+            $stmt = $pdo->query(
+                "SELECT DISTINCT s.shelf_id, COALESCE(NULLIF(TRIM(s.level0_val), ''), '(Không xác định)') AS zone
+                 FROM shelves s
+                 JOIN inventory i ON i.shelf_id = s.id
+                 WHERE i.quantity > 0 AND (s.status != 'Deactive' OR s.status IS NULL)"
+            );
+            $stockByShelf = [];
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $stockByShelf[$r['shelf_id']] = $r['zone'];
+            }
+
+            $stmt = $pdo->query("SELECT shelf_id, COALESCE(NULLIF(TRIM(level0_val), ''), '(Không xác định)') AS zone FROM shelves");
+            $zoneByShelf = [];
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $zoneByShelf[$r['shelf_id']] = $r['zone'];
+            }
+
+            $stmt = $pdo->query(
+                "SELECT ci.shelf_id, ci.product_id, SUM(ci.quantity) AS counted_qty,
+                        (SELECT ci2.system_qty FROM check_inventory ci2
+                          WHERE ci2.shelf_id = ci.shelf_id AND ci2.product_id = ci.product_id
+                          ORDER BY ci2.checked_at DESC, ci2.id DESC LIMIT 1) AS system_qty
+                 FROM check_inventory ci
+                 GROUP BY ci.shelf_id, ci.product_id"
+            );
+
+            $checkedShelfMismatch = [];
             foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
                 $sid = $r['shelf_id'];
                 $counted = (int) round((float) $r['counted_qty']);

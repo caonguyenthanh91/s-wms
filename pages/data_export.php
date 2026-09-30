@@ -373,6 +373,8 @@ if (is_dir($exportDir)) {
 			];
 		}
 	}
+	// Mới xuất nhất lên đầu
+	usort($exportedFiles, fn($a, $b) => $b['date'] <=> $a['date']);
 }
 
 // Get list of exported history files
@@ -394,6 +396,8 @@ if (is_dir($exportDir)) {
 			];
 		}
 	}
+	// Mới xuất nhất lên đầu
+	usort($exportedHistoryFiles, fn($a, $b) => $b['date'] <=> $a['date']);
 }
 
 // Display success/error messages (inventory export)
@@ -533,8 +537,8 @@ $today = date('Y-m-d');
 							<tr class="border-b hover:bg-gray-50">
 								<td class="p-2">
 									<code class="text-xs bg-gray-100 px-2 py-1 rounded"><?php echo htmlspecialchars($file['name']); ?></code>
-									<p class="text-begin p-2">
-										<?php echo date('d/m/Y', $file['date']); ?>  ||
+									<p class="mt-1 px-1 text-[11px] text-gray-400">
+										🕒 <?php echo date('d/m/Y H:i', $file['date']); ?> · 
 										<?php echo number_format($file['size'] / 1024, 2); ?> KB
 									</p>
 								</td>
@@ -622,8 +626,8 @@ $today = date('Y-m-d');
 							<tr class="border-b hover:bg-gray-50">
 								<td class="p-2">
 									<code class="text-xs bg-gray-100 px-2 py-1 rounded"><?php echo htmlspecialchars($file['name']); ?></code>
-									<p class="text-begin p-2">
-										<?php echo date('d/m/Y', $file['date']); ?> ||
+									<p class="mt-1 px-1 text-[11px] text-gray-400">
+										🕒 <?php echo date('d/m/Y H:i', $file['date']); ?> · 
 										<?php echo number_format($file['size'] / 1024, 2); ?> KB
 									</p>
 								</td>
