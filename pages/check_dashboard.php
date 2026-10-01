@@ -28,7 +28,8 @@ $isAdmin = ($role === 'Admin');
                         </button>
                         <div id="cd-history-popover" class="hidden absolute right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-20 w-56">
                             <label class="block text-[11px] font-semibold text-gray-600 mb-1">Chọn tháng</label>
-                            <input type="month" id="cd-history-month" class="w-full border border-gray-300 rounded px-2 py-1 text-sm mb-2">
+                            <input type="month" id="cd-history-month" class="w-full border border-gray-300 rounded px-2 py-1 text-sm mb-1">
+                            <div class="text-[10px] text-gray-400 mb-2">Lấy thêm 3 ngày đầu tháng sau (kiểm kê kéo dài).</div>
                             <button type="button" onclick="cdExportHistory()" id="cd-history-export-btn"
                                 class="w-full px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold">
                                 Tải xuống

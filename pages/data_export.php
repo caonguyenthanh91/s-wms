@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export_action']) && $
 		debug_log("Step 2: Query database");
 		$stmt = $pdo->query(
 			"SELECT
-				CONCAT('B032-', UPPER(TRIM(s.shelf_id))) AS shelf_full,
+				UPPER(TRIM(s.shelf_id)) AS shelf_full,
 				UPPER(TRIM(p.product_id)) AS product_full,
 				SUM(i.quantity) AS current_stock
 			 FROM inventory i
@@ -184,7 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['export_action']) && $
 
 		$stmt = $pdo->prepare(
 			"SELECT
-				CONCAT('B032-', UPPER(TRIM(s.shelf_id))) AS shelf_full,
+				UPPER(TRIM(s.shelf_id)) AS shelf_full,
 				UPPER(TRIM(p.product_id)) AS product_full,
 				t.quantity AS quantity,
 				t.type AS trans_type,

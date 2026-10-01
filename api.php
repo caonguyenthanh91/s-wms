@@ -4415,8 +4415,10 @@ switch ($action) {
         }
 
         try {
+            // Kiểm kê thực tế có thể kéo dài thêm tới 3 ngày sau ngày cuối tháng -> lấy luôn
+            // dữ liệu kiểm kê trong 3 ngày đầu của tháng sau vào báo cáo của tháng đã chọn.
             $startDt = new DateTime($month . '-01 00:00:00');
-            $endDt = (clone $startDt)->modify('+1 month');
+            $endDt = (clone $startDt)->modify('+1 month')->modify('+3 days');
 
             $stmt = $pdo->prepare(
                 "SELECT ci.session_id, ci.shelf_id, ci.product_id, ci.quantity, ci.checked_by, ci.checked_at,
